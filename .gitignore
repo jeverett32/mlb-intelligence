@@ -1,0 +1,15 @@
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+*.pem
+
+# ── Python ───────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Data & caches (fetched/generated — not source code) ─────────────────────
+*.csv
+*.parquet
+data/cache/
+1_fetch_data/cache_*/
