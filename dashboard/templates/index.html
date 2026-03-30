@@ -260,6 +260,60 @@
       .panel-row { grid-template-columns: 1fr; }
       main { padding: 16px; }
     }
+
+    @media (max-width: 768px) {
+      .top-bar {
+        padding: 8px 14px;
+        height: auto;
+        min-height: 52px;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .top-bar-left .subtitle { display: none; }
+      .top-bar-right { gap: 8px; flex-wrap: wrap; }
+      .balance-chip { font-size: 0.75rem; }
+      .toggle-label { display: none; }
+      .toggle-wrap { padding: 5px 8px; gap: 5px; }
+
+      nav {
+        padding: 0 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      nav::-webkit-scrollbar { display: none; }
+      nav button { padding: 10px 10px; font-size: 0.75rem; white-space: nowrap; }
+
+      main { padding: 12px; }
+
+      .stat-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .stat-card-body .big { font-size: 1.5rem; }
+      .stat-card-body { padding: 10px 12px 8px; }
+
+      .panel-row { gap: 10px; margin-bottom: 12px; }
+      .panel-body { padding: 10px; }
+      .chart-wrap { height: 180px; }
+
+      .db-controls { flex-wrap: wrap; gap: 8px; }
+      .db-controls .row-count { margin-left: 0; }
+
+      .table-wrap { -webkit-overflow-scrolling: touch; }
+      /* Reduce table cell padding on mobile */
+      thead th { padding: 7px 8px; font-size: 0.68rem; }
+      tbody td { padding: 7px 8px; }
+
+      .pagination { padding: 10px 12px; gap: 6px; }
+    }
+
+    @media (max-width: 420px) {
+      .stat-row { grid-template-columns: 1fr 1fr; }
+      nav button { padding: 10px 8px; font-size: 0.7rem; }
+      .top-bar-left .logo { font-size: 0.95rem; }
+    }
   </style>
 </head>
 <body>
