@@ -1,0 +1,15 @@
+# Large runtime artifacts — saves tokens
+.venv/
+__pycache__/
+*.pyc
+uv.lock
+
+# Data files — too large to be useful in context
+*.csv
+*.parquet
+data/cache/
+1_fetch_data/cache_*/
+
+# Secrets
+.env
+*.pem

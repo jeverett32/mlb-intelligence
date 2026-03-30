@@ -1,0 +1,45 @@
+# MLB Betting Pipeline — Agent Rules
+
+## Project overview
+
+Automated MLB betting pipeline: fetch data → train model → predict edge → place bets on Kalshi.
+Managed with `uv`. All commands use `uv run <script>`. See `PROGRAM.md` for the full orchestration flow.
+
+## Data files — NEVER read raw
+
+CSV and Parquet files in this project can be thousands of rows. **Never** read them with a file-read tool.
+
+Instead, use pandas in a Python snippet to query only the rows/columns you need:
+```python
+import pandas as pd
+df = pd.read_csv("data/games.csv")
+print(df.tail(5))
+```
+
+This applies to: `*.csv`, `*.parquet`, and any file in `data/` or `1_fetch_data/cache_*/`.
+
+## Secrets
+
+- API keys live in `.env` (loaded by `python-dotenv`). Never log or print secrets.
+- The Kalshi private key is `kalshi-key.pem`. Never read or output its contents.
+- `.env.example` is the safe reference template — read that instead if you need to know the variable names.
+
+## Project structure
+
+```
+run_pipeline.py          # Orchestrator (entry point)
+PROGRAM.md               # Master instruction set — read this first for any pipeline question
+1_fetch_data/            # Step 2: scrape MLB stats, odds, weather, FanGraphs, Kalshi balance
+2_run_model/             # Step 3: train model + predict edge for a target game
+3_place_bet/             # Step 4: place bet on Kalshi if edge exists
+data/                    # All pipeline I/O (CSVs, caches) — gitignored
+```
+
+Each sub-folder has its own `*.md` instruction file with API details and code samples.
+
+## Conventions
+
+- Python 3.10+. Use type hints. Keep functions short.
+- All datetimes are UTC unless explicitly labeled `_et`.
+- Run scripts from the project root: `uv run 1_fetch_data/fetch_2026_data.py`
+- When modifying pipeline scripts, preserve the existing patterns: argparse for CLI args, pandas for data I/O, `pathlib.Path` for file paths.
