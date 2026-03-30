@@ -8,9 +8,22 @@ __pycache__/
 *.pyc
 *.pyo
 
-# ── Data & caches (fetched/generated — not source code) ─────────────────────
+# ── Data & caches (fetched/generated at runtime — not source code) ───────────
 *.csv
 !data/master_mlb.csv
 *.parquet
 data/cache/
-1_fetch_data/cache_*/
+
+# ── IDE / editor ─────────────────────────────────────────────────────────────
+.claude/
+.claudeignore
+.clauderules
+.cursor/
+.cursorignore
+.idea/
+.vscode/
+*.swp
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

@@ -1,0 +1,311 @@
+"""
+dashboard/app.py — FastAPI backend for the MLB betting dashboard.
+Serves the frontend at / and JSON data at /api/*.
+
+Run from project root: uv run uvicorn dashboard.app:app --host 0.0.0.0 --port 8080
+"""
+
+import math
+import sys
+from datetime import date, datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import db as DB
+
+import bcrypt as _bcrypt
+import pandas as pd
+from fastapi import FastAPI, HTTPException, Request, Form, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
+
+app = FastAPI(title="MLB Betting Dashboard")
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+
+def _hash_password(password: str) -> str:
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    try:
+        return _bcrypt.checkpw(password.encode(), hashed.encode())
+    except Exception:
+        return False
+
+# Ensure auth tables exist on startup
+DB.init_auth_tables()
+
+COOKIE_NAME = "mlb_session"
+COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days in seconds
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+def _get_session_email(request: Request):
+    """Return the email for the current session, or None if not logged in."""
+    session_id = request.cookies.get(COOKIE_NAME)
+    return DB.get_session_email(session_id)
+
+
+def require_auth(request: Request):
+    """FastAPI dependency — raises 401 redirect if not authenticated."""
+    email = _get_session_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return email
+
+
+# ---------------------------------------------------------------------------
+# Login / logout routes (no auth required)
+# ---------------------------------------------------------------------------
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, error: str = ""):
+    # Already logged in → go to dashboard
+    if _get_session_email(request):
+        return RedirectResponse("/", status_code=302)
+    error_html = (
+        f'<div class="error-banner">{error}</div>' if error else ""
+    )
+    return (TEMPLATES_DIR / "login.html").read_text(encoding="utf-8").replace(
+        "{{ERROR_BANNER}}", error_html
+    )
+
+
+@app.post("/login")
+async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+    stored_hash = DB.get_user_hash(email)
+    if not stored_hash or not _verify_password(password, stored_hash):
+        return RedirectResponse("/login?error=Invalid+email+or+password", status_code=302)
+
+    session_id = DB.create_session(email)
+    response = RedirectResponse("/", status_code=302)
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=session_id,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/logout")
+def logout(request: Request):
+    session_id = request.cookies.get(COOKIE_NAME)
+    if session_id:
+        DB.delete_session(session_id)
+    response = RedirectResponse("/login", status_code=302)
+    response.delete_cookie(COOKIE_NAME)
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Frontend (auth required)
+# ---------------------------------------------------------------------------
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    if not _get_session_email(request):
+        return RedirectResponse("/login", status_code=302)
+    return (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# API — Settings (live betting toggle)
+# ---------------------------------------------------------------------------
+
+class SettingPayload(BaseModel):
+    value: str
+
+@app.get("/api/settings")
+def get_settings(email: str = Depends(require_auth)):
+    return {"live_betting": DB.is_live_betting()}
+
+@app.post("/api/settings/{key}")
+def update_setting(key: str, payload: SettingPayload, email: str = Depends(require_auth)):
+    allowed = {"live_betting"}
+    if key not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
+    DB.set_setting(key, payload.value)
+    return {"key": key, "value": payload.value}
+
+
+# ---------------------------------------------------------------------------
+# API — Bets
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bets")
+def get_bets(limit: int = 100, offset: int = 0, email: str = Depends(require_auth)):
+    df = DB.get_all_bets()
+    if df.empty:
+        return {"bets": [], "total": 0}
+
+    if "result" in df.columns and "bet_dollars" in df.columns:
+        def calc_pnl(row):
+            if row.get("result") is None or row.get("bet_dollars") is None:
+                return None
+            won = (row["result"] is True  and row["bet_side"] == "home") or \
+                  (row["result"] is False and row["bet_side"] == "away")
+            mp = row.get("market_implied_prob")
+            bd = float(row["bet_dollars"] or 0)
+            if mp and float(mp) > 0:
+                ratio = (1/float(mp) - 1) if row["bet_side"] == "home" else (1/(1-float(mp)) - 1)
+                return round(bd * ratio, 2) if won else -bd
+            return None
+        df["profit_loss"] = df.apply(calc_pnl, axis=1)
+
+    total = len(df)
+    return {"bets": _safe_records(df.iloc[offset: offset + limit]), "total": total}
+
+
+# ---------------------------------------------------------------------------
+# API — Balance
+# ---------------------------------------------------------------------------
+
+@app.get("/api/balance")
+def get_balance(email: str = Depends(require_auth)):
+    df = DB.get_balance_history()
+    if df.empty:
+        return {"history": [], "current_dollars": 0.0}
+    return {
+        "history": _safe_records(df),
+        "current_dollars": float(df.iloc[-1]["balance_dollars"]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# API — Upcoming games
+# ---------------------------------------------------------------------------
+
+@app.get("/api/upcoming")
+def get_upcoming(email: str = Depends(require_auth)):
+    try:
+        games_df = DB.get_games_df(season=2026, upcoming_only=True)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    if games_df.empty:
+        return {"games": []}
+
+    today = pd.Timestamp.now().normalize()
+    games_df["game_date"] = pd.to_datetime(games_df["game_date"])
+    upcoming = games_df[games_df["game_date"] <= today + pd.Timedelta(days=1)].copy()
+
+    bets_df = DB.get_all_bets()
+    if not bets_df.empty:
+        pred_cols = ["game_pk", "predicted_prob", "edge", "bet_side", "bet_frac", "market_implied_prob"]
+        available = [c for c in pred_cols if c in bets_df.columns]
+        bets_df["game_pk"]  = bets_df["game_pk"].astype(str)
+        upcoming["game_pk"] = upcoming["game_pk"].astype(str)
+        upcoming = upcoming.merge(bets_df[available], on="game_pk", how="left")
+
+    if "game_time_utc" in upcoming.columns:
+        upcoming = upcoming.sort_values("game_time_utc", na_position="last")
+
+    cols = [
+        "game_pk", "game_date", "game_time_utc", "home_team", "away_team",
+        "home_implied_prob", "away_implied_prob", "close_home_ml", "close_away_ml",
+        "predicted_prob", "edge", "bet_side", "bet_frac",
+    ]
+    return {"games": _safe_records(upcoming[[c for c in cols if c in upcoming.columns]])}
+
+
+# ---------------------------------------------------------------------------
+# API — Performance
+# ---------------------------------------------------------------------------
+
+@app.get("/api/performance")
+def get_performance(email: str = Depends(require_auth)):
+    bets_df = DB.get_all_bets()
+    if bets_df.empty:
+        return _empty_perf()
+
+    settled = bets_df[bets_df["result"].notna() & bets_df["bet_frac"].notna()].copy()
+    settled = settled[settled["bet_frac"].astype(float) > 0]
+    if settled.empty:
+        return _empty_perf()
+
+    def won(r):
+        return (r["result"] is True  and r["bet_side"] == "home") or \
+               (r["result"] is False and r["bet_side"] == "away")
+
+    total_bets    = len(settled)
+    wins          = int(settled.apply(won, axis=1).sum())
+    total_wagered = settled["bet_dollars"].astype(float).sum()
+    total_returned = 0.0
+    for _, r in settled.iterrows():
+        mp = r.get("market_implied_prob")
+        bd = float(r.get("bet_dollars") or 0)
+        if mp and float(mp) > 0:
+            ratio = 1/float(mp) if r["bet_side"] == "home" else 1/(1-float(mp))
+            total_returned += bd * ratio if won(r) else 0
+
+    roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
+
+    calibration = []
+    if "predicted_prob" in settled.columns:
+        settled["pred_bin"] = (settled["predicted_prob"].astype(float) * 10).astype(int) / 10
+        for bucket, grp in settled.groupby("pred_bin"):
+            calibration.append({
+                "predicted": float(bucket),
+                "actual":    float(grp.apply(won, axis=1).mean()),
+                "n":         len(grp),
+            })
+
+    return {
+        "total_bets":    total_bets,
+        "wins":          wins,
+        "losses":        total_bets - wins,
+        "accuracy":      round(wins / total_bets, 4) if total_bets else 0.0,
+        "total_wagered": round(total_wagered, 2),
+        "roi_pct":       round(roi * 100, 2),
+        "calibration":   calibration,
+    }
+
+
+def _empty_perf():
+    return {"total_bets": 0, "wins": 0, "losses": 0, "accuracy": 0.0,
+            "total_wagered": 0.0, "roi_pct": 0.0, "calibration": []}
+
+
+# ---------------------------------------------------------------------------
+# API — Database browser
+# ---------------------------------------------------------------------------
+
+@app.get("/api/db/{table}")
+def browse_table(table: str, limit: int = 50, offset: int = 0,
+                 email: str = Depends(require_auth)):
+    try:
+        return DB.browse_table(table, limit=limit, offset=offset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _safe_records(df: pd.DataFrame) -> list:
+    records = []
+    for _, row in df.iterrows():
+        d = {}
+        for k, v in row.items():
+            if v is None:
+                d[k] = None
+            elif isinstance(v, float) and math.isnan(v):
+                d[k] = None
+            elif isinstance(v, (pd.Timestamp, datetime, date)):
+                d[k] = str(v)[:19]
+            elif hasattr(v, "item"):
+                d[k] = v.item()
+            else:
+                d[k] = v
+        records.append(d)
+    return records

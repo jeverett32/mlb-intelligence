@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLB Betting Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    .top-bar {
+      background: #fff;
+      border-bottom: 1px solid #dde1e7;
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+    .top-bar-left { display: flex; align-items: center; gap: 10px; }
+    .top-bar-left .logo { font-size: 1.1rem; font-weight: 700; color: #1a2d4a; letter-spacing: -0.3px; }
+    .top-bar-left .subtitle { font-size: 0.8rem; color: #888; border-left: 1px solid #dde1e7; padding-left: 10px; margin-left: 2px; }
+
+    .top-bar-right { display: flex; align-items: center; gap: 20px; }
+
+    /* Live betting toggle */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f7f8fa;
+      border: 1px solid #dde1e7;
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+    .toggle-label { font-size: 0.8rem; font-weight: 600; color: #555; }
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+    .toggle-switch input { display: none; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #ccc;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle-switch input:checked + .toggle-slider { background: #27ae60; }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .toggle-status { font-size: 0.75rem; font-weight: 700; color: #888; min-width: 26px; }
+    .toggle-status.live { color: #27ae60; }
+
+    .balance-chip {
+      font-size: 0.8rem;
+      color: #555;
+    }
+    .balance-chip strong { color: #1a2d4a; font-size: 0.95rem; }
+
+    /* ── Navigation ── */
+    nav {
+      background: #fff;
+      border-bottom: 1px solid #dde1e7;
+      padding: 0 28px;
+      display: flex;
+      gap: 0;
+    }
+    nav button {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: #666;
+      padding: 12px 18px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: color 0.15s, border-color 0.15s;
+      text-transform: uppercase;
+    }
+    nav button:hover { color: #1a2d4a; }
+    nav button.active { color: #1a2d4a; border-bottom-color: #2980b9; }
+
+    /* ── Layout ── */
+    main { padding: 24px 28px; max-width: 1380px; margin: 0 auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Stat cards ── */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: #fff;
+      border: 1px solid #dde1e7;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .stat-card-header {
+      background: #1a2d4a;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stat-card-header .icon { opacity: 0.5; font-size: 1rem; }
+    .stat-card-body { padding: 14px 14px 12px; }
+    .stat-card-body .big { font-size: 1.9rem; font-weight: 700; color: #1a2d4a; line-height: 1; }
+    .stat-card-body .delta {
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+    .delta.pos { color: #27ae60; }
+    .delta.neg { color: #e74c3c; }
+    .delta.neu { color: #888; }
+
+    /* ── Panels ── */
+    .panel-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .panel-row.full { grid-template-columns: 1fr; }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #dde1e7;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .panel-header {
+      background: #1a2d4a;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 8px 14px;
+    }
+    .panel-body { padding: 16px; }
+    .chart-wrap { position: relative; height: 210px; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    thead th {
+      background: #f7f8fa;
+      color: #555;
+      font-weight: 700;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 2px solid #dde1e7;
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #eef0f3;
+      color: #333;
+      white-space: nowrap;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f7f8fa; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .badge-green  { background: #eafaf1; color: #1e8449; border: 1px solid #a9dfbf; }
+    .badge-red    { background: #fdedec; color: #b03a2e; border: 1px solid #f5b7b1; }
+    .badge-blue   { background: #eaf4fb; color: #1a5276; border: 1px solid #aed6f1; }
+    .badge-gray   { background: #f2f3f4; color: #666;    border: 1px solid #d5d8dc; }
+    .badge-yellow { background: #fef9e7; color: #7d6608; border: 1px solid #f9e79f; }
+
+    /* ── Pagination ── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      border-top: 1px solid #eef0f3;
+      font-size: 0.78rem;
+      color: #666;
+    }
+    .pagination button {
+      border: 1px solid #dde1e7;
+      background: #fff;
+      color: #444;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+    .pagination button:hover:not(:disabled) { background: #f0f2f5; }
+    .pagination button:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── DB browser ── */
+    .db-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #eef0f3;
+      background: #f7f8fa;
+    }
+    .db-controls label { font-size: 0.78rem; font-weight: 600; color: #555; }
+    .db-controls select {
+      border: 1px solid #dde1e7;
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 0.82rem;
+      background: #fff;
+      color: #333;
+    }
+    .db-controls .row-count { margin-left: auto; font-size: 0.75rem; color: #888; }
+
+    .empty { text-align: center; color: #aaa; padding: 48px; font-size: 0.85rem; }
+
+    @media (max-width: 900px) {
+      .panel-row { grid-template-columns: 1fr; }
+      main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<div class="top-bar">
+  <div class="top-bar-left">
+    <span class="logo">⚾ MLB Pipeline</span>
+    <span class="subtitle">Betting Dashboard</span>
+  </div>
+  <div class="top-bar-right">
+    <span class="balance-chip">Balance: <strong id="hdr-balance">—</strong></span>
+    <div class="toggle-wrap">
+      <span class="toggle-label">Live Betting</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="live-toggle" onchange="onToggle(this)">
+        <span class="toggle-slider"></span>
+      </label>
+      <span class="toggle-status" id="toggle-status">OFF</span>
+    </div>
+    <form method="post" action="/logout" style="margin:0">
+      <button type="submit" style="
+        background:transparent;border:1px solid rgba(255,255,255,0.3);
+        color:rgba(255,255,255,0.75);padding:5px 13px;border-radius:4px;
+        font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;
+        cursor:pointer;font-weight:600;transition:all 0.15s;
+      " onmouseover="this.style.borderColor='rgba(255,255,255,0.7)';this.style.color='#fff'"
+         onmouseout="this.style.borderColor='rgba(255,255,255,0.3)';this.style.color='rgba(255,255,255,0.75)'">
+        Sign Out
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Nav ── -->
+<nav>
+  <button class="active" onclick="showPage('overview',this)">Overview</button>
+  <button onclick="showPage('upcoming',this)">Upcoming Games</button>
+  <button onclick="showPage('bets',this)">Bet Log</button>
+  <button onclick="showPage('performance',this)">Performance</button>
+  <button onclick="showPage('database',this)">Database</button>
+</nav>
+
+<main>
+
+  <!-- ── OVERVIEW ── -->
+  <div id="page-overview" class="page active">
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Balance</span><span class="icon">💰</span></div>
+        <div class="stat-card-body"><div class="big" id="s-balance">—</div><div class="delta neu" id="s-balance-sub">Kalshi account</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Total Bets Placed</span><span class="icon">🎯</span></div>
+        <div class="stat-card-body"><div class="big" id="s-bets">—</div><div class="delta neu" id="s-bets-sub">all time</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Win Rate</span><span class="icon">📈</span></div>
+        <div class="stat-card-body"><div class="big" id="s-winrate">—</div><div class="delta neu" id="s-winrate-sub">on settled bets</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>ROI</span><span class="icon">💹</span></div>
+        <div class="stat-card-body"><div class="big" id="s-roi">—</div><div class="delta neu" id="s-roi-sub">return on investment</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Total Wagered</span><span class="icon">🏦</span></div>
+        <div class="stat-card-body"><div class="big" id="s-wagered">—</div><div class="delta neu">all time</div></div>
+      </div>
+    </div>
+    <div class="panel-row">
+      <div class="panel">
+        <div class="panel-header">Balance Over Time</div>
+        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-balance"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Model Calibration</div>
+        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-cal-overview"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── UPCOMING ── -->
+  <div id="page-upcoming" class="page">
+    <div class="panel">
+      <div class="panel-header">Today &amp; Tomorrow — Scheduled Games</div>
+      <div class="table-wrap" id="upcoming-body"></div>
+    </div>
+  </div>
+
+  <!-- ── BET LOG ── -->
+  <div id="page-bets" class="page">
+    <div class="panel">
+      <div class="panel-header">Bet History</div>
+      <div class="table-wrap" id="bets-body"></div>
+      <div class="pagination">
+        <button id="bets-prev" onclick="betsPage(-1)">← Prev</button>
+        <span id="bets-page-info">Page 1</span>
+        <button id="bets-next" onclick="betsPage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PERFORMANCE ── -->
+  <div id="page-performance" class="page">
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Bets Settled</span></div>
+        <div class="stat-card-body"><div class="big" id="p-total">—</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Wins</span></div>
+        <div class="stat-card-body"><div class="big" id="p-wins" style="color:#1e8449">—</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Losses</span></div>
+        <div class="stat-card-body"><div class="big" id="p-losses" style="color:#b03a2e">—</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Accuracy</span></div>
+        <div class="stat-card-body"><div class="big" id="p-acc">—</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>ROI</span></div>
+        <div class="stat-card-body"><div class="big" id="p-roi">—</div></div>
+      </div>
+    </div>
+    <div class="panel-row full">
+      <div class="panel">
+        <div class="panel-header">Predicted Probability vs Actual Win Rate</div>
+        <div class="panel-body"><div class="chart-wrap" style="height:260px"><canvas id="chart-cal-perf"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DATABASE ── -->
+  <div id="page-database" class="page">
+    <div class="panel">
+      <div class="db-controls">
+        <label>Table</label>
+        <select id="db-table-select" onchange="loadDbTable()">
+          <option value="games">games</option>
+          <option value="bets">bets</option>
+          <option value="balance">balance</option>
+          <option value="settings">settings</option>
+        </select>
+        <span class="row-count" id="db-row-count"></span>
+      </div>
+      <div class="table-wrap" id="db-body"></div>
+      <div class="pagination">
+        <button id="db-prev" onclick="dbPage(-1)">← Prev</button>
+        <span id="db-page-info">Page 1</span>
+        <button id="db-next" onclick="dbPage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let betsOffset = 0, betsTotal = 0;
+const BETS_LIMIT = 50;
+
+let dbOffset = 0, dbTotal = 0;
+const DB_LIMIT = 50;
+
+let charts = {};
+
+// ── Navigation ───────────────────────────────────────────────────────────
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'database') loadDbTable();
+}
+
+// ── Toggle ────────────────────────────────────────────────────────────────
+async function loadToggle() {
+  const r = await fetch('/api/settings').then(r => r.json());
+  const live = r.live_betting === true;
+  document.getElementById('live-toggle').checked = live;
+  setToggleStatus(live);
+}
+
+function setToggleStatus(live) {
+  const el = document.getElementById('toggle-status');
+  el.textContent = live ? 'ON' : 'OFF';
+  el.className = 'toggle-status' + (live ? ' live' : '');
+}
+
+async function onToggle(el) {
+  const val = el.checked ? 'true' : 'false';
+  await fetch('/api/settings/live_betting', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: val}),
+  });
+  setToggleStatus(el.checked);
+}
+
+// ── Formatting ────────────────────────────────────────────────────────────
+const fmt$ = v => v == null ? '—' : '$' + Number(v).toFixed(2);
+const fmtPct = v => v == null ? '—' : (Number(v) * 100).toFixed(1) + '%';
+const fmtML = v => v == null ? '—' : (v > 0 ? '+' : '') + Math.round(v);
+
+// Convert "YYYY-MM-DD HH:MM" UTC string → "h:mm AM/PM MT" in browser
+function utcToMT(val) {
+  if (!val) return '—';
+  try {
+    const d = new Date(val.slice(0,16).replace(' ', 'T') + ':00Z');
+    return d.toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', timeZone: 'America/Denver'
+    }) + ' MT';
+  } catch { return '—'; }
+}
+
+function badge(text, cls) {
+  return `<span class="badge badge-${cls}">${text}</span>`;
+}
+function sideBadge(side) {
+  if (!side || side === 'none') return badge('No Bet', 'gray');
+  return badge(side.toUpperCase(), 'blue');
+}
+function resultBadge(result, side) {
+  if (result == null) return badge('Pending', 'gray');
+  const won = (result === true && side === 'home') || (result === false && side === 'away');
+  return won ? badge('WIN', 'green') : badge('LOSS', 'red');
+}
+function pnlBadge(pnl) {
+  if (pnl == null) return '—';
+  const cls = pnl >= 0 ? 'green' : 'red';
+  return badge((pnl >= 0 ? '+' : '') + fmt$(pnl), cls);
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────
+function makeChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+
+const gridColor = '#eef0f3';
+const tickColor = '#aaa';
+
+function lineChartCfg(labels, data) {
+  return {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: '#2980b9',
+        backgroundColor: 'rgba(41,128,185,0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: gridColor }, ticks: { color: tickColor, maxTicksLimit: 7 } },
+        y: { grid: { color: gridColor }, ticks: { color: tickColor, callback: v => '$'+v } },
+      },
+    },
+  };
+}
+
+function calChartCfg(cal) {
+  return {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {
+          label: 'Model',
+          data: cal.map(c => ({ x: +(c.predicted*100).toFixed(0), y: +(c.actual*100).toFixed(1) })),
+          backgroundColor: '#2980b9',
+          pointRadius: 7,
+          pointHoverRadius: 9,
+        },
+        {
+          label: 'Perfect calibration',
+          data: [{x:0,y:0},{x:100,y:100}],
+          type: 'line',
+          borderColor: '#bbb',
+          borderDash: [5,4],
+          pointRadius: 0,
+          fill: false,
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: '#555', font: {size:11} } } },
+      scales: {
+        x: { min:0, max:100, grid:{color:gridColor}, ticks:{color:tickColor}, title:{display:true,text:'Predicted (%)',color:'#888',font:{size:11}} },
+        y: { min:0, max:100, grid:{color:gridColor}, ticks:{color:tickColor}, title:{display:true,text:'Actual (%)',color:'#888',font:{size:11}} },
+      },
+    },
+  };
+}
+
+// ── Load data ─────────────────────────────────────────────────────────────
+async function loadAll() {
+  const [bal, perf, bets, upcoming] = await Promise.all([
+    fetch('/api/balance').then(r => r.json()),
+    fetch('/api/performance').then(r => r.json()),
+    fetch(`/api/bets?limit=${BETS_LIMIT}&offset=0`).then(r => r.json()),
+    fetch('/api/upcoming').then(r => r.json()),
+  ]);
+  renderOverview(bal, perf);
+  renderBets(bets);
+  renderUpcoming(upcoming);
+  renderPerformance(perf);
+}
+
+// ── Overview ─────────────────────────────────────────────────────────────
+function renderOverview(bal, perf) {
+  const cur = bal.current_dollars || 0;
+  document.getElementById('hdr-balance').textContent = '$' + cur.toFixed(2);
+  document.getElementById('s-balance').textContent   = '$' + cur.toFixed(2);
+  document.getElementById('s-bets').textContent      = perf.total_bets;
+
+  const acc = perf.accuracy;
+  const wrEl = document.getElementById('s-winrate');
+  wrEl.textContent = perf.total_bets ? fmtPct(acc) : '—';
+  wrEl.style.color = acc >= 0.5 ? '#1e8449' : (perf.total_bets ? '#b03a2e' : '#1a2d4a');
+
+  const roi = perf.roi_pct;
+  const roiEl = document.getElementById('s-roi');
+  roiEl.textContent = perf.total_bets ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
+  roiEl.style.color = roi >= 0 ? '#1e8449' : '#b03a2e';
+
+  document.getElementById('s-wagered').textContent = '$' + (perf.total_wagered || 0).toFixed(2);
+
+  // Balance chart
+  if (bal.history && bal.history.length > 1) {
+    makeChart('chart-balance', lineChartCfg(
+      bal.history.map(r => r.recorded_at.slice(0,10)),
+      bal.history.map(r => r.balance_dollars)
+    ));
+  } else {
+    document.getElementById('chart-balance').parentElement.innerHTML = '<div class="empty">No balance history yet</div>';
+  }
+
+  // Calibration chart
+  if (perf.calibration && perf.calibration.length) {
+    makeChart('chart-cal-overview', calChartCfg(perf.calibration));
+  } else {
+    document.getElementById('chart-cal-overview').parentElement.innerHTML = '<div class="empty">No settled bets yet</div>';
+  }
+}
+
+// ── Upcoming ──────────────────────────────────────────────────────────────
+function renderUpcoming(data) {
+  const games = data.games || [];
+  const el = document.getElementById('upcoming-body');
+  if (!games.length) { el.innerHTML = '<div class="empty">No upcoming games in the next 2 days</div>'; return; }
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Date</th><th>Time (MT)</th><th>Away</th><th>Home</th>
+      <th>Market (Home)</th><th>Market (Away)</th>
+      <th>Model Prob</th><th>Edge</th><th>Signal</th>
+    </tr></thead>
+    <tbody>${games.map(g => `<tr>
+      <td>${(g.game_date||'').slice(0,10)}</td>
+      <td>${utcToMT(g.game_time_utc)}</td>
+      <td><strong>${g.away_team||'—'}</strong></td>
+      <td><strong>${g.home_team||'—'}</strong></td>
+      <td>${fmtML(g.close_home_ml)} <span style="color:#888;font-size:0.75rem">(${fmtPct(g.home_implied_prob)})</span></td>
+      <td>${fmtML(g.close_away_ml)} <span style="color:#888;font-size:0.75rem">(${fmtPct(g.away_implied_prob)})</span></td>
+      <td>${fmtPct(g.predicted_prob)}</td>
+      <td>${g.edge != null ? (g.edge*100).toFixed(1)+'%' : '—'}</td>
+      <td>${sideBadge(g.bet_side)}</td>
+    </tr>`).join('')}
+    </tbody></table>`;
+}
+
+// ── Bet Log ───────────────────────────────────────────────────────────────
+function renderBets(data) {
+  betsTotal = data.total || 0;
+  const bets = data.bets || [];
+  const el = document.getElementById('bets-body');
+  if (!bets.length) { el.innerHTML = '<div class="empty">No bets placed yet</div>'; }
+  else {
+    el.innerHTML = `<table>
+      <thead><tr>
+        <th>Date</th><th>Away</th><th>Home</th><th>Side</th>
+        <th>Model</th><th>Market</th><th>Edge</th>
+        <th>Wagered</th><th>Contracts</th><th>Result</th><th>P&L</th>
+      </tr></thead>
+      <tbody>${bets.map(b => `<tr>
+        <td>${(b.game_date||'').slice(0,10)}</td>
+        <td>${b.away_team||'—'}</td>
+        <td>${b.home_team||'—'}</td>
+        <td>${sideBadge(b.bet_side)}</td>
+        <td>${fmtPct(b.predicted_prob)}</td>
+        <td>${fmtPct(b.market_implied_prob)}</td>
+        <td>${b.edge != null ? (b.edge*100).toFixed(1)+'%' : '—'}</td>
+        <td>${fmt$(b.bet_dollars)}</td>
+        <td>${b.n_contracts ?? '—'}</td>
+        <td>${resultBadge(b.result, b.bet_side)}</td>
+        <td>${pnlBadge(b.profit_loss)}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  const page = Math.floor(betsOffset / BETS_LIMIT) + 1;
+  const totalPages = Math.max(1, Math.ceil(betsTotal / BETS_LIMIT));
+  document.getElementById('bets-page-info').textContent = `Page ${page} of ${totalPages} (${betsTotal} bets)`;
+  document.getElementById('bets-prev').disabled = betsOffset === 0;
+  document.getElementById('bets-next').disabled = betsOffset + BETS_LIMIT >= betsTotal;
+}
+
+async function betsPage(dir) {
+  betsOffset = Math.max(0, betsOffset + dir * BETS_LIMIT);
+  const data = await fetch(`/api/bets?limit=${BETS_LIMIT}&offset=${betsOffset}`).then(r => r.json());
+  renderBets(data);
+}
+
+// ── Performance ───────────────────────────────────────────────────────────
+function renderPerformance(perf) {
+  document.getElementById('p-total').textContent  = perf.total_bets;
+  document.getElementById('p-wins').textContent   = perf.wins;
+  document.getElementById('p-losses').textContent = perf.losses;
+  document.getElementById('p-acc').textContent    = perf.total_bets ? fmtPct(perf.accuracy) : '—';
+  const roi = perf.roi_pct;
+  const roiEl = document.getElementById('p-roi');
+  roiEl.textContent = perf.total_bets ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
+  roiEl.style.color = roi >= 0 ? '#1e8449' : '#b03a2e';
+  if (perf.calibration && perf.calibration.length) {
+    makeChart('chart-cal-perf', calChartCfg(perf.calibration));
+  } else {
+    document.getElementById('chart-cal-perf').parentElement.innerHTML = '<div class="empty">No settled bets yet</div>';
+  }
+}
+
+// ── Database viewer ───────────────────────────────────────────────────────
+async function loadDbTable() {
+  dbOffset = 0;
+  await fetchDbPage();
+}
+
+async function dbPage(dir) {
+  dbOffset = Math.max(0, dbOffset + dir * DB_LIMIT);
+  await fetchDbPage();
+}
+
+async function fetchDbPage() {
+  const table = document.getElementById('db-table-select').value;
+  const data  = await fetch(`/api/db/${table}?limit=${DB_LIMIT}&offset=${dbOffset}`).then(r => r.json());
+  dbTotal = data.total || 0;
+
+  document.getElementById('db-row-count').textContent =
+    `${dbTotal.toLocaleString()} rows total`;
+
+  const el = document.getElementById('db-body');
+  if (!data.rows || !data.rows.length) {
+    el.innerHTML = '<div class="empty">Table is empty</div>';
+  } else {
+    const cols = data.columns;
+    el.innerHTML = `<table>
+      <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>${data.rows.map(row =>
+        `<tr>${cols.map(c => {
+          const v = row[c];
+          if (v === null || v === undefined) return '<td style="color:#bbb">NULL</td>';
+          if (typeof v === 'boolean') return `<td>${badge(v ? 'true' : 'false', v ? 'green' : 'red')}</td>`;
+          const str = String(v);
+          const display = str.length > 60 ? str.slice(0, 57) + '…' : str;
+          return `<td title="${str.replace(/"/g,'&quot;')}">${display}</td>`;
+        }).join('')}</tr>`
+      ).join('')}</tbody></table>`;
+  }
+
+  const page = Math.floor(dbOffset / DB_LIMIT) + 1;
+  const totalPages = Math.max(1, Math.ceil(dbTotal / DB_LIMIT));
+  document.getElementById('db-page-info').textContent = `Page ${page} of ${totalPages}`;
+  document.getElementById('db-prev').disabled = dbOffset === 0;
+  document.getElementById('db-next').disabled = dbOffset + DB_LIMIT >= dbTotal;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadToggle();
+loadAll();
+</script>
+</body>
+</html>

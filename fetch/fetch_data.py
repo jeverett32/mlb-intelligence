@@ -21,6 +21,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import db as DB
+
 import numpy as np
 import pandas as pd
 import requests
@@ -142,7 +145,7 @@ PARK_COORDS = {
 
 # Canonical output columns (always present, NaN when unavailable)
 ALL_OUTPUT_COLS = (
-    ["game_id", "game_pk", "game_date", "game_time_et", "season",
+    ["game_id", "game_pk", "game_date", "game_time_utc", "season",
      "home_team", "away_team", "is_night_game",
      "home_implied_prob", "away_implied_prob",
      "open_home_ml", "open_away_ml", "close_home_ml", "close_away_ml",
@@ -172,7 +175,7 @@ def sbr_normalize(name):
 
 
 def _parse_game_datetime(game_datetime_str):
-    """Parse MLB API UTC datetime string into Eastern time components."""
+    """Parse MLB API UTC datetime string. Returns (utc_str, night_flag)."""
     try:
         from zoneinfo import ZoneInfo
         from datetime import timezone
@@ -180,7 +183,7 @@ def _parse_game_datetime(game_datetime_str):
             game_datetime_str, "%Y-%m-%dT%H:%M:%SZ"
         ).replace(tzinfo=timezone.utc)
         et = utc_time.astimezone(ZoneInfo("America/New_York"))
-        return et.strftime("%Y-%m-%d %H:%M"), (1 if et.hour >= 17 else 0)
+        return utc_time.strftime("%Y-%m-%d %H:%M"), (1 if et.hour >= 17 else 0)
     except Exception:
         return None, 1
 
@@ -211,7 +214,15 @@ def _ensure_columns(df):
 # Existing-CSV helpers
 # ---------------------------------------------------------------------------
 def _load_existing():
-    """Load the existing output CSV if it exists."""
+    """Load existing 2026 season rows from PostgreSQL (falls back to CSV if DB unavailable)."""
+    try:
+        df = DB.get_games_df(season=SEASON)
+        if not df.empty:
+            df["game_date"] = pd.to_datetime(df["game_date"])
+            return df
+    except Exception as e:
+        print(f"  WARNING: DB unavailable ({e}), falling back to CSV.")
+    # CSV fallback
     if not Path(OUTPUT_CSV).exists():
         return pd.DataFrame()
     df = pd.read_csv(OUTPUT_CSV, low_memory=False)
@@ -289,13 +300,13 @@ def fetch_schedule():
             home_pp = home_team_data.get("probablePitcher", {})
             away_pp = away_team_data.get("probablePitcher", {})
 
-            game_time_et, night_flag = _parse_game_datetime(
+            game_time_utc, night_flag = _parse_game_datetime(
                 g.get("gameDate", ""))
 
             rows.append({
                 "game_pk":   g["gamePk"],
                 "game_date": pd.to_datetime(date_info["date"]),
-                "game_time_et": game_time_et,
+                "game_time_utc": game_time_utc,
                 "home_team": home_abb,
                 "away_team": away_abb,
                 "home_score": home_team_data.get("score") if completed else np.nan,
@@ -1027,15 +1038,27 @@ def assemble(games_to_process, odds_df, pitcher_df, weather_df, fg_df):
     master = games_to_process.copy()
 
     # --- Odds ---
+    # Match on UTC date derived from game_time_utc + team names.
+    # The Odds API returns UTC commence_times, so using the UTC date of the
+    # game_time_utc avoids the ±1-day mismatch for late West Coast games and
+    # correctly disambiguates back-to-back series games.
     if not odds_df.empty:
         odds_df = odds_df.copy()
         odds_df["game_date"] = pd.to_datetime(odds_df["game_date"])
-        master = master.merge(
-            odds_df[["game_date", "home_team", "away_team",
+
+        # Compute UTC date for each game row
+        if "game_time_utc" in master.columns:
+            master["_utc_date"] = pd.to_datetime(master["game_time_utc"]).dt.normalize()
+        else:
+            master["_utc_date"] = pd.to_datetime(master["game_date"])
+
+        odds_cols = ["game_date", "home_team", "away_team",
                      "open_home_ml", "open_away_ml",
                      "close_home_ml", "close_away_ml",
-                     "open_total", "close_total", "odds_source"]],
-            on=["game_date", "home_team", "away_team"], how="left")
+                     "open_total", "close_total", "odds_source"]
+        odds_keyed = odds_df[odds_cols].rename(columns={"game_date": "_utc_date"})
+        master = master.merge(odds_keyed, on=["_utc_date", "home_team", "away_team"], how="left")
+        master = master.drop(columns=["_utc_date"])
 
     # --- Pitchers ---
     if not pitcher_df.empty:
@@ -1175,6 +1198,10 @@ def main():
             result = _ensure_columns(result)
             result = result.sort_values(["game_date", "game_pk"]).reset_index(drop=True)
             result.to_csv(OUTPUT_CSV, index=False)
+            try:
+                DB.upsert_games(result)
+            except Exception as e:
+                print(f"  WARNING: DB upsert failed ({e}).")
             print(f"  Saved {len(result)} rows to {OUTPUT_CSV} (stale rows removed)")
         return
 
@@ -1229,6 +1256,10 @@ def main():
     result = result.drop_duplicates(subset=["game_pk"], keep="first")
     result = result.sort_values(["game_date", "game_pk"]).reset_index(drop=True)
     result.to_csv(OUTPUT_CSV, index=False)
+    try:
+        DB.upsert_games(result)
+    except Exception as e:
+        print(f"  WARNING: DB upsert failed ({e}). CSV still written.")
 
     elapsed = time.time() - t0
     n_complete = result["home_win"].notna().sum()

@@ -16,12 +16,9 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
+import db as DB
 
-DRY_RUN = True  # Set to False to place real bets on Kalshi
-
-GAMES_CSV   = Path("data/games.csv")
-BALANCE_CSV = Path("data/balance.csv")
-MLB_SERIES  = "KXMLBGAME"
+MLB_SERIES = "KXMLBGAME"
 
 
 # ---------------------------------------------------------------------------
@@ -68,16 +65,11 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str):
 # ---------------------------------------------------------------------------
 
 def place_bet(game_pk: str):
-    # --- Load game row ---
-    if not GAMES_CSV.exists():
-        sys.exit(f"ERROR: {GAMES_CSV} not found.")
+    # --- Load bet row from DB ---
+    row = DB.get_bet(game_pk)
+    if row is None:
+        sys.exit(f"ERROR: game_pk={game_pk} not found in bets table.")
 
-    games = pd.read_csv(GAMES_CSV, dtype=str)
-    mask  = games["game_pk"].astype(str) == str(game_pk)
-    if not mask.any():
-        sys.exit(f"ERROR: game_pk={game_pk} not found in {GAMES_CSV}")
-
-    row      = games[mask].iloc[0]
     bet_frac = float(row.get("bet_frac") or 0)
     bet_side = str(row.get("bet_side") or "none").strip().lower()
 
@@ -85,22 +77,19 @@ def place_bet(game_pk: str):
         print("No bet indicated — skipping.")
         return
 
-    home_team   = str(row["home_team"])
-    away_team   = str(row["away_team"])
-    game_date   = str(row["game_date"])[:10]
-    mkt_prob_str = str(row.get("market_implied_prob") or "")
+    home_team    = str(row["home_team"])
+    away_team    = str(row["away_team"])
+    game_date    = str(row["game_date"])[:10]
+    market_prob  = row.get("market_implied_prob")
 
-    if not mkt_prob_str or mkt_prob_str.lower() in ("nan", ""):
-        sys.exit("ERROR: market_implied_prob missing in games.csv. Cannot size the bet.")
-
-    market_prob = float(mkt_prob_str)
+    if market_prob is None:
+        sys.exit("ERROR: market_implied_prob missing in bets table. Cannot size the bet.")
+    market_prob = float(market_prob)
 
     # --- Size the bet ---
-    if not BALANCE_CSV.exists() or BALANCE_CSV.stat().st_size == 0:
-        sys.exit(f"ERROR: {BALANCE_CSV} empty. Run fetch_kalshi_balance.py first.")
-
-    balance_df     = pd.read_csv(BALANCE_CSV)
-    balance_cents  = int(balance_df.iloc[-1]["balance_cents"])
+    balance_cents = DB.get_last_balance_cents()
+    if balance_cents is None:
+        sys.exit("ERROR: No balance in DB. Run fetch/fetch_balance.py first.")
     balance_dollars = balance_cents / 100.0
     bet_dollars     = round(balance_dollars * bet_frac, 2)
 
@@ -151,7 +140,8 @@ def place_bet(game_pk: str):
         sys.exit(f"ERROR: Market {ticker} is '{mkt_status}' — cannot place order.")
 
     # --- Place order ---
-    if DRY_RUN:
+    dry_run = not DB.is_live_betting()
+    if dry_run:
         print(f"\n  [DRY RUN] Would place order:")
         print(f"    Ticker:        {ticker}")
         print(f"    Side:          {side}")
@@ -190,12 +180,9 @@ def place_bet(game_pk: str):
     else:
         sys.exit(f"ERROR placing order ({resp.status_code}): {resp.text}")
 
-    # --- Write order details back to games.csv ---
-    games.loc[mask, "kalshi_order_id"] = order_id
-    games.loc[mask, "bet_dollars"]     = f"{actual_cost:.2f}"
-    games.loc[mask, "n_contracts"]     = str(n_contracts)
-    games.to_csv(GAMES_CSV, index=False)
-    print(f"  games.csv updated.")
+    # --- Write order details back to bets table ---
+    DB.update_bet_order(game_pk, order_id, actual_cost, n_contracts)
+    print("  bets table updated.")
 
 
 if __name__ == "__main__":

@@ -29,17 +29,13 @@ from sklearn.impute import SimpleImputer
 # it here only loads functions and constants — no training runs on import.
 # ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import train as T
+import db as DB
 
-# Paths (relative to project root; script is called from project root)
-HISTORICAL_CSV  = "data/master_mlb.csv"   # full historical data used for training
-CURRENT_CSV     = "data/mlb_2026.csv"
-GAMES_CSV       = "data/games.csv"
-GAMES_CSV_COLS  = [
-    "game_pk", "game_date", "home_team", "away_team",
-    "predicted_prob", "edge", "bet_side", "bet_frac",
-    "market_implied_prob", "result",
-]
+# CSV fallback paths (used when DB is unavailable)
+HISTORICAL_CSV = "data/master_mlb.csv"
+CURRENT_CSV    = "data/mlb_2026.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -182,12 +178,25 @@ def predict(game_info: dict):
 
     # --- Load data -----------------------------------------------------------
     print("Loading historical data...")
-    hist = pd.read_csv(HISTORICAL_CSV, low_memory=False)
+    try:
+        hist = DB.get_games_df()
+        hist = hist[hist["season"].notna() & (hist["season"].astype(float) < 2026)]
+        if hist.empty:
+            raise ValueError("No historical rows in DB")
+    except Exception as e:
+        print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
+        hist = pd.read_csv(HISTORICAL_CSV, low_memory=False)
     print(f"  {len(hist):,} historical rows")
 
-    if not os.path.exists(CURRENT_CSV):
-        sys.exit(f"ERROR: {CURRENT_CSV} not found. Run fetch_2026_data.py first.")
-    curr = pd.read_csv(CURRENT_CSV, low_memory=False)
+    try:
+        curr = DB.get_games_df(season=2026)
+        if curr.empty:
+            raise ValueError("No 2026 rows in DB")
+    except Exception as e:
+        print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
+        if not os.path.exists(CURRENT_CSV):
+            sys.exit(f"ERROR: {CURRENT_CSV} not found. Run fetch/fetch_data.py first.")
+        curr = pd.read_csv(CURRENT_CSV, low_memory=False)
     print(f"  {len(curr):,} 2026 rows")
 
     # Locate target game in current season data
@@ -355,29 +364,11 @@ def predict(game_info: dict):
         print("  >> NO BET")
     print(f"{'='*50}")
 
-    # --- Write to games.csv --------------------------------------------------
-    games = pd.read_csv(GAMES_CSV, dtype=str)
-    for col in ["predicted_prob", "edge", "bet_side", "bet_frac", "market_implied_prob"]:
-        if col not in games.columns:
-            games[col] = ""
-
-    mask = games["game_pk"].astype(str) == str(game_pk)
-    if not mask.any():
-        # Match by date + teams
-        mask = (
-            (games["game_date"] == game_date) &
-            (games["home_team"].str.upper() == home_team.upper()) &
-            (games["away_team"].str.upper() == away_team.upper())
-        )
-
-    games.loc[mask, "predicted_prob"]      = f"{prob:.4f}"
-    games.loc[mask, "edge"]                = f"{edge:.4f}" if not (isinstance(edge, float) and np.isnan(edge)) else ""
-    games.loc[mask, "bet_side"]            = bet_side
-    games.loc[mask, "bet_frac"]            = f"{bet_frac:.4f}"
-    games.loc[mask, "market_implied_prob"] = f"{float(mkt_prob_raw):.4f}" if not pd.isna(mkt_prob_raw) else ""
-
-    games.to_csv(GAMES_CSV, index=False)
-    print(f"Results written to {GAMES_CSV}")
+    # --- Write prediction to bets table --------------------------------------
+    mkt_prob_val = float(mkt_prob_raw) if not pd.isna(mkt_prob_raw) else None
+    edge_val     = float(edge) if not (isinstance(edge, float) and np.isnan(edge)) else None
+    DB.update_bet_prediction(game_pk, prob, edge_val, bet_side, bet_frac, mkt_prob_val)
+    print("Results written to bets table")
     return prob, edge, bet_side, bet_frac
 
 
