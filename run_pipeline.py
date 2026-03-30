@@ -92,7 +92,7 @@ def get_next_game() -> dict | None:
     if df.empty:
         return None
 
-    sort_col = "game_time_et" if "game_time_et" in df.columns else "game_date"
+    sort_col = "game_time_utc" if "game_time_utc" in df.columns else "game_date"
     df = df.sort_values(sort_col)
     return df.iloc[0].to_dict()
 
