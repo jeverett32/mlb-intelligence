@@ -10,6 +10,7 @@ __pycache__/
 
 # ── Data & caches (fetched/generated — not source code) ─────────────────────
 *.csv
+!data/master_mlb.csv
 *.parquet
 data/cache/
 1_fetch_data/cache_*/
