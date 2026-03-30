@@ -136,32 +136,55 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def find_target_game(args) -> dict:
-    """Return a dict with game_pk, game_date, home_team, away_team from games.csv."""
-    if not os.path.exists(GAMES_CSV):
-        sys.exit(f"ERROR: {GAMES_CSV} not found. Initialize the game row first.")
-
-    games = pd.read_csv(GAMES_CSV, dtype=str)
-
+    """Return a dict with game_pk, game_date, home_team, away_team from the DB."""
     if args.game_pk:
-        mask = games["game_pk"].astype(str) == str(args.game_pk)
-        rows = games[mask]
-        if rows.empty:
-            sys.exit(f"ERROR: game_pk={args.game_pk} not found in {GAMES_CSV}")
-        return rows.iloc[0].to_dict()
+        # Try bets table first (init_bet is always called before predict)
+        row = DB.get_bet(args.game_pk)
+        if row:
+            return {
+                "game_pk":   str(row["game_pk"]),
+                "game_date": str(row["game_date"])[:10],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+            }
+        # Fall back to games table
+        df = DB.get_games_df(season=2026)
+        if not df.empty:
+            df["game_pk"] = df["game_pk"].astype(str)
+            rows = df[df["game_pk"] == str(args.game_pk)]
+            if not rows.empty:
+                r = rows.iloc[0]
+                return {
+                    "game_pk":   str(r["game_pk"]),
+                    "game_date": str(r["game_date"])[:10],
+                    "home_team": r["home_team"],
+                    "away_team": r["away_team"],
+                }
+        sys.exit(f"ERROR: game_pk={args.game_pk} not found in DB")
 
     # Lookup by date + teams
+    df = DB.get_games_df(season=2026)
+    if df.empty:
+        sys.exit("ERROR: No 2026 games in DB. Run fetch/fetch_data.py first.")
+    df["game_date"] = pd.to_datetime(df["game_date"]).dt.strftime("%Y-%m-%d")
     mask = (
-        (games["game_date"] == str(args.game_date)) &
-        (games["home_team"].str.upper() == args.home_team.upper()) &
-        (games["away_team"].str.upper() == args.away_team.upper())
+        (df["game_date"] == str(args.game_date)) &
+        (df["home_team"].str.upper() == args.home_team.upper()) &
+        (df["away_team"].str.upper() == args.away_team.upper())
     )
-    rows = games[mask]
+    rows = df[mask]
     if rows.empty:
         sys.exit(
             f"ERROR: no game on {args.game_date} with "
-            f"home={args.home_team} away={args.away_team} in {GAMES_CSV}"
+            f"home={args.home_team} away={args.away_team} in DB"
         )
-    return rows.iloc[0].to_dict()
+    r = rows.iloc[0]
+    return {
+        "game_pk":   str(r["game_pk"]),
+        "game_date": str(r["game_date"])[:10],
+        "home_team": r["home_team"],
+        "away_team": r["away_team"],
+    }
 
 
 # ---------------------------------------------------------------------------
