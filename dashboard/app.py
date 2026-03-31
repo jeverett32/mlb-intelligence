@@ -192,7 +192,7 @@ def get_upcoming(email: str = Depends(require_auth)):
     if games_df.empty:
         return {"games": []}
 
-    today = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
+    today = pd.Timestamp.now(tz="America/Denver").normalize().tz_localize(None)
     games_df["game_date"] = pd.to_datetime(games_df["game_date"])
     upcoming = games_df[
         (games_df["game_date"] >= today) &
