@@ -273,6 +273,58 @@ def _empty_perf():
             "total_wagered": 0.0, "roi_pct": 0.0, "calibration": []}
 
 
+@app.get("/api/model-accuracy")
+def get_model_accuracy(email: str = Depends(require_auth)):
+    """
+    Model accuracy across ALL predicted games, not just ones where a bet
+    was placed. Compares predicted_prob > 0.5 (home win prediction) against
+    the actual home_win result in the games table.
+    """
+    df = DB.get_model_picks()
+    if df.empty:
+        return {"total": 0, "correct": 0, "incorrect": 0, "accuracy": 0.0,
+                "calibration": [], "recent": []}
+
+    df["predicted_home_win"] = df["predicted_prob"].astype(float) > 0.5
+    df["home_win"] = df["home_win"].astype(bool)
+    df["correct"] = df["predicted_home_win"] == df["home_win"]
+
+    total   = len(df)
+    correct = int(df["correct"].sum())
+
+    # Calibration buckets
+    calibration = []
+    df["pred_bin"] = (df["predicted_prob"].astype(float) * 10).apply(int) / 10
+    for bucket, grp in df.groupby("pred_bin"):
+        calibration.append({
+            "predicted": float(bucket),
+            "actual":    float(grp["home_win"].astype(float).mean()),
+            "n":         len(grp),
+        })
+
+    # Recent picks (last 20 settled games)
+    recent = []
+    for _, r in df.head(20).iterrows():
+        recent.append({
+            "game_date":      str(r["game_date"])[:10],
+            "away_team":      r["away_team"],
+            "home_team":      r["home_team"],
+            "predicted_prob": float(r["predicted_prob"]),
+            "bet_side":       r.get("bet_side"),
+            "home_win":       bool(r["home_win"]),
+            "correct":        bool(r["correct"]),
+        })
+
+    return {
+        "total":       total,
+        "correct":     correct,
+        "incorrect":   total - correct,
+        "accuracy":    round(correct / total, 4) if total else 0.0,
+        "calibration": calibration,
+        "recent":      recent,
+    }
+
+
 # ---------------------------------------------------------------------------
 # API — Database browser
 # ---------------------------------------------------------------------------

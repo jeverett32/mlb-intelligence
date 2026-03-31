@@ -309,6 +309,32 @@ def get_all_bets() -> pd.DataFrame:
     return df
 
 
+def get_model_picks() -> pd.DataFrame:
+    """
+    Return all predicted games that have a known result (home_win).
+    Joins bets (for predictions) with games (for actual outcome).
+    Used to measure model accuracy independent of whether a bet was placed.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT b.game_pk, b.game_date, b.home_team, b.away_team,
+                       b.predicted_prob, b.bet_side, b.bet_frac, b.edge,
+                       b.market_implied_prob,
+                       g.home_win
+                FROM bets b
+                JOIN games g ON b.game_pk = g.game_pk
+                WHERE b.predicted_prob IS NOT NULL
+                  AND g.home_win IS NOT NULL
+                ORDER BY b.game_date DESC
+            """)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # balance table
 # ---------------------------------------------------------------------------

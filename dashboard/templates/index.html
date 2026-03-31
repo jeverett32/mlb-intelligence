@@ -418,7 +418,35 @@
 
   <!-- ── PERFORMANCE ── -->
   <div id="page-performance" class="page">
-    <div class="stat-row">
+
+    <!-- Model accuracy (all predicted games) -->
+    <div class="panel-header" style="background:#2c3e50;color:#fff;font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 14px;border-radius:6px 6px 0 0;margin-bottom:0">
+      Model Accuracy — All Predicted Games
+    </div>
+    <div class="stat-row" style="margin-top:0;border:1px solid #dde1e7;border-top:none;border-radius:0 0 6px 6px;background:#fff;padding:14px;margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Games Predicted</span><span class="icon">🔮</span></div>
+        <div class="stat-card-body"><div class="big" id="m-total">—</div><div class="delta neu">with known result</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Correct</span><span class="icon">✅</span></div>
+        <div class="stat-card-body"><div class="big" id="m-correct" style="color:#1e8449">—</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Incorrect</span><span class="icon">❌</span></div>
+        <div class="stat-card-body"><div class="big" id="m-incorrect" style="color:#b03a2e">—</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-header"><span>Model Accuracy</span><span class="icon">📊</span></div>
+        <div class="stat-card-body"><div class="big" id="m-acc">—</div><div class="delta neu">predicted winner correct</div></div>
+      </div>
+    </div>
+
+    <!-- Bet performance (real money) -->
+    <div class="panel-header" style="background:#1a2d4a;color:#fff;font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 14px;border-radius:6px 6px 0 0;margin-bottom:0">
+      Bet Performance — Real Wagers Only
+    </div>
+    <div class="stat-row" style="margin-top:0;border:1px solid #dde1e7;border-top:none;border-radius:0 0 6px 6px;background:#fff;padding:14px;margin-bottom:20px;">
       <div class="stat-card">
         <div class="stat-card-header"><span>Bets Settled</span></div>
         <div class="stat-card-body"><div class="big" id="p-total">—</div></div>
@@ -440,11 +468,21 @@
         <div class="stat-card-body"><div class="big" id="p-roi">—</div></div>
       </div>
     </div>
-    <div class="panel-row full">
+
+    <div class="panel-row">
       <div class="panel">
-        <div class="panel-header">Predicted Probability vs Actual Win Rate</div>
-        <div class="panel-body"><div class="chart-wrap" style="height:260px"><canvas id="chart-cal-perf"></canvas></div></div>
+        <div class="panel-header">Model Calibration — All Predictions</div>
+        <div class="panel-body"><div class="chart-wrap" style="height:240px"><canvas id="chart-cal-model"></canvas></div></div>
       </div>
+      <div class="panel">
+        <div class="panel-header">Calibration — Bet Games Only</div>
+        <div class="panel-body"><div class="chart-wrap" style="height:240px"><canvas id="chart-cal-perf"></canvas></div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Recent Model Picks</div>
+      <div class="table-wrap" id="model-picks-body"></div>
     </div>
   </div>
 
@@ -621,16 +659,17 @@ function calChartCfg(cal) {
 
 // ── Load data ─────────────────────────────────────────────────────────────
 async function loadAll() {
-  const [bal, perf, bets, upcoming] = await Promise.all([
+  const [bal, perf, bets, upcoming, modelAcc] = await Promise.all([
     fetch('/api/balance').then(r => r.json()),
     fetch('/api/performance').then(r => r.json()),
     fetch(`/api/bets?limit=${BETS_LIMIT}&offset=0`).then(r => r.json()),
     fetch('/api/upcoming').then(r => r.json()),
+    fetch('/api/model-accuracy').then(r => r.json()),
   ]);
   renderOverview(bal, perf);
   renderBets(bets);
   renderUpcoming(upcoming);
-  renderPerformance(perf);
+  renderPerformance(perf, modelAcc);
 }
 
 // ── Overview ─────────────────────────────────────────────────────────────
@@ -736,7 +775,51 @@ async function betsPage(dir) {
 }
 
 // ── Performance ───────────────────────────────────────────────────────────
-function renderPerformance(perf) {
+function renderPerformance(perf, modelAcc) {
+  // Model accuracy (all predicted games)
+  const mTotal = modelAcc.total || 0;
+  document.getElementById('m-total').textContent    = mTotal;
+  document.getElementById('m-correct').textContent  = modelAcc.correct ?? '—';
+  document.getElementById('m-incorrect').textContent= modelAcc.incorrect ?? '—';
+  const mAccEl = document.getElementById('m-acc');
+  mAccEl.textContent = mTotal ? fmtPct(modelAcc.accuracy) : '—';
+  mAccEl.style.color = modelAcc.accuracy >= 0.5 ? '#1e8449' : (mTotal ? '#b03a2e' : '#1a2d4a');
+
+  if (modelAcc.calibration && modelAcc.calibration.length) {
+    makeChart('chart-cal-model', calChartCfg(modelAcc.calibration));
+  } else {
+    document.getElementById('chart-cal-model').parentElement.innerHTML =
+      '<div class="empty">No settled predictions yet</div>';
+  }
+
+  // Recent picks table
+  const picksEl = document.getElementById('model-picks-body');
+  if (modelAcc.recent && modelAcc.recent.length) {
+    picksEl.innerHTML = `<table>
+      <thead><tr>
+        <th>Date</th><th>Away</th><th>Home</th>
+        <th>Model (Home%)</th><th>Predicted</th><th>Result</th><th>Correct?</th>
+      </tr></thead>
+      <tbody>${modelAcc.recent.map(r => {
+        const predSide = r.predicted_prob > 0.5 ? 'HOME' : 'AWAY';
+        const predCls  = r.predicted_prob > 0.5 ? 'blue' : 'gray';
+        const resultTxt = r.home_win ? 'Home Won' : 'Away Won';
+        const correctBadge = r.correct ? badge('✓ Correct','green') : badge('✗ Wrong','red');
+        return `<tr>
+          <td>${r.game_date}</td>
+          <td>${r.away_team}</td>
+          <td>${r.home_team}</td>
+          <td>${fmtPct(r.predicted_prob)}</td>
+          <td>${badge(predSide, predCls)}</td>
+          <td>${resultTxt}</td>
+          <td>${correctBadge}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } else {
+    picksEl.innerHTML = '<div class="empty">No settled predictions yet</div>';
+  }
+
+  // Bet performance (real wagers)
   document.getElementById('p-total').textContent  = perf.total_bets;
   document.getElementById('p-wins').textContent   = perf.wins;
   document.getElementById('p-losses').textContent = perf.losses;
@@ -748,7 +831,8 @@ function renderPerformance(perf) {
   if (perf.calibration && perf.calibration.length) {
     makeChart('chart-cal-perf', calChartCfg(perf.calibration));
   } else {
-    document.getElementById('chart-cal-perf').parentElement.innerHTML = '<div class="empty">No settled bets yet</div>';
+    document.getElementById('chart-cal-perf').parentElement.innerHTML =
+      '<div class="empty">No settled bets yet</div>';
   }
 }
 
