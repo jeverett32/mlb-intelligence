@@ -166,21 +166,27 @@ def settle_completed_games():
     for game_pk, game_date, home_team, away_team, _ in rows:
         try:
             resp = _requests.get(
-                f"https://statsapi.mlb.com/api/v1/game/{game_pk}/linescore",
+                "https://statsapi.mlb.com/api/v1/schedule",
+                params={"sportId": 1, "gamePk": game_pk, "hydrate": "linescore"},
                 timeout=10,
             )
             resp.raise_for_status()
-            data    = resp.json()
-            teams   = data.get("teams", {})
-            h_score = teams.get("home", {}).get("runs")
-            a_score = teams.get("away", {}).get("runs")
-            innings = data.get("currentInning", 0)
-            state   = data.get("inningState", "")
-
-            # Only settle if the game is truly final (9+ innings, Top/Bottom done)
-            if h_score is None or a_score is None:
+            data  = resp.json()
+            dates = data.get("dates", [])
+            if not dates:
                 continue
-            if innings < 9 or state not in ("", "End", "Final"):
+
+            game_data      = dates[0]["games"][0]
+            abstract_state = game_data.get("status", {}).get("abstractGameState", "")
+            if abstract_state != "Final":
+                continue
+
+            linescore = game_data.get("linescore", {})
+            teams_ls  = linescore.get("teams", {})
+            h_score   = teams_ls.get("home", {}).get("runs")
+            a_score   = teams_ls.get("away", {}).get("runs")
+
+            if h_score is None or a_score is None:
                 continue
 
             home_win = bool(h_score > a_score)

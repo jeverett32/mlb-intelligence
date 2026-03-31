@@ -55,22 +55,30 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
     for game_pk, game_date, home_team, away_team, _ in rows:
         try:
             resp = requests.get(
-                f"https://statsapi.mlb.com/api/v1/game/{game_pk}/linescore",
+                "https://statsapi.mlb.com/api/v1/schedule",
+                params={"sportId": 1, "gamePk": game_pk, "hydrate": "linescore"},
                 timeout=10,
             )
             resp.raise_for_status()
-            data    = resp.json()
-            teams   = data.get("teams", {})
-            h_score = teams.get("home", {}).get("runs")
-            a_score = teams.get("away", {}).get("runs")
-            innings = data.get("currentInning", 0)
-            state   = data.get("inningState", "")
+            data  = resp.json()
+            dates = data.get("dates", [])
+            if not dates:
+                print(f"  {away_team} @ {home_team}: no schedule data, skipping.")
+                continue
+
+            game_data     = dates[0]["games"][0]
+            abstract_state = game_data.get("status", {}).get("abstractGameState", "")
+            if abstract_state != "Final":
+                print(f"  {away_team} @ {home_team}: status={abstract_state!r}, skipping.")
+                continue
+
+            linescore = game_data.get("linescore", {})
+            teams_ls  = linescore.get("teams", {})
+            h_score   = teams_ls.get("home", {}).get("runs")
+            a_score   = teams_ls.get("away", {}).get("runs")
 
             if h_score is None or a_score is None:
-                print(f"  {away_team} @ {home_team}: no score yet, skipping.")
-                continue
-            if innings < 9 or state not in ("", "End", "Final"):
-                print(f"  {away_team} @ {home_team}: in progress (inning {innings} {state}), skipping.")
+                print(f"  {away_team} @ {home_team}: no score in linescore, skipping.")
                 continue
 
             home_win = bool(h_score > a_score)
