@@ -39,6 +39,8 @@ TEAM_NAME_TO_ABB = {
     "Miami Marlins": "MIA",        "Milwaukee Brewers": "MIL",
     "Minnesota Twins": "MIN",      "New York Mets": "NYM",
     "New York Yankees": "NYY",     "Oakland Athletics": "ATH",
+    "Athletics": "ATH",            "Las Vegas Athletics": "ATH",
+    "Sacramento Athletics": "ATH",
     "Philadelphia Phillies": "PHI","Pittsburgh Pirates": "PIT",
     "San Diego Padres": "SDP",     "San Francisco Giants": "SFG",
     "Seattle Mariners": "SEA",     "St. Louis Cardinals": "STL",
