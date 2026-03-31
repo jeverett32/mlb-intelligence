@@ -126,6 +126,84 @@ def run_pipeline_for_game(game_pk: str):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def settle_completed_games():
+    """
+    Fetch final scores from the MLB Stats API for any 2026 game that:
+      - is in the bets table (was processed by the pipeline)
+      - still has home_win = NULL in the games table (not yet settled)
+      - started more than 4 hours ago (safely complete)
+    Writes home_score, away_score, home_win back to the games table.
+    """
+    now_utc = datetime.now(timezone.utc)
+    cutoff  = now_utc - timedelta(hours=4)
+
+    try:
+        conn = DB.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
+                           g.game_time_utc
+                    FROM games g
+                    JOIN bets b ON g.game_pk = b.game_pk
+                    WHERE g.season = 2026
+                      AND g.home_win IS NULL
+                      AND g.game_time_utc IS NOT NULL
+                      AND g.game_time_utc::timestamptz < %s
+                """, (cutoff,))
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"  Settlement check failed: {e}")
+        return
+
+    if not rows:
+        return
+
+    print(f"  Settling {len(rows)} completed game(s)...")
+    import requests as _requests
+    for game_pk, game_date, home_team, away_team, _ in rows:
+        try:
+            resp = _requests.get(
+                f"https://statsapi.mlb.com/api/v1/game/{game_pk}/linescore",
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data    = resp.json()
+            teams   = data.get("teams", {})
+            h_score = teams.get("home", {}).get("runs")
+            a_score = teams.get("away", {}).get("runs")
+            innings = data.get("currentInning", 0)
+            state   = data.get("inningState", "")
+
+            # Only settle if the game is truly final (9+ innings, Top/Bottom done)
+            if h_score is None or a_score is None:
+                continue
+            if innings < 9 or state not in ("", "End", "Final"):
+                continue
+
+            home_win = bool(h_score > a_score)
+            conn2 = DB.get_connection()
+            try:
+                with conn2.cursor() as cur:
+                    cur.execute("""
+                        UPDATE games
+                        SET home_score = %s,
+                            away_score = %s,
+                            home_win   = %s,
+                            updated_at = NOW()
+                        WHERE game_pk = %s
+                    """, (int(h_score), int(a_score), home_win, int(game_pk)))
+                conn2.commit()
+            finally:
+                conn2.close()
+            print(f"    Settled: {away_team} @ {home_team} — "
+                  f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)")
+        except Exception as e:
+            print(f"    Could not settle game_pk={game_pk}: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="MLB betting pipeline orchestrator.")
     group = parser.add_mutually_exclusive_group()
@@ -150,6 +228,9 @@ def main():
     print("MLB pipeline orchestrator started. Press Ctrl+C to stop.\n")
 
     while True:
+        # Settle completed games before doing anything else
+        settle_completed_games()
+
         print("Refreshing MLB schedule...")
         try:
             subprocess.run([UV, "run", "fetch/fetch_data.py"], check=False)
