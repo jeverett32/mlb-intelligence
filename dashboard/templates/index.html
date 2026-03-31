@@ -350,11 +350,11 @@
 
 <!-- ── Nav ── -->
 <nav>
-  <button class="active" onclick="showPage('overview',this)">Overview</button>
-  <button onclick="showPage('upcoming',this)">Upcoming Games</button>
-  <button onclick="showPage('bets',this)">Bet Log</button>
-  <button onclick="showPage('performance',this)">Performance</button>
-  <button onclick="showPage('database',this)">Database</button>
+  <button data-page="overview"     onclick="showPage('overview',this)">Overview</button>
+  <button data-page="upcoming"     onclick="showPage('upcoming',this)">Upcoming Games</button>
+  <button data-page="bets"         onclick="showPage('bets',this)">Bet Log</button>
+  <button data-page="performance"  onclick="showPage('performance',this)">Performance</button>
+  <button data-page="database"     onclick="showPage('database',this)">Database</button>
 </nav>
 
 <main>
@@ -525,8 +525,17 @@ function showPage(name, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
+  window.location.hash = name;
   if (name === 'database') loadDbTable();
+}
+
+function restorePage() {
+  const hash = window.location.hash.replace('#', '');
+  const valid = ['overview', 'upcoming', 'bets', 'performance', 'database'];
+  const name  = valid.includes(hash) ? hash : 'overview';
+  const btn   = document.querySelector(`nav button[data-page="${name}"]`);
+  showPage(name, btn);
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────
@@ -882,6 +891,7 @@ async function fetchDbPage() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
+restorePage();
 loadToggle();
 loadAll();
 </script>
