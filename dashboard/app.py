@@ -192,9 +192,12 @@ def get_upcoming(email: str = Depends(require_auth)):
     if games_df.empty:
         return {"games": []}
 
-    today = pd.Timestamp.now().normalize()
+    today = pd.Timestamp.now(tz="UTC").normalize().tz_localize(None)
     games_df["game_date"] = pd.to_datetime(games_df["game_date"])
-    upcoming = games_df[games_df["game_date"] <= today + pd.Timedelta(days=1)].copy()
+    upcoming = games_df[
+        (games_df["game_date"] >= today) &
+        (games_df["game_date"] <= today + pd.Timedelta(days=1))
+    ].copy()
 
     bets_df = DB.get_all_bets()
     if not bets_df.empty:
