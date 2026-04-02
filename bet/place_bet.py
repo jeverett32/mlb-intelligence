@@ -20,6 +20,16 @@ import db as DB
 
 MLB_SERIES = "KXMLBGAME"
 
+# Kalshi uses different abbreviations than the MLB Stats API for some teams.
+MLB_TO_KALSHI = {
+    "KCR": "KC",
+    "CHW": "CWS",
+    "WSN": "WSH",
+    "SDP": "SD",
+    "SFG": "SF",
+    "ARI": "AZ",
+}
+
 
 # ---------------------------------------------------------------------------
 # Market discovery
@@ -40,8 +50,8 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str):
     resp.raise_for_status()
     markets = resp.json().get("markets", [])
 
-    home = home_team.upper()
-    away = away_team.upper()
+    home = MLB_TO_KALSHI.get(home_team.upper(), home_team.upper())
+    away = MLB_TO_KALSHI.get(away_team.upper(), away_team.upper())
     # "2026-04-01" → "260401" (YY + MMDD, how Kalshi formats dates in tickers)
     date_compact = game_date.replace("-", "")[2:8]
 
