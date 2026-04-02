@@ -489,6 +489,18 @@ def fetch_odds(schedule_df, today_only=False):
     if new_df.empty:
         print("  No valid odds from SBR. Trying The Odds API...")
         new_df = fetch_odds_api()
+        # Apply same sanity check to Odds API data
+        if not new_df.empty:
+            ml_cols = ["close_home_ml", "close_away_ml"]
+            bad_mask = pd.Series(False, index=new_df.index)
+            for col in ml_cols:
+                if col in new_df.columns:
+                    vals = pd.to_numeric(new_df[col], errors="coerce").abs()
+                    bad_mask = bad_mask | (vals > 1500)
+            n_bad = bad_mask.sum()
+            if n_bad > 0:
+                print(f"  WARNING: {n_bad} Odds API rows have implausible moneylines (|ml| > 1500) — dropping.")
+                new_df = new_df[~bad_mask]
 
     if new_df.empty:
         print("  No new odds from any source.")
