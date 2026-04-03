@@ -137,13 +137,18 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
     if not all_games:
         return [], None
 
-    # Find the earliest game that hasn't already started too long ago
+    # Find the earliest game that is still processable:
+    #   - not more than 3 hours in the past (safety net for stale games)
+    #   - at least MIN_GAME_TIME_MINUTES in the future (enough time to run pipeline)
     first_game = None
     for game in all_games:
         start = get_game_start_utc(game)
-        if start >= now_utc - timedelta(hours=3):
-            first_game = game
-            break
+        if start < now_utc - timedelta(hours=3):
+            continue  # too old, skip
+        if start < now_utc + timedelta(minutes=MIN_GAME_TIME_MINUTES):
+            continue  # too soon to process, skip
+        first_game = game
+        break
 
     if first_game is None:
         return [], None
@@ -153,15 +158,10 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
     window_end = first_start + timedelta(minutes=BATCH_WINDOW_MINUTES)
 
     # Collect all games in the batch window
-    batch = []
-    for game in all_games:
-        start = get_game_start_utc(game)
-        # Only include games starting within MIN_GAME_TIME_MINUTES to BATCH_WINDOW_MINUTES from now
-        if (
-            start >= now_utc + timedelta(minutes=MIN_GAME_TIME_MINUTES)
-            and start <= window_end
-        ):
-            batch.append(game)
+    batch = [
+        game for game in all_games
+        if first_start <= get_game_start_utc(game) <= window_end
+    ]
 
     return batch, run_at_utc
 
@@ -395,15 +395,6 @@ def main():
             f"\n  First start: {first_start.strftime('%Y-%m-%d %H:%M UTC')}"
             f"  |  Run at: {run_at_utc.strftime('%H:%M UTC')}"
         )
-
-        # Skip games that started more than 3 hours ago
-        if first_start < now_utc - timedelta(hours=3):
-            print(
-                f"  Batch already started too long ago — marking as processed and skipping."
-            )
-            for game in batch:
-                init_game_row(game)
-            continue
 
         if not args.now and run_at_utc > now_utc:
             sleep_secs = (run_at_utc - now_utc).total_seconds()
