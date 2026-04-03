@@ -470,7 +470,7 @@ def fetch_odds(schedule_df, today_only=False):
             odds_types=["moneyline", "totals"],
         ))
         new_df = _parse_scraped_odds(raw)
-        # Sanity check: MLB moneylines should never exceed ±1500 for regular games.
+        # Sanity check: MLB moneylines should never exceed ±700 for regular games.
         # Values beyond this indicate SBR returned futures/alternate market data.
         if not new_df.empty:
             ml_cols = ["close_home_ml", "close_away_ml"]
@@ -478,10 +478,10 @@ def fetch_odds(schedule_df, today_only=False):
             for col in ml_cols:
                 if col in new_df.columns:
                     vals = pd.to_numeric(new_df[col], errors="coerce").abs()
-                    bad_mask = bad_mask | (vals > 1500)
+                    bad_mask = bad_mask | (vals > 700)
             n_bad = bad_mask.sum()
             if n_bad > 0:
-                print(f"  WARNING: {n_bad} SBR rows have implausible moneylines (|ml| > 1500) — dropping.")
+                print(f"  WARNING: {n_bad} SBR rows have implausible moneylines (|ml| > 700) — dropping.")
                 new_df = new_df[~bad_mask]
     except Exception as e:
         print(f"  WARNING: SBR scraping failed: {e}")
@@ -496,10 +496,10 @@ def fetch_odds(schedule_df, today_only=False):
             for col in ml_cols:
                 if col in new_df.columns:
                     vals = pd.to_numeric(new_df[col], errors="coerce").abs()
-                    bad_mask = bad_mask | (vals > 1500)
+                    bad_mask = bad_mask | (vals > 700)
             n_bad = bad_mask.sum()
             if n_bad > 0:
-                print(f"  WARNING: {n_bad} Odds API rows have implausible moneylines (|ml| > 1500) — dropping.")
+                print(f"  WARNING: {n_bad} Odds API rows have implausible moneylines (|ml| > 700) — dropping.")
                 new_df = new_df[~bad_mask]
 
     if new_df.empty:
