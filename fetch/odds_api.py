@@ -14,7 +14,7 @@ within a short window.
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -29,23 +29,39 @@ CACHE_TTL_SECONDS = 300  # 5-minute cache window
 PREFERRED_BOOKS = ["draftkings", "fanduel", "betmgm", "betonlineag"]
 
 TEAM_NAME_TO_ABB = {
-    "Arizona Diamondbacks": "ARI", "Atlanta Braves": "ATL",
-    "Baltimore Orioles": "BAL",    "Boston Red Sox": "BOS",
-    "Chicago Cubs": "CHC",         "Chicago White Sox": "CHW",
-    "Cincinnati Reds": "CIN",      "Cleveland Guardians": "CLE",
-    "Colorado Rockies": "COL",     "Detroit Tigers": "DET",
-    "Houston Astros": "HOU",       "Kansas City Royals": "KCR",
-    "Los Angeles Angels": "LAA",   "Los Angeles Dodgers": "LAD",
-    "Miami Marlins": "MIA",        "Milwaukee Brewers": "MIL",
-    "Minnesota Twins": "MIN",      "New York Mets": "NYM",
-    "New York Yankees": "NYY",     "Oakland Athletics": "ATH",
-    "Athletics": "ATH",            "Las Vegas Athletics": "ATH",
+    "Arizona Diamondbacks": "ARI",
+    "Atlanta Braves": "ATL",
+    "Baltimore Orioles": "BAL",
+    "Boston Red Sox": "BOS",
+    "Chicago Cubs": "CHC",
+    "Chicago White Sox": "CHW",
+    "Cincinnati Reds": "CIN",
+    "Cleveland Guardians": "CLE",
+    "Colorado Rockies": "COL",
+    "Detroit Tigers": "DET",
+    "Houston Astros": "HOU",
+    "Kansas City Royals": "KCR",
+    "Los Angeles Angels": "LAA",
+    "Los Angeles Dodgers": "LAD",
+    "Miami Marlins": "MIA",
+    "Milwaukee Brewers": "MIL",
+    "Minnesota Twins": "MIN",
+    "New York Mets": "NYM",
+    "New York Yankees": "NYY",
+    "Oakland Athletics": "ATH",
+    "Athletics": "ATH",
+    "Las Vegas Athletics": "ATH",
     "Sacramento Athletics": "ATH",
-    "Philadelphia Phillies": "PHI","Pittsburgh Pirates": "PIT",
-    "San Diego Padres": "SDP",     "San Francisco Giants": "SFG",
-    "Seattle Mariners": "SEA",     "St. Louis Cardinals": "STL",
-    "Tampa Bay Rays": "TBR",       "Texas Rangers": "TEX",
-    "Toronto Blue Jays": "TOR",    "Washington Nationals": "WSN",
+    "Philadelphia Phillies": "PHI",
+    "Pittsburgh Pirates": "PIT",
+    "San Diego Padres": "SDP",
+    "San Francisco Giants": "SFG",
+    "Seattle Mariners": "SEA",
+    "St. Louis Cardinals": "STL",
+    "Tampa Bay Rays": "TBR",
+    "Texas Rangers": "TEX",
+    "Toronto Blue Jays": "TOR",
+    "Washington Nationals": "WSN",
 }
 
 
@@ -62,10 +78,14 @@ def _load_cache():
 
 def _save_cache(data):
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CACHE_PATH.write_text(json.dumps({
-        "fetched_at": time.time(),
-        "data": data,
-    }))
+    CACHE_PATH.write_text(
+        json.dumps(
+            {
+                "fetched_at": time.time(),
+                "data": data,
+            }
+        )
+    )
 
 
 def _fetch_from_api():
@@ -90,7 +110,7 @@ def _fetch_from_api():
     resp.raise_for_status()
 
     remaining = resp.headers.get("x-requests-remaining", "?")
-    used      = resp.headers.get("x-requests-used", "?")
+    used = resp.headers.get("x-requests-used", "?")
     print(f"  Odds API credits: {used} used, {remaining} remaining this month")
 
     return resp.json()
@@ -154,6 +174,11 @@ def fetch_odds_api() -> pd.DataFrame:
             else:
                 return pd.DataFrame()
 
+    # Only accept games starting within next 3 days to avoid futures markets
+    now_utc = datetime.now(timezone.utc)
+    max_days_ahead = 3
+    cutoff = now_utc + timedelta(days=max_days_ahead)
+
     rows = []
     for game in data:
         home_name = game.get("home_team", "")
@@ -165,9 +190,11 @@ def fetch_odds_api() -> pd.DataFrame:
 
         commence = game.get("commence_time", "")
         try:
-            game_date = datetime.fromisoformat(
-                commence.replace("Z", "+00:00")
-            ).strftime("%Y-%m-%d")
+            commence_dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
+            # Skip games too far in the future (likely futures markets)
+            if commence_dt > cutoff:
+                continue
+            game_date = commence_dt.strftime("%Y-%m-%d")
         except Exception:
             continue
 
@@ -182,21 +209,28 @@ def fetch_odds_api() -> pd.DataFrame:
         if home_ml is None or away_ml is None:
             continue
 
+        # Skip implausible odds (likely futures markets, not game lines)
+        # Regular season MLB game lines should be roughly -400 to +400
+        if abs(home_ml) > 500 or abs(away_ml) > 500:
+            continue
+
         tot_mkt, _ = _pick_book(bookmakers, "totals")
         total = _parse_totals(tot_mkt) if tot_mkt else None
 
-        rows.append({
-            "game_date":     game_date,
-            "home_team":     home_abb,
-            "away_team":     away_abb,
-            "open_home_ml":  home_ml,
-            "open_away_ml":  away_ml,
-            "close_home_ml": home_ml,
-            "close_away_ml": away_ml,
-            "open_total":    total,
-            "close_total":   total,
-            "odds_source":   f"odds-api:{h2h_book}",
-        })
+        rows.append(
+            {
+                "game_date": game_date,
+                "home_team": home_abb,
+                "away_team": away_abb,
+                "open_home_ml": home_ml,
+                "open_away_ml": away_ml,
+                "close_home_ml": home_ml,
+                "close_away_ml": away_ml,
+                "open_total": total,
+                "close_total": total,
+                "odds_source": f"odds-api:{h2h_book}",
+            }
+        )
 
     df = pd.DataFrame(rows)
     if not df.empty:
