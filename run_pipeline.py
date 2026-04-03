@@ -159,7 +159,8 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 
     # Collect all games in the batch window
     batch = [
-        game for game in all_games
+        game
+        for game in all_games
         if first_start <= get_game_start_utc(game) <= window_end
     ]
 
@@ -211,7 +212,7 @@ def run_batch(games: list[dict]):
         run_predict_and_bet(pks[0])
     else:
         print(f"\n  Running predict+bet for {len(pks)} games in parallel...")
-        with ThreadPoolExecutor(max_workers=len(pks)) as executor:
+        with ThreadPoolExecutor(max_workers=min(3, len(pks))) as executor:
             futures = {executor.submit(run_predict_and_bet, pk): pk for pk in pks}
             for future in as_completed(futures):
                 try:
