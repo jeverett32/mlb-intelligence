@@ -24,23 +24,25 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
     Returns the number of games successfully settled.
     """
     now_utc = datetime.now(timezone.utc)
-    cutoff  = now_utc - timedelta(hours=cutoff_hours)
+    cutoff = now_utc - timedelta(hours=cutoff_hours)
 
     # Find pipeline-processed games with no result yet
     conn = DB.get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
                        g.game_time_utc
                 FROM games g
-                JOIN bets b ON g.game_pk = b.game_pk
                 WHERE g.season = 2026
                   AND g.home_win IS NULL
                   AND g.game_time_utc IS NOT NULL
                   AND g.game_time_utc::timestamptz < %s
                 ORDER BY g.game_date, g.game_pk
-            """, (cutoff,))
+            """,
+                (cutoff,),
+            )
             rows = cur.fetchall()
     finally:
         conn.close()
@@ -60,22 +62,24 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                 timeout=10,
             )
             resp.raise_for_status()
-            data  = resp.json()
+            data = resp.json()
             dates = data.get("dates", [])
             if not dates:
                 print(f"  {away_team} @ {home_team}: no schedule data, skipping.")
                 continue
 
-            game_data     = dates[0]["games"][0]
+            game_data = dates[0]["games"][0]
             abstract_state = game_data.get("status", {}).get("abstractGameState", "")
             if abstract_state != "Final":
-                print(f"  {away_team} @ {home_team}: status={abstract_state!r}, skipping.")
+                print(
+                    f"  {away_team} @ {home_team}: status={abstract_state!r}, skipping."
+                )
                 continue
 
             linescore = game_data.get("linescore", {})
-            teams_ls  = linescore.get("teams", {})
-            h_score   = teams_ls.get("home", {}).get("runs")
-            a_score   = teams_ls.get("away", {}).get("runs")
+            teams_ls = linescore.get("teams", {})
+            h_score = teams_ls.get("home", {}).get("runs")
+            a_score = teams_ls.get("away", {}).get("runs")
 
             if h_score is None or a_score is None:
                 print(f"  {away_team} @ {home_team}: no score in linescore, skipping.")
@@ -86,24 +90,31 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
             conn2 = DB.get_connection()
             try:
                 with conn2.cursor() as cur:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         UPDATE games
                         SET home_score = %s,
                             away_score = %s,
                             home_win   = %s,
                             updated_at = NOW()
                         WHERE game_pk = %s
-                    """, (int(h_score), int(a_score), home_win, int(game_pk)))
+                    """,
+                        (int(h_score), int(a_score), home_win, int(game_pk)),
+                    )
                 conn2.commit()
             finally:
                 conn2.close()
 
             result = "Home win" if home_win else "Away win"
-            print(f"  Settled: {away_team} @ {home_team} — {a_score}-{h_score} ({result})")
+            print(
+                f"  Settled: {away_team} @ {home_team} — {a_score}-{h_score} ({result})"
+            )
             settled_count += 1
 
         except Exception as e:
-            print(f"  ERROR settling game_pk={game_pk} ({away_team} @ {home_team}): {e}")
+            print(
+                f"  ERROR settling game_pk={game_pk} ({away_team} @ {home_team}): {e}"
+            )
 
     print(f"\nDone. Settled {settled_count}/{len(rows)} game(s).")
     return settled_count
