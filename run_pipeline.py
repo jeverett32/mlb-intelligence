@@ -91,14 +91,23 @@ def get_game_start_utc(game: dict) -> datetime:
 
 def get_all_upcoming_unprocessed() -> list[dict]:
     """
-    Return all upcoming 2026 games not yet in the bets table, sorted by start time.
+    Return all upcoming 2026 games that need predictions (predicted_prob is NULL),
+    sorted by start time.
     """
     try:
         df = DB.get_games_df(season=2026, upcoming_only=True)
         if df.empty:
             return []
-        processed = DB.get_processed_game_pks()
-        df = df[~df["game_pk"].astype(str).isin({str(p) for p in processed})]
+
+        # Get game_pks that already have predictions - these are done
+        conn = DB.get_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT game_pk FROM bets WHERE predicted_prob IS NOT NULL")
+            done_game_pks = {row[0] for row in cur.fetchall()}
+        conn.close()
+
+        # Filter out games that already have predictions
+        df = df[~df["game_pk"].astype(str).isin({str(p) for p in done_game_pks})]
     except Exception as e:
         print(f"  WARNING: DB unavailable ({e}), falling back to CSV.")
         if not MLB_CSV.exists():
