@@ -34,6 +34,7 @@ def _verify_password(password: str, hashed: str) -> bool:
     except Exception:
         return False
 
+
 # Ensure auth tables exist on startup
 DB.init_auth_tables()
 
@@ -44,6 +45,7 @@ COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days in seconds
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_session_email(request: Request):
     """Return the email for the current session, or None if not logged in."""
@@ -63,16 +65,17 @@ def require_auth(request: Request):
 # Login / logout routes (no auth required)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, error: str = ""):
     # Already logged in → go to dashboard
     if _get_session_email(request):
         return RedirectResponse("/", status_code=302)
-    error_html = (
-        f'<div class="error-banner">{error}</div>' if error else ""
-    )
-    return (TEMPLATES_DIR / "login.html").read_text(encoding="utf-8").replace(
-        "{{ERROR_BANNER}}", error_html
+    error_html = f'<div class="error-banner">{error}</div>' if error else ""
+    return (
+        (TEMPLATES_DIR / "login.html")
+        .read_text(encoding="utf-8")
+        .replace("{{ERROR_BANNER}}", error_html)
     )
 
 
@@ -80,7 +83,9 @@ def login_page(request: Request, error: str = ""):
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
     stored_hash = DB.get_user_hash(email)
     if not stored_hash or not _verify_password(password, stored_hash):
-        return RedirectResponse("/login?error=Invalid+email+or+password", status_code=302)
+        return RedirectResponse(
+            "/login?error=Invalid+email+or+password", status_code=302
+        )
 
     session_id = DB.create_session(email)
     response = RedirectResponse("/", status_code=302)
@@ -108,6 +113,7 @@ def logout(request: Request):
 # Frontend (auth required)
 # ---------------------------------------------------------------------------
 
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     if not _get_session_email(request):
@@ -119,15 +125,20 @@ def index(request: Request):
 # API — Settings (live betting toggle)
 # ---------------------------------------------------------------------------
 
+
 class SettingPayload(BaseModel):
     value: str
+
 
 @app.get("/api/settings")
 def get_settings(email: str = Depends(require_auth)):
     return {"live_betting": DB.is_live_betting()}
 
+
 @app.post("/api/settings/{key}")
-def update_setting(key: str, payload: SettingPayload, email: str = Depends(require_auth)):
+def update_setting(
+    key: str, payload: SettingPayload, email: str = Depends(require_auth)
+):
     allowed = {"live_betting"}
     if key not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
@@ -139,6 +150,7 @@ def update_setting(key: str, payload: SettingPayload, email: str = Depends(requi
 # API — Bets
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/bets")
 def get_bets(limit: int = 100, offset: int = 0, email: str = Depends(require_auth)):
     df = DB.get_all_bets()
@@ -146,26 +158,34 @@ def get_bets(limit: int = 100, offset: int = 0, email: str = Depends(require_aut
         return {"bets": [], "total": 0}
 
     if "result" in df.columns and "bet_dollars" in df.columns:
+
         def calc_pnl(row):
             if row.get("result") is None or row.get("bet_dollars") is None:
                 return None
-            won = (row["result"] is True  and row["bet_side"] == "home") or \
-                  (row["result"] is False and row["bet_side"] == "away")
+            won = (row["result"] is True and row["bet_side"] == "home") or (
+                row["result"] is False and row["bet_side"] == "away"
+            )
             mp = row.get("market_implied_prob")
             bd = float(row["bet_dollars"] or 0)
             if mp and float(mp) > 0:
-                ratio = (1/float(mp) - 1) if row["bet_side"] == "home" else (1/(1-float(mp)) - 1)
+                ratio = (
+                    (1 / float(mp) - 1)
+                    if row["bet_side"] == "home"
+                    else (1 / (1 - float(mp)) - 1)
+                )
                 return round(bd * ratio, 2) if won else -bd
             return None
+
         df["profit_loss"] = df.apply(calc_pnl, axis=1)
 
     total = len(df)
-    return {"bets": _safe_records(df.iloc[offset: offset + limit]), "total": total}
+    return {"bets": _safe_records(df.iloc[offset : offset + limit]), "total": total}
 
 
 # ---------------------------------------------------------------------------
 # API — Balance
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/balance")
 def get_balance(email: str = Depends(require_auth)):
@@ -182,6 +202,7 @@ def get_balance(email: str = Depends(require_auth)):
 # API — Upcoming games
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/upcoming")
 def get_upcoming(email: str = Depends(require_auth)):
     try:
@@ -195,15 +216,22 @@ def get_upcoming(email: str = Depends(require_auth)):
     today = pd.Timestamp.now(tz="America/Denver").normalize().tz_localize(None)
     games_df["game_date"] = pd.to_datetime(games_df["game_date"])
     upcoming = games_df[
-        (games_df["game_date"] >= today) &
-        (games_df["game_date"] <= today + pd.Timedelta(days=1))
+        (games_df["game_date"] >= today)
+        & (games_df["game_date"] <= today + pd.Timedelta(days=1))
     ].copy()
 
     bets_df = DB.get_all_bets()
     if not bets_df.empty:
-        pred_cols = ["game_pk", "predicted_prob", "edge", "bet_side", "bet_frac", "market_implied_prob"]
+        pred_cols = [
+            "game_pk",
+            "predicted_prob",
+            "edge",
+            "bet_side",
+            "bet_frac",
+            "market_implied_prob",
+        ]
         available = [c for c in pred_cols if c in bets_df.columns]
-        bets_df["game_pk"]  = bets_df["game_pk"].astype(str)
+        bets_df["game_pk"] = bets_df["game_pk"].astype(str)
         upcoming["game_pk"] = upcoming["game_pk"].astype(str)
         upcoming = upcoming.merge(bets_df[available], on="game_pk", how="left")
 
@@ -211,16 +239,29 @@ def get_upcoming(email: str = Depends(require_auth)):
         upcoming = upcoming.sort_values("game_time_utc", na_position="last")
 
     cols = [
-        "game_pk", "game_date", "game_time_utc", "home_team", "away_team",
-        "home_implied_prob", "away_implied_prob", "close_home_ml", "close_away_ml",
-        "predicted_prob", "edge", "bet_side", "bet_frac",
+        "game_pk",
+        "game_date",
+        "game_time_utc",
+        "home_team",
+        "away_team",
+        "home_implied_prob",
+        "away_implied_prob",
+        "close_home_ml",
+        "close_away_ml",
+        "predicted_prob",
+        "edge",
+        "bet_side",
+        "bet_frac",
     ]
-    return {"games": _safe_records(upcoming[[c for c in cols if c in upcoming.columns]])}
+    return {
+        "games": _safe_records(upcoming[[c for c in cols if c in upcoming.columns]])
+    }
 
 
 # ---------------------------------------------------------------------------
 # API — Performance
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/performance")
 def get_performance(email: str = Depends(require_auth)):
@@ -234,46 +275,58 @@ def get_performance(email: str = Depends(require_auth)):
         return _empty_perf()
 
     def won(r):
-        return (r["result"] is True  and r["bet_side"] == "home") or \
-               (r["result"] is False and r["bet_side"] == "away")
+        return (r["result"] is True and r["bet_side"] == "home") or (
+            r["result"] is False and r["bet_side"] == "away"
+        )
 
-    total_bets    = len(settled)
-    wins          = int(settled.apply(won, axis=1).sum())
+    total_bets = len(settled)
+    wins = int(settled.apply(won, axis=1).sum())
     total_wagered = settled["bet_dollars"].astype(float).sum()
     total_returned = 0.0
     for _, r in settled.iterrows():
         mp = r.get("market_implied_prob")
         bd = float(r.get("bet_dollars") or 0)
         if mp and float(mp) > 0:
-            ratio = 1/float(mp) if r["bet_side"] == "home" else 1/(1-float(mp))
+            ratio = 1 / float(mp) if r["bet_side"] == "home" else 1 / (1 - float(mp))
             total_returned += bd * ratio if won(r) else 0
 
     roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
 
     calibration = []
     if "predicted_prob" in settled.columns:
-        settled["pred_bin"] = (settled["predicted_prob"].astype(float) * 10).astype(int) / 10
+        settled["pred_bin"] = (settled["predicted_prob"].astype(float) * 10).astype(
+            int
+        ) / 10
         for bucket, grp in settled.groupby("pred_bin"):
-            calibration.append({
-                "predicted": float(bucket),
-                "actual":    float(grp.apply(won, axis=1).mean()),
-                "n":         len(grp),
-            })
+            calibration.append(
+                {
+                    "predicted": float(bucket),
+                    "actual": float(grp.apply(won, axis=1).mean()),
+                    "n": len(grp),
+                }
+            )
 
     return {
-        "total_bets":    total_bets,
-        "wins":          wins,
-        "losses":        total_bets - wins,
-        "accuracy":      round(wins / total_bets, 4) if total_bets else 0.0,
+        "total_bets": total_bets,
+        "wins": wins,
+        "losses": total_bets - wins,
+        "accuracy": round(wins / total_bets, 4) if total_bets else 0.0,
         "total_wagered": round(total_wagered, 2),
-        "roi_pct":       round(roi * 100, 2),
-        "calibration":   calibration,
+        "roi_pct": round(roi * 100, 2),
+        "calibration": calibration,
     }
 
 
 def _empty_perf():
-    return {"total_bets": 0, "wins": 0, "losses": 0, "accuracy": 0.0,
-            "total_wagered": 0.0, "roi_pct": 0.0, "calibration": []}
+    return {
+        "total_bets": 0,
+        "wins": 0,
+        "losses": 0,
+        "accuracy": 0.0,
+        "total_wagered": 0.0,
+        "roi_pct": 0.0,
+        "calibration": [],
+    }
 
 
 @app.get("/api/model-accuracy")
@@ -282,49 +335,85 @@ def get_model_accuracy(email: str = Depends(require_auth)):
     Model accuracy across ALL predicted games, not just ones where a bet
     was placed. Compares predicted_prob > 0.5 (home win prediction) against
     the actual home_win result in the games table.
+
+    Also calculates market accuracy (market predicts home when market_implied_prob > 0.5).
     """
     df = DB.get_model_picks()
     if df.empty:
-        return {"total": 0, "correct": 0, "incorrect": 0, "accuracy": 0.0,
-                "calibration": [], "recent": []}
+        return {
+            "total": 0,
+            "correct": 0,
+            "incorrect": 0,
+            "accuracy": 0.0,
+            "market_total": 0,
+            "market_correct": 0,
+            "market_incorrect": 0,
+            "market_accuracy": 0.0,
+            "calibration": [],
+            "recent": [],
+        }
 
     df["predicted_home_win"] = df["predicted_prob"].astype(float) > 0.5
     df["home_win"] = df["home_win"].astype(bool)
     df["correct"] = df["predicted_home_win"] == df["home_win"]
 
-    total   = len(df)
+    # Market prediction: market_implied_prob > 0.5 means market predicts home win
+    df["market_predicted_home_win"] = df["market_implied_prob"].astype(float) > 0.5
+    df["market_correct"] = df["market_predicted_home_win"] == df["home_win"]
+
+    total = len(df)
     correct = int(df["correct"].sum())
+
+    market_total = len(df[df["market_implied_prob"].notna()])
+    market_correct = int(df[df["market_implied_prob"].notna()]["market_correct"].sum())
 
     # Calibration buckets
     calibration = []
     df["pred_bin"] = (df["predicted_prob"].astype(float) * 10).apply(int) / 10
     for bucket, grp in df.groupby("pred_bin"):
-        calibration.append({
-            "predicted": float(bucket),
-            "actual":    float(grp["home_win"].astype(float).mean()),
-            "n":         len(grp),
-        })
+        calibration.append(
+            {
+                "predicted": float(bucket),
+                "actual": float(grp["home_win"].astype(float).mean()),
+                "n": len(grp),
+            }
+        )
 
     # Recent picks (last 20 settled games)
     recent = []
     for _, r in df.head(20).iterrows():
-        recent.append({
-            "game_date":      str(r["game_date"])[:10],
-            "away_team":      r["away_team"],
-            "home_team":      r["home_team"],
-            "predicted_prob": float(r["predicted_prob"]),
-            "bet_side":       r.get("bet_side"),
-            "home_win":       bool(r["home_win"]),
-            "correct":        bool(r["correct"]),
-        })
+        market_prob = r.get("market_implied_prob")
+        has_market = pd.notna(market_prob)
+        market_correct_val = bool(r["market_correct"]) if has_market else None
+        market_pred_val = bool(r["market_predicted_home_win"]) if has_market else None
+        recent.append(
+            {
+                "game_date": str(r["game_date"])[:10],
+                "away_team": r["away_team"],
+                "home_team": r["home_team"],
+                "predicted_prob": float(r["predicted_prob"]),
+                "market_prob": float(market_prob) if market_prob is not None else None,
+                "bet_side": r.get("bet_side"),
+                "home_win": bool(r["home_win"]),
+                "model_correct": bool(r["correct"]),
+                "market_correct": market_correct_val,
+                "market_pred_home": market_pred_val,
+            }
+        )
 
     return {
-        "total":       total,
-        "correct":     correct,
-        "incorrect":   total - correct,
-        "accuracy":    round(correct / total, 4) if total else 0.0,
+        "total": total,
+        "correct": correct,
+        "incorrect": total - correct,
+        "accuracy": round(correct / total, 4) if total else 0.0,
+        "market_total": market_total,
+        "market_correct": market_correct,
+        "market_incorrect": market_total - market_correct,
+        "market_accuracy": round(market_correct / market_total, 4)
+        if market_total
+        else 0.0,
         "calibration": calibration,
-        "recent":      recent,
+        "recent": recent,
     }
 
 
@@ -332,9 +421,11 @@ def get_model_accuracy(email: str = Depends(require_auth)):
 # API — Database browser
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/db/{table}")
-def browse_table(table: str, limit: int = 50, offset: int = 0,
-                 email: str = Depends(require_auth)):
+def browse_table(
+    table: str, limit: int = 50, offset: int = 0, email: str = Depends(require_auth)
+):
     try:
         return DB.browse_table(table, limit=limit, offset=offset)
     except ValueError as e:
@@ -346,6 +437,7 @@ def browse_table(table: str, limit: int = 50, offset: int = 0,
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_records(df: pd.DataFrame) -> list:
     records = []
