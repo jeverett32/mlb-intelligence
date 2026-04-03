@@ -1,7 +1,7 @@
 """
 Place the model's bet on Kalshi for the target game.
-Reads bet_frac and bet_side from data/games.csv, sizes against data/balance.csv,
-finds the Kalshi market, and places a limit order.
+Reads bet_frac and bet_side from the bets table, sizes against current balance,
+finds the Kalshi market, and places a market order (executes immediately at best price).
 
 Run from project root: uv run bet/place_bet.py --game_pk 12345
 """
@@ -158,12 +158,13 @@ def place_bet(game_pk: str):
     # --- Place order ---
     dry_run = not DB.is_live_betting()
     if dry_run:
-        print(f"\n  [DRY RUN] Would place order:")
+        print(f"\n  [DRY RUN] Would place market order:")
         print(f"    Ticker:        {ticker}")
         print(f"    Side:          {side}")
         print(f"    Contracts:     {n_contracts}")
-        print(f"    Yes price:     {yes_price_cents}¢")
-        print(f"    Est. cost:     ${actual_cost:.2f}")
+        print(
+            f"    Est. cost:     ${actual_cost:.2f} (based on market price {yes_price_cents}¢)"
+        )
         print(f"  [DRY RUN] No real order was placed.")
         return
 
@@ -174,10 +175,8 @@ def place_bet(game_pk: str):
         "ticker": ticker,
         "side": side,
         "action": "buy",
-        "type": "limit",
+        "type": "market",
         "count": n_contracts,
-        "yes_price": yes_price_cents,
-        "time_in_force": "good_till_canceled",
         "client_order_id": str(uuid.uuid4()),
     }
 
