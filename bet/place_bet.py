@@ -35,6 +35,7 @@ MLB_TO_KALSHI = {
 # Market discovery
 # ---------------------------------------------------------------------------
 
+
 def find_kalshi_market(home_team: str, away_team: str, game_date: str):
     """
     Dynamically find the open Kalshi market for this game.
@@ -74,6 +75,7 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str):
 # Main bet placement
 # ---------------------------------------------------------------------------
 
+
 def place_bet(game_pk: str):
     # --- Load bet row from DB ---
     row = DB.get_bet(game_pk)
@@ -87,13 +89,15 @@ def place_bet(game_pk: str):
         print("No bet indicated — skipping.")
         return
 
-    home_team    = str(row["home_team"])
-    away_team    = str(row["away_team"])
-    game_date    = str(row["game_date"])[:10]
-    market_prob  = row.get("market_implied_prob")
+    home_team = str(row["home_team"])
+    away_team = str(row["away_team"])
+    game_date = str(row["game_date"])[:10]
+    market_prob = row.get("market_implied_prob")
 
     if market_prob is None:
-        sys.exit("ERROR: market_implied_prob missing in bets table. Cannot size the bet.")
+        sys.exit(
+            "ERROR: market_implied_prob missing in bets table. Cannot size the bet."
+        )
     market_prob = float(market_prob)
 
     # --- Size the bet ---
@@ -101,10 +105,10 @@ def place_bet(game_pk: str):
     if balance_cents is None:
         sys.exit("ERROR: No balance in DB. Run fetch/fetch_balance.py first.")
     balance_dollars = balance_cents / 100.0
-    bet_dollars     = round(balance_dollars * bet_frac, 2)
+    bet_dollars = round(balance_dollars * bet_frac, 2)
 
     print(f"  Bankroll:        ${balance_dollars:.2f}")
-    print(f"  Kelly fraction:  {bet_frac*100:.2f}%")
+    print(f"  Kelly fraction:  {bet_frac * 100:.2f}%")
     print(f"  Bet amount:      ${bet_dollars:.2f} on {bet_side.upper()}")
 
     if bet_dollars < 0.01:
@@ -115,17 +119,19 @@ def place_bet(game_pk: str):
     yes_price_cents = max(1, min(99, round(market_prob * 100)))
 
     if bet_side == "home":
-        side              = "yes"
-        cost_per_contract = yes_price_cents / 100.0        # cost of one YES contract
+        side = "yes"
+        cost_per_contract = yes_price_cents / 100.0  # cost of one YES contract
     else:  # away
-        side              = "no"
+        side = "no"
         cost_per_contract = (100 - yes_price_cents) / 100.0  # cost of one NO contract
 
     n_contracts = max(1, int(bet_dollars / cost_per_contract))
     actual_cost = round(n_contracts * cost_per_contract, 2)
 
     print(f"  Side:            {side} (yes_price={yes_price_cents}¢)")
-    print(f"  Contracts:       {n_contracts} × ${cost_per_contract:.2f} = ${actual_cost:.2f}")
+    print(
+        f"  Contracts:       {n_contracts} × ${cost_per_contract:.2f} = ${actual_cost:.2f}"
+    )
 
     # --- Load Kalshi credentials ---
     key_id, private_key = load_credentials()
@@ -142,11 +148,11 @@ def place_bet(game_pk: str):
         )
     print(f"  Market found:    {ticker}")
 
-    # Confirm market is still open
+    # Confirm market is still open (Kalshi uses "open" or "active")
     resp = requests.get(base_url + f"/markets/{ticker}", timeout=10)
     resp.raise_for_status()
     mkt_status = resp.json().get("market", {}).get("status", "unknown")
-    if mkt_status != "open":
+    if mkt_status not in ("open", "active"):
         sys.exit(f"ERROR: Market {ticker} is '{mkt_status}' — cannot place order.")
 
     # --- Place order ---
@@ -162,16 +168,16 @@ def place_bet(game_pk: str):
         return
 
     order_path = api_path("portfolio/orders")
-    headers    = auth_headers(key_id, private_key, "POST", order_path)
+    headers = auth_headers(key_id, private_key, "POST", order_path)
 
     order_body = {
-        "ticker":          ticker,
-        "side":            side,
-        "action":          "buy",
-        "type":            "limit",
-        "count":           n_contracts,
-        "yes_price":       yes_price_cents,
-        "time_in_force":   "good_till_canceled",
+        "ticker": ticker,
+        "side": side,
+        "action": "buy",
+        "type": "limit",
+        "count": n_contracts,
+        "yes_price": yes_price_cents,
+        "time_in_force": "good_till_canceled",
         "client_order_id": str(uuid.uuid4()),
     }
 
@@ -183,7 +189,7 @@ def place_bet(game_pk: str):
     )
 
     if resp.status_code == 201:
-        order    = resp.json()["order"]
+        order = resp.json()["order"]
         order_id = order["order_id"]
         print(f"\n  Order placed:    {order_id}")
         print(f"  Status:          {order['status']}")
@@ -197,6 +203,8 @@ def place_bet(game_pk: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Place Kalshi bet for a game.")
-    parser.add_argument("--game_pk", required=True, type=str, help="MLB Stats API game_pk")
+    parser.add_argument(
+        "--game_pk", required=True, type=str, help="MLB Stats API game_pk"
+    )
     args = parser.parse_args()
     place_bet(args.game_pk)

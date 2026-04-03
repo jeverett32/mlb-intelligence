@@ -1,3 +1,12 @@
+# ── Temp/debug scripts for homelab access ──────────────────────────────────────
+temp_check.py
+check_pipeline.py
+deploy_pipeline.py
+deploy_fix.py
+deploy_dashboard.py
+restart_pipeline.py
+simple_check.py
+
 # ── Secrets ──────────────────────────────────────────────────────────────────
 .env
 *.pem

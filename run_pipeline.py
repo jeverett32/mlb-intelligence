@@ -34,8 +34,8 @@ load_dotenv()
 
 import db as DB
 
-EASTERN  = ZoneInfo("America/New_York")
-MLB_CSV  = Path("data/mlb_2026.csv")   # local CSV fallback
+EASTERN = ZoneInfo("America/New_York")
+MLB_CSV = Path("data/mlb_2026.csv")  # local CSV fallback
 
 # How many minutes before game start to trigger the pipeline
 LEAD_MINUTES = 15
@@ -43,10 +43,14 @@ LEAD_MINUTES = 15
 # Games starting within this window of the earliest game are batched together
 BATCH_WINDOW_MINUTES = 30
 
+# Don't process games that start less than this many minutes from now
+MIN_GAME_TIME_MINUTES = 10
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def run_step(cmd: list[str]):
     """Run a pipeline step as a subprocess. Raises RuntimeError on non-zero exit."""
@@ -60,7 +64,7 @@ def run_step(cmd: list[str]):
 
 def init_game_row(game: dict):
     """Insert a bare bet row for this game if it doesn't already exist."""
-    game_pk   = int(game["game_pk"])
+    game_pk = int(game["game_pk"])
     game_date = str(game.get("game_date", ""))[:10]
     home_team = str(game.get("home_team", ""))
     away_team = str(game.get("away_team", ""))
@@ -75,10 +79,14 @@ def get_game_start_utc(game: dict) -> datetime:
     """
     game_time_utc = str(game.get("game_time_utc") or "")
     try:
-        return datetime.strptime(game_time_utc[:16], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        return datetime.strptime(game_time_utc[:16], "%Y-%m-%d %H:%M").replace(
+            tzinfo=timezone.utc
+        )
     except ValueError:
         date_str = str(game.get("game_date", ""))[:10]
-        return datetime.strptime(date_str, "%Y-%m-%d").replace(hour=18, tzinfo=timezone.utc)
+        return datetime.strptime(date_str, "%Y-%m-%d").replace(
+            hour=18, tzinfo=timezone.utc
+        )
 
 
 def get_all_upcoming_unprocessed() -> list[dict]:
@@ -114,7 +122,7 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
     kick off the pipeline (LEAD_MINUTES before the earliest game).
     Returns ([], None) if nothing to process.
     """
-    now_utc  = datetime.now(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
     all_games = get_all_upcoming_unprocessed()
 
     if not all_games:
@@ -132,14 +140,18 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
         return [], None
 
     first_start = get_game_start_utc(first_game)
-    run_at_utc  = first_start - timedelta(minutes=LEAD_MINUTES)
-    window_end  = first_start + timedelta(minutes=BATCH_WINDOW_MINUTES)
+    run_at_utc = first_start - timedelta(minutes=LEAD_MINUTES)
+    window_end = first_start + timedelta(minutes=BATCH_WINDOW_MINUTES)
 
     # Collect all games in the batch window
     batch = []
     for game in all_games:
         start = get_game_start_utc(game)
-        if start >= now_utc - timedelta(hours=3) and start <= window_end:
+        # Only include games starting within MIN_GAME_TIME_MINUTES to BATCH_WINDOW_MINUTES from now
+        if (
+            start >= now_utc + timedelta(minutes=MIN_GAME_TIME_MINUTES)
+            and start <= window_end
+        ):
             batch.append(game)
 
     return batch, run_at_utc
@@ -148,6 +160,7 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 # ---------------------------------------------------------------------------
 # Pipeline execution
 # ---------------------------------------------------------------------------
+
 
 def run_predict_and_bet(game_pk: str):
     """Run predict + place_bet for one game (fetch already done by caller)."""
@@ -166,9 +179,9 @@ def run_batch(games: list[dict]):
       2. predict + place_bet in parallel for each game
     """
     labels = ", ".join(f"{g.get('away_team')}@{g.get('home_team')}" for g in games)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"BATCH START — {len(games)} game(s): {labels}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Shared fetch steps — run once for the whole batch
     try:
@@ -197,16 +210,16 @@ def run_batch(games: list[dict]):
                 except Exception as e:
                     print(f"  Thread error for game_pk={futures[future]}: {e}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"BATCH COMPLETE — {len(games)} game(s)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def run_pipeline_for_game(game_pk: str):
     """Single-game pipeline (used for --game_pk one-shot mode)."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"PIPELINE START — game_pk={game_pk}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     try:
         run_step(["uv", "run", "fetch/fetch_data.py"])
         run_step(["uv", "run", "fetch/fetch_balance.py"])
@@ -215,14 +228,15 @@ def run_pipeline_for_game(game_pk: str):
     except RuntimeError as e:
         print(f"\nERROR: {e}")
         return
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"PIPELINE COMPLETE — game_pk={game_pk}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 # ---------------------------------------------------------------------------
 # Settlement
 # ---------------------------------------------------------------------------
+
 
 def settle_completed_games():
     """
@@ -233,13 +247,14 @@ def settle_completed_games():
     Writes home_score, away_score, home_win back to the games table.
     """
     now_utc = datetime.now(timezone.utc)
-    cutoff  = now_utc - timedelta(hours=4)
+    cutoff = now_utc - timedelta(hours=4)
 
     try:
         conn = DB.get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
                            g.game_time_utc
                     FROM games g
@@ -248,7 +263,9 @@ def settle_completed_games():
                       AND g.home_win IS NULL
                       AND g.game_time_utc IS NOT NULL
                       AND g.game_time_utc::timestamptz < %s
-                """, (cutoff,))
+                """,
+                    (cutoff,),
+                )
                 rows = cur.fetchall()
         finally:
             conn.close()
@@ -261,6 +278,7 @@ def settle_completed_games():
 
     print(f"  Settling {len(rows)} completed game(s)...")
     import requests as _requests
+
     for game_pk, game_date, home_team, away_team, _ in rows:
         try:
             resp = _requests.get(
@@ -269,20 +287,20 @@ def settle_completed_games():
                 timeout=10,
             )
             resp.raise_for_status()
-            data  = resp.json()
+            data = resp.json()
             dates = data.get("dates", [])
             if not dates:
                 continue
 
-            game_data      = dates[0]["games"][0]
+            game_data = dates[0]["games"][0]
             abstract_state = game_data.get("status", {}).get("abstractGameState", "")
             if abstract_state != "Final":
                 continue
 
             linescore = game_data.get("linescore", {})
-            teams_ls  = linescore.get("teams", {})
-            h_score   = teams_ls.get("home", {}).get("runs")
-            a_score   = teams_ls.get("away", {}).get("runs")
+            teams_ls = linescore.get("teams", {})
+            h_score = teams_ls.get("home", {}).get("runs")
+            a_score = teams_ls.get("away", {}).get("runs")
 
             if h_score is None or a_score is None:
                 continue
@@ -291,19 +309,24 @@ def settle_completed_games():
             conn2 = DB.get_connection()
             try:
                 with conn2.cursor() as cur:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         UPDATE games
                         SET home_score = %s,
                             away_score = %s,
                             home_win   = %s,
                             updated_at = NOW()
                         WHERE game_pk = %s
-                    """, (int(h_score), int(a_score), home_win, int(game_pk)))
+                    """,
+                        (int(h_score), int(a_score), home_win, int(game_pk)),
+                    )
                 conn2.commit()
             finally:
                 conn2.close()
-            print(f"    Settled: {away_team} @ {home_team} — "
-                  f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)")
+            print(
+                f"    Settled: {away_team} @ {home_team} — "
+                f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)"
+            )
         except Exception as e:
             print(f"    Could not settle game_pk={game_pk}: {e}")
 
@@ -312,11 +335,16 @@ def settle_completed_games():
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="MLB betting pipeline orchestrator.")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--game_pk", type=str, help="Run once immediately for a specific game_pk")
-    group.add_argument("--now", action="store_true", help="Run immediately for the next batch")
+    group.add_argument(
+        "--game_pk", type=str, help="Run once immediately for a specific game_pk"
+    )
+    group.add_argument(
+        "--now", action="store_true", help="Run immediately for the next batch"
+    )
     args = parser.parse_args()
 
     # ── One-shot: specific game ───────────────────────────────────────────
@@ -361,14 +389,18 @@ def main():
 
         # Skip games that started more than 3 hours ago
         if first_start < now_utc - timedelta(hours=3):
-            print(f"  Batch already started too long ago — marking as processed and skipping.")
+            print(
+                f"  Batch already started too long ago — marking as processed and skipping."
+            )
             for game in batch:
                 init_game_row(game)
             continue
 
         if not args.now and run_at_utc > now_utc:
             sleep_secs = (run_at_utc - now_utc).total_seconds()
-            print(f"Sleeping {sleep_secs / 60:.1f} minutes until {LEAD_MINUTES} min before first pitch...")
+            print(
+                f"Sleeping {sleep_secs / 60:.1f} minutes until {LEAD_MINUTES} min before first pitch..."
+            )
             time.sleep(sleep_secs)
 
         run_batch(batch)
