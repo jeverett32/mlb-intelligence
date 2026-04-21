@@ -17,11 +17,15 @@ import bcrypt as _bcrypt
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI(title="MLB Betting Dashboard")
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def _hash_password(password: str) -> str:
@@ -119,6 +123,11 @@ def index(request: Request):
     if not _get_session_email(request):
         return RedirectResponse("/login", status_code=302)
     return (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/public", response_class=HTMLResponse)
+def public_page():
+    return (TEMPLATES_DIR / "public.html").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -263,14 +272,15 @@ def get_upcoming(email: str = Depends(require_auth)):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/performance")
-def get_performance(email: str = Depends(require_auth)):
+def _compute_performance():
     bets_df = DB.get_all_bets()
     if bets_df.empty:
         return _empty_perf()
 
-    settled = bets_df[bets_df["result"].notna() & bets_df["bet_frac"].notna()].copy()
-    settled = settled[settled["bet_frac"].astype(float) > 0]
+    settled = bets_df[
+        bets_df["result"].notna() & bets_df["bet_dollars"].notna()
+    ].copy()
+    settled = settled[settled["bet_dollars"].astype(float) > 0]
     if settled.empty:
         return _empty_perf()
 
@@ -329,15 +339,27 @@ def _empty_perf():
     }
 
 
+@app.get("/api/performance")
+def get_performance(email: str = Depends(require_auth)):
+    return _compute_performance()
+
+
+@app.get("/api/public/performance")
+def get_public_performance():
+    return _compute_performance()
+
+
+@app.get("/api/public/model-accuracy")
+def get_public_model_accuracy():
+    return _compute_model_accuracy(include_recent=False)
+
+
 @app.get("/api/model-accuracy")
 def get_model_accuracy(email: str = Depends(require_auth)):
-    """
-    Model accuracy across ALL predicted games, not just ones where a bet
-    was placed. Compares predicted_prob > 0.5 (home win prediction) against
-    the actual home_win result in the games table.
+    return _compute_model_accuracy(include_recent=True)
 
-    Also calculates market accuracy (market predicts home when market_implied_prob > 0.5).
-    """
+
+def _compute_model_accuracy(include_recent: bool = True):
     df = DB.get_model_picks()
     if df.empty:
         return {
@@ -381,7 +403,8 @@ def get_model_accuracy(email: str = Depends(require_auth)):
 
     # Recent picks (last 20 settled games)
     recent = []
-    for _, r in df.head(20).iterrows():
+    rows_iter = df.head(20).iterrows() if include_recent else iter([])
+    for _, r in rows_iter:
         market_prob = r.get("market_implied_prob")
         has_market = pd.notna(market_prob)
         market_correct_val = bool(r["market_correct"]) if has_market else None
@@ -392,7 +415,7 @@ def get_model_accuracy(email: str = Depends(require_auth)):
                 "away_team": r["away_team"],
                 "home_team": r["home_team"],
                 "predicted_prob": float(r["predicted_prob"]),
-                "market_prob": float(market_prob) if market_prob is not None else None,
+                "market_prob": _safe_value(market_prob),
                 "bet_side": r.get("bet_side"),
                 "home_win": bool(r["home_win"]),
                 "model_correct": bool(r["correct"]),
@@ -439,20 +462,23 @@ def browse_table(
 # ---------------------------------------------------------------------------
 
 
+def _safe_value(v):
+    if v is None:
+        return None
+    if isinstance(v, (pd.Timestamp, datetime, date)):
+        return str(v)[:19]
+    if hasattr(v, "item"):
+        v = v.item()
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    return v
+
+
 def _safe_records(df: pd.DataFrame) -> list:
     records = []
     for _, row in df.iterrows():
         d = {}
         for k, v in row.items():
-            if v is None:
-                d[k] = None
-            elif isinstance(v, float) and math.isnan(v):
-                d[k] = None
-            elif isinstance(v, (pd.Timestamp, datetime, date)):
-                d[k] = str(v)[:19]
-            elif hasattr(v, "item"):
-                d[k] = v.item()
-            else:
-                d[k] = v
+            d[k] = _safe_value(v)
         records.append(d)
     return records

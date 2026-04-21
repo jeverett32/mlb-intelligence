@@ -12,9 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
 import db as DB
 
-FALLBACK_BALANCE_CENTS = 10000  # $100 placeholder when API is unreachable
-
-
 def fetch_balance() -> int:
     """Fetch balance from Kalshi, persist to DB, and return balance in cents."""
     try:
@@ -34,8 +31,7 @@ def fetch_balance() -> int:
         if last is not None:
             print(f"  Using last known balance: {last} cents")
             return last
-        balance_cents = FALLBACK_BALANCE_CENTS
-        print(f"  Using fallback balance: ${balance_cents / 100:.2f}")
+        sys.exit("ERROR: Kalshi balance unavailable and no prior balance in DB. Cannot size bets safely.")
 
     print(f"  Kalshi balance: ${balance_cents / 100:.2f} ({balance_cents} cents)")
     DB.insert_balance(balance_cents)

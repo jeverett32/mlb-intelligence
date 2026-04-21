@@ -1,12 +1,13 @@
 """
 Place the model's bet on Kalshi for the target game.
 Reads bet_frac and bet_side from the bets table, sizes against current balance,
-finds the Kalshi market, and places a market order (executes immediately at best price).
+finds the Kalshi market, and places an immediate-or-cancel limit order.
 
 Run from project root: uv run bet/place_bet.py --game_pk 12345
 """
 
 import argparse
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -19,6 +20,7 @@ from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
 import db as DB
 
 MLB_SERIES = "KXMLBGAME"
+ORDER_SLIPPAGE_CENTS = int(os.environ.get("KALSHI_ORDER_SLIPPAGE_CENTS", "3"))
 
 # Kalshi uses different abbreviations than the MLB Stats API for some teams.
 MLB_TO_KALSHI = {
@@ -115,20 +117,31 @@ def place_bet(game_pk: str):
         print("  Bet rounds to $0.00 — skipping.")
         return
 
-    # Kalshi prices are integers 1–99 (cents per contract)
+    # Kalshi prices are integers 1-99 (cents per contract). The API now requires
+    # an explicit side price; IOC keeps this from resting if the limit is stale.
     yes_price_cents = max(1, min(99, round(market_prob * 100)))
 
     if bet_side == "home":
         side = "yes"
-        cost_per_contract = yes_price_cents / 100.0  # cost of one YES contract
+        limit_price_cents = max(1, min(99, yes_price_cents + ORDER_SLIPPAGE_CENTS))
+        price_field = "yes_price"
     else:  # away
         side = "no"
-        cost_per_contract = (100 - yes_price_cents) / 100.0  # cost of one NO contract
+        no_price_cents = 100 - yes_price_cents
+        limit_price_cents = max(1, min(99, no_price_cents + ORDER_SLIPPAGE_CENTS))
+        price_field = "no_price"
 
-    n_contracts = max(1, int(bet_dollars / cost_per_contract))
+    cost_per_contract = limit_price_cents / 100.0
+    n_contracts = int(bet_dollars / cost_per_contract)
+    if n_contracts < 1:
+        print(
+            f"  Kelly bet ${bet_dollars:.2f} is below 1-contract cost "
+            f"(${cost_per_contract:.2f}) — skipping to respect sizing."
+        )
+        return
     actual_cost = round(n_contracts * cost_per_contract, 2)
 
-    print(f"  Side:            {side} (yes_price={yes_price_cents}¢)")
+    print(f"  Side:            {side} ({price_field}={limit_price_cents}c)")
     print(
         f"  Contracts:       {n_contracts} × ${cost_per_contract:.2f} = ${actual_cost:.2f}"
     )
@@ -161,9 +174,10 @@ def place_bet(game_pk: str):
         print(f"\n  [DRY RUN] Would place market order:")
         print(f"    Ticker:        {ticker}")
         print(f"    Side:          {side}")
+        print(f"    Limit:         {price_field}={limit_price_cents}c IOC")
         print(f"    Contracts:     {n_contracts}")
         print(
-            f"    Est. cost:     ${actual_cost:.2f} (based on market price {yes_price_cents}¢)"
+            f"    Max cost:      ${actual_cost:.2f}"
         )
         print(f"  [DRY RUN] No real order was placed.")
         return
@@ -175,9 +189,10 @@ def place_bet(game_pk: str):
         "ticker": ticker,
         "side": side,
         "action": "buy",
-        "type": "market",
+        "time_in_force": "immediate_or_cancel",
         "count": n_contracts,
         "client_order_id": str(uuid.uuid4()),
+        price_field: limit_price_cents,
     }
 
     resp = requests.post(

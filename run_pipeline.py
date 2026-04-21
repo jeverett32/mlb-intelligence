@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -172,10 +173,13 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 # ---------------------------------------------------------------------------
 
 
-def run_predict_and_bet(game_pk: str):
+def run_predict_and_bet(game_pk: str, shared_data_path: str | None = None):
     """Run predict + place_bet for one game (fetch already done by caller)."""
     try:
-        run_step(["uv", "run", "model/predict.py", "--game_pk", game_pk])
+        predict_cmd = ["uv", "run", "model/predict.py", "--game_pk", game_pk]
+        if shared_data_path:
+            predict_cmd += ["--shared_data", shared_data_path]
+        run_step(predict_cmd)
         run_step(["uv", "run", "bet/place_bet.py", "--game_pk", game_pk])
         print(f"\n  game_pk={game_pk} complete.")
     except RuntimeError as e:
@@ -208,17 +212,43 @@ def run_batch(games: list[dict]):
 
     # Predict + bet in parallel
     pks = [str(g["game_pk"]) for g in games]
+
+    # For multi-game batches, pre-train the model once and share across predictions
+    shared_data_path = None
+    if len(pks) > 1:
+        game_date = str(games[-1].get("game_date", ""))[:10]
+        shared_data_path = f"/tmp/mlb_shared_{game_date.replace('-', '')}.pkl"
+        print(f"\n  Pre-training shared model for {game_date}...")
+        try:
+            run_step([
+                "uv", "run", "model/predict.py",
+                "--prepare_only", "--game_date", game_date,
+                "--output", shared_data_path,
+            ])
+        except RuntimeError as e:
+            print(f"  WARNING: shared model prep failed ({e}), falling back to per-game training.")
+            shared_data_path = None
+
     if len(pks) == 1:
         run_predict_and_bet(pks[0])
     else:
         print(f"\n  Running predict+bet for {len(pks)} games in parallel...")
         with ThreadPoolExecutor(max_workers=min(3, len(pks))) as executor:
-            futures = {executor.submit(run_predict_and_bet, pk): pk for pk in pks}
+            futures = {
+                executor.submit(run_predict_and_bet, pk, shared_data_path): pk
+                for pk in pks
+            }
             for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as e:
                     print(f"  Thread error for game_pk={futures[future]}: {e}")
+
+    if shared_data_path:
+        try:
+            Path(shared_data_path).unlink(missing_ok=True)
+        except OSError:
+            pass
 
     print(f"\n{'=' * 60}")
     print(f"BATCH COMPLETE — {len(games)} game(s)")
@@ -273,6 +303,7 @@ def settle_completed_games():
                       AND g.home_win IS NULL
                       AND g.game_time_utc IS NOT NULL
                       AND g.game_time_utc::timestamptz < %s
+                      AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                 """,
                     (cutoff,),
                 )
@@ -303,7 +334,28 @@ def settle_completed_games():
                 continue
 
             game_data = dates[0]["games"][0]
-            abstract_state = game_data.get("status", {}).get("abstractGameState", "")
+            status = game_data.get("status", {})
+            abstract_state = status.get("abstractGameState", "")
+            detailed_state = status.get("detailedState", "")
+            if "postponed" in detailed_state.lower():
+                conn2 = DB.get_connection()
+                try:
+                    with conn2.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE games
+                            SET extra = COALESCE(extra, '{}'::jsonb) || %s::jsonb,
+                                updated_at = NOW()
+                            WHERE game_pk = %s
+                        """,
+                            (json.dumps({"game_status": "postponed"}), int(game_pk)),
+                        )
+                    conn2.commit()
+                finally:
+                    conn2.close()
+                print(f"    Marked postponed: {away_team} @ {home_team}")
+                continue
+
             if abstract_state != "Final":
                 continue
 
@@ -333,6 +385,7 @@ def settle_completed_games():
                 conn2.commit()
             finally:
                 conn2.close()
+            DB.update_bet_result(game_pk, home_win)
             print(
                 f"    Settled: {away_team} @ {home_team} — "
                 f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)"

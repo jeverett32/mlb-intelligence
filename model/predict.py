@@ -19,6 +19,7 @@ import warnings
 os.environ["PYTHONHASHSEED"] = "42"
 warnings.filterwarnings("ignore")
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
@@ -98,10 +99,18 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     h_momentum = T._gcol(df_feat, f"h_win_pct_{T.MOMENTUM_W}") - T._gcol(df_feat, f"h_win_pct_{W}")
     a_momentum = T._gcol(df_feat, f"a_win_pct_{T.MOMENTUM_W}") - T._gcol(df_feat, f"a_win_pct_{W}")
     df_feat["momentum_DIFF"]           = h_momentum - a_momentum
-    df_feat["sp_fip_DIFF"]             = T._gcol(df_feat, "a_fip_lag1")             - T._gcol(df_feat, "h_fip_lag1")
-    df_feat["sp_era_DIFF"]             = T._gcol(df_feat, "a_sp_era_lag1")          - T._gcol(df_feat, "h_sp_era_lag1")
-    df_feat["sp_k9_DIFF"]              = T._gcol(df_feat, "h_sp_k9_lag1")           - T._gcol(df_feat, "a_sp_k9_lag1")
-    df_feat["sp_bb9_DIFF"]             = T._gcol(df_feat, "a_sp_bb9_lag1")          - T._gcol(df_feat, "h_sp_bb9_lag1")
+    h_fip = T._gcol(df_feat, "h_fip_lag1").combine_first(T._gcol(df_feat, "home_sp_fip")).combine_first(T._gcol(df_feat, "home_starter_fip"))
+    a_fip = T._gcol(df_feat, "a_fip_lag1").combine_first(T._gcol(df_feat, "away_sp_fip")).combine_first(T._gcol(df_feat, "away_starter_fip"))
+    h_era = T._gcol(df_feat, "h_sp_era_lag1").combine_first(T._gcol(df_feat, "home_sp_era")).combine_first(T._gcol(df_feat, "home_starter_era"))
+    a_era = T._gcol(df_feat, "a_sp_era_lag1").combine_first(T._gcol(df_feat, "away_sp_era")).combine_first(T._gcol(df_feat, "away_starter_era"))
+    h_k9 = T._gcol(df_feat, "h_sp_k9_lag1").combine_first(T._gcol(df_feat, "home_sp_k9")).combine_first(T._gcol(df_feat, "home_starter_k9"))
+    a_k9 = T._gcol(df_feat, "a_sp_k9_lag1").combine_first(T._gcol(df_feat, "away_sp_k9")).combine_first(T._gcol(df_feat, "away_starter_k9"))
+    h_bb9 = T._gcol(df_feat, "h_sp_bb9_lag1").combine_first(T._gcol(df_feat, "home_sp_bb9")).combine_first(T._gcol(df_feat, "home_starter_bb9"))
+    a_bb9 = T._gcol(df_feat, "a_sp_bb9_lag1").combine_first(T._gcol(df_feat, "away_sp_bb9")).combine_first(T._gcol(df_feat, "away_starter_bb9"))
+    df_feat["sp_fip_DIFF"]             = pd.to_numeric(a_fip, errors="coerce") - pd.to_numeric(h_fip, errors="coerce")
+    df_feat["sp_era_DIFF"]             = pd.to_numeric(a_era, errors="coerce") - pd.to_numeric(h_era, errors="coerce")
+    df_feat["sp_k9_DIFF"]              = pd.to_numeric(h_k9, errors="coerce")  - pd.to_numeric(a_k9, errors="coerce")
+    df_feat["sp_bb9_DIFF"]             = pd.to_numeric(a_bb9, errors="coerce") - pd.to_numeric(h_bb9, errors="coerce")
     df_feat["wrc_plus_DIFF"]           = T._gcol(df_feat, "home_wrc_plus")          - T._gcol(df_feat, "away_wrc_plus")
     df_feat["woba_DIFF"]               = T._gcol(df_feat, "home_woba")              - T._gcol(df_feat, "away_woba")
     df_feat["avg_DIFF"]                = T._gcol(df_feat, "home_avg")               - T._gcol(df_feat, "away_avg")
@@ -129,6 +138,106 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df_feat = T.engineer_new_features(df_feat)
     return df_feat
+
+
+# ---------------------------------------------------------------------------
+# Shared model preparation (called once per batch to avoid redundant training)
+# ---------------------------------------------------------------------------
+
+def prepare_shared_data(game_date: str, output_path: str):
+    """
+    Load data, engineer features, and train models for all games on game_date.
+    Serializes artifacts to output_path so parallel predict workers can load
+    them without repeating the expensive data load + train step.
+    """
+    print(f"  Loading historical data...")
+    try:
+        hist = DB.get_games_df()
+        hist = hist[hist["season"].notna() & (hist["season"].astype(float) < 2026)]
+        if hist.empty:
+            raise ValueError("No historical rows in DB")
+    except Exception as e:
+        print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
+        hist = pd.read_csv(HISTORICAL_CSV, low_memory=False)
+
+    try:
+        curr = DB.get_games_df(season=2026)
+        if curr.empty:
+            raise ValueError("No 2026 rows in DB")
+    except Exception as e:
+        print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
+        curr = pd.read_csv(CURRENT_CSV, low_memory=False)
+
+    # Include all 2026 rows up to and including game_date
+    curr["game_date"] = pd.to_datetime(curr["game_date"])
+    target_date = pd.to_datetime(game_date)
+    curr_subset = curr[curr["game_date"] <= target_date].copy()
+
+    all_cols = list(dict.fromkeys(list(hist.columns) + list(curr_subset.columns)))
+    combined = pd.concat(
+        [hist.reindex(columns=all_cols), curr_subset.reindex(columns=all_cols)],
+        ignore_index=True,
+    )
+    combined["game_date"] = pd.to_datetime(combined["game_date"], errors="coerce")
+    combined = combined.sort_values("game_date").reset_index(drop=True)
+
+    print(f"  Engineering features ({len(combined):,} rows)...")
+    df_feat = engineer_features(combined)
+
+    train_df = df_feat[df_feat["home_win"].notna()].copy()
+    active_feats = [c for c in T.FEATURE_COLUMNS       if c in df_feat.columns]
+    early_feats  = [c for c in T.EARLY_FEATURE_COLUMNS if c in df_feat.columns]
+
+    req = ["home_win", "market_implied_prob", "game_date", "home_games_played", "away_games_played"]
+    train_df = train_df.dropna(subset=[c for c in req if c in train_df.columns])
+    print(f"  Training rows: {len(train_df):,}")
+
+    X_train = train_df[active_feats].values.astype(np.float32)
+    y_train = train_df["home_win"].values.astype(np.float32)
+
+    early_mask = (
+        (train_df["home_games_played"] < T.EARLY_CUTOFF) |
+        (train_df["away_games_played"] < T.EARLY_CUTOFF)
+    ) if T.EARLY_CUTOFF else pd.Series(False, index=train_df.index)
+
+    # Always train early specialist (each game decides whether to use it)
+    early_clf = None
+    if T.EARLY_CUTOFF and early_mask.sum() > 50 and early_feats:
+        ef = [f for f in early_feats if f in train_df.columns]
+        X_early = train_df.loc[early_mask, ef].values.astype(np.float32)
+        y_early = y_train[early_mask.values]
+        early_clf = T.build_early_lr(X_early, y_early)
+
+    reg_mask = ~early_mask.values if T.EARLY_CUTOFF else np.ones(len(train_df), dtype=bool)
+    X_tr_reg = X_train[reg_mask]
+    y_tr_reg  = y_train[reg_mask]
+
+    if T.MODEL == "lgb":
+        clf = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+    elif T.MODEL == "xgb":
+        clf = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+    elif T.MODEL == "lr":
+        clf = T.build_lr(X_tr_reg, y_tr_reg)
+    elif T.MODEL == "mlp":
+        clf = T.build_mlp(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+    elif T.MODEL in ("ensemble_avg", "ensemble_stack"):
+        clf = (
+            T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg),
+            T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg),
+            T.build_lr(X_tr_reg, y_tr_reg),
+        )
+    else:
+        sys.exit(f"Unknown MODEL: {T.MODEL!r}")
+
+    cache = {
+        "df_feat":     df_feat,
+        "clf":         clf,
+        "early_clf":   early_clf,
+        "active_feats": active_feats,
+        "early_feats": early_feats,
+    }
+    joblib.dump(cache, output_path, compress=3)
+    print(f"  Shared model cache written → {output_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +300,7 @@ def find_target_game(args) -> dict:
 # Core prediction logic
 # ---------------------------------------------------------------------------
 
-def predict(game_info: dict):
+def predict(game_info: dict, shared_data: dict | None = None):
     game_pk    = str(game_info["game_pk"])
     game_date  = str(game_info["game_date"])
     home_team  = str(game_info["home_team"])
@@ -199,133 +308,145 @@ def predict(game_info: dict):
 
     print(f"Predicting: {away_team} @ {home_team} on {game_date} (game_pk={game_pk})")
 
-    # --- Load data -----------------------------------------------------------
-    print("Loading historical data...")
-    try:
-        hist = DB.get_games_df()
-        hist = hist[hist["season"].notna() & (hist["season"].astype(float) < 2026)]
-        if hist.empty:
-            raise ValueError("No historical rows in DB")
-    except Exception as e:
-        print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
-        hist = pd.read_csv(HISTORICAL_CSV, low_memory=False)
-    print(f"  {len(hist):,} historical rows")
+    if shared_data is not None:
+        # --- Fast path: use pre-trained model from batch preparation ----------
+        df_feat      = shared_data["df_feat"]
+        clf          = shared_data["clf"]
+        early_clf    = shared_data["early_clf"]
+        active_feats = shared_data["active_feats"]
+        early_feats  = shared_data["early_feats"]
 
-    try:
-        curr = DB.get_games_df(season=2026)
-        if curr.empty:
-            raise ValueError("No 2026 rows in DB")
-    except Exception as e:
-        print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
-        if not os.path.exists(CURRENT_CSV):
-            sys.exit(f"ERROR: {CURRENT_CSV} not found. Run fetch/fetch_data.py first.")
-        curr = pd.read_csv(CURRENT_CSV, low_memory=False)
-    print(f"  {len(curr):,} 2026 rows")
+        tgt_mask  = df_feat["game_pk"].astype(str) == game_pk
+        target_df = df_feat[tgt_mask].copy()
+        if target_df.empty:
+            sys.exit("ERROR: Target game row missing in shared feature data.")
 
-    # Locate target game in current season data
-    curr["game_pk"] = curr["game_pk"].astype(str)
-    target_mask = curr["game_pk"] == game_pk
-    if not target_mask.any():
-        # Fall back to date + teams
-        curr["game_date"] = pd.to_datetime(curr["game_date"]).dt.strftime("%Y-%m-%d")
-        target_mask = (
-            (curr["game_date"] == game_date) &
-            (curr["home_team"].str.upper() == home_team.upper()) &
-            (curr["away_team"].str.upper() == away_team.upper())
-        )
-    if not target_mask.any():
-        sys.exit(
-            f"ERROR: Target game not found in {CURRENT_CSV}. "
-            "Run fetch_2026_data.py to refresh."
-        )
+        is_early = False
+        if T.EARLY_CUTOFF is not None:
+            hgp = float(target_df["home_games_played"].iloc[0]) if "home_games_played" in target_df else 999
+            agp = float(target_df["away_games_played"].iloc[0]) if "away_games_played" in target_df else 999
+            is_early = (hgp < T.EARLY_CUTOFF) or (agp < T.EARLY_CUTOFF)
+        if is_early and early_clf is not None:
+            print("  Using early-season specialist model (shared).")
 
-    target_game_pk = curr.loc[target_mask, "game_pk"].iloc[0]
-
-    # Include all 2026 rows up to + including the target game (for rolling context)
-    curr["game_date"] = pd.to_datetime(curr["game_date"])
-    target_date       = curr.loc[target_mask, "game_date"].iloc[0]
-    curr_subset       = curr[curr["game_date"] <= target_date].copy()
-
-    # Combine: historical (has home_win) + current season rows (may not have home_win)
-    # Align columns — fill missing with NaN
-    all_cols = list(dict.fromkeys(list(hist.columns) + list(curr_subset.columns)))
-    hist_aligned = hist.reindex(columns=all_cols)
-    curr_aligned = curr_subset.reindex(columns=all_cols)
-    combined = pd.concat([hist_aligned, curr_aligned], ignore_index=True)
-    combined["game_date"] = pd.to_datetime(combined["game_date"], errors="coerce")
-    combined = combined.sort_values("game_date").reset_index(drop=True)
-
-    # --- Feature engineering -------------------------------------------------
-    print("Engineering features...")
-    df_feat = engineer_features(combined)
-
-    # --- Split: train = rows with known outcome; target = our game -----------
-    train_df  = df_feat[df_feat["home_win"].notna()].copy()
-    tgt_mask  = df_feat["game_pk"].astype(str) == str(target_game_pk)
-    target_df = df_feat[tgt_mask].copy()
-
-    if target_df.empty:
-        sys.exit("ERROR: Target game row missing after feature engineering.")
-
-    print(f"  Training rows: {len(train_df):,}")
-
-    active_feats = [c for c in T.FEATURE_COLUMNS       if c in df_feat.columns]
-    early_feats  = [c for c in T.EARLY_FEATURE_COLUMNS if c in df_feat.columns]
-
-    req = ["home_win", "market_implied_prob", "game_date",
-           "home_games_played", "away_games_played"]
-    train_df = train_df.dropna(subset=[c for c in req if c in train_df.columns])
-
-    if len(train_df) < 100:
-        sys.exit("ERROR: Insufficient training data after filtering.")
-
-    # --- Determine if target game is early-season ----------------------------
-    is_early = False
-    if T.EARLY_CUTOFF is not None:
-        hgp = float(target_df["home_games_played"].iloc[0]) if "home_games_played" in target_df else 999
-        agp = float(target_df["away_games_played"].iloc[0]) if "away_games_played" in target_df else 999
-        is_early = (hgp < T.EARLY_CUTOFF) or (agp < T.EARLY_CUTOFF)
-
-    # --- Train model ---------------------------------------------------------
-    print(f"Training {T.MODEL} on {len(train_df):,} rows...")
-    X_train = train_df[active_feats].values.astype(np.float32)
-    y_train = train_df["home_win"].values.astype(np.float32)
-
-    early_mask = (
-        (train_df["home_games_played"] < T.EARLY_CUTOFF) |
-        (train_df["away_games_played"] < T.EARLY_CUTOFF)
-    ) if T.EARLY_CUTOFF else pd.Series(False, index=train_df.index)
-
-    # Early specialist
-    early_clf = None
-    if is_early and T.EARLY_CUTOFF and early_mask.sum() > 50 and early_feats:
-        ef = [f for f in early_feats if f in train_df.columns]
-        X_early = train_df.loc[early_mask, ef].values.astype(np.float32)
-        y_early = y_train[early_mask.values]
-        early_clf = T.build_early_lr(X_early, y_early)
-        print("  Using early-season specialist model.")
-
-    # Main model (trained on non-early rows when specialist is active)
-    reg_mask  = ~early_mask.values if T.EARLY_CUTOFF else np.ones(len(train_df), dtype=bool)
-    X_tr_reg  = X_train[reg_mask]
-    y_tr_reg  = y_train[reg_mask]
-
-    # Dummy val set (same as train — we're deploying, not validating)
-    if T.MODEL == "lgb":
-        clf = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-    elif T.MODEL == "xgb":
-        clf = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-    elif T.MODEL == "lr":
-        clf = T.build_lr(X_tr_reg, y_tr_reg)
-    elif T.MODEL == "mlp":
-        clf = T.build_mlp(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-    elif T.MODEL in ("ensemble_avg", "ensemble_stack"):
-        clf_lgb = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-        clf_xgb = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-        clf_lr  = T.build_lr(X_tr_reg, y_tr_reg)
-        clf = (clf_lgb, clf_xgb, clf_lr)  # tuple — handled below
     else:
-        sys.exit(f"Unknown MODEL: {T.MODEL!r}")
+        # --- Standard path: load data, engineer features, train ---------------
+        print("Loading historical data...")
+        try:
+            hist = DB.get_games_df()
+            hist = hist[hist["season"].notna() & (hist["season"].astype(float) < 2026)]
+            if hist.empty:
+                raise ValueError("No historical rows in DB")
+        except Exception as e:
+            print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
+            hist = pd.read_csv(HISTORICAL_CSV, low_memory=False)
+        print(f"  {len(hist):,} historical rows")
+
+        try:
+            curr = DB.get_games_df(season=2026)
+            if curr.empty:
+                raise ValueError("No 2026 rows in DB")
+        except Exception as e:
+            print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
+            if not os.path.exists(CURRENT_CSV):
+                sys.exit(f"ERROR: {CURRENT_CSV} not found. Run fetch/fetch_data.py first.")
+            curr = pd.read_csv(CURRENT_CSV, low_memory=False)
+        print(f"  {len(curr):,} 2026 rows")
+
+        # Locate target game in current season data
+        curr["game_pk"] = curr["game_pk"].astype(str)
+        target_mask = curr["game_pk"] == game_pk
+        if not target_mask.any():
+            curr["game_date"] = pd.to_datetime(curr["game_date"]).dt.strftime("%Y-%m-%d")
+            target_mask = (
+                (curr["game_date"] == game_date) &
+                (curr["home_team"].str.upper() == home_team.upper()) &
+                (curr["away_team"].str.upper() == away_team.upper())
+            )
+        if not target_mask.any():
+            sys.exit(
+                f"ERROR: Target game not found in {CURRENT_CSV}. "
+                "Run fetch_2026_data.py to refresh."
+            )
+
+        target_game_pk = curr.loc[target_mask, "game_pk"].iloc[0]
+
+        curr["game_date"] = pd.to_datetime(curr["game_date"])
+        target_date       = curr.loc[target_mask, "game_date"].iloc[0]
+        curr_subset       = curr[curr["game_date"] <= target_date].copy()
+
+        all_cols = list(dict.fromkeys(list(hist.columns) + list(curr_subset.columns)))
+        combined = pd.concat(
+            [hist.reindex(columns=all_cols), curr_subset.reindex(columns=all_cols)],
+            ignore_index=True,
+        )
+        combined["game_date"] = pd.to_datetime(combined["game_date"], errors="coerce")
+        combined = combined.sort_values("game_date").reset_index(drop=True)
+
+        print("Engineering features...")
+        df_feat = engineer_features(combined)
+
+        train_df  = df_feat[df_feat["home_win"].notna()].copy()
+        tgt_mask  = df_feat["game_pk"].astype(str) == str(target_game_pk)
+        target_df = df_feat[tgt_mask].copy()
+
+        if target_df.empty:
+            sys.exit("ERROR: Target game row missing after feature engineering.")
+
+        print(f"  Training rows: {len(train_df):,}")
+
+        active_feats = [c for c in T.FEATURE_COLUMNS       if c in df_feat.columns]
+        early_feats  = [c for c in T.EARLY_FEATURE_COLUMNS if c in df_feat.columns]
+
+        req = ["home_win", "market_implied_prob", "game_date",
+               "home_games_played", "away_games_played"]
+        train_df = train_df.dropna(subset=[c for c in req if c in train_df.columns])
+
+        if len(train_df) < 100:
+            sys.exit("ERROR: Insufficient training data after filtering.")
+
+        is_early = False
+        if T.EARLY_CUTOFF is not None:
+            hgp = float(target_df["home_games_played"].iloc[0]) if "home_games_played" in target_df else 999
+            agp = float(target_df["away_games_played"].iloc[0]) if "away_games_played" in target_df else 999
+            is_early = (hgp < T.EARLY_CUTOFF) or (agp < T.EARLY_CUTOFF)
+
+        print(f"Training {T.MODEL} on {len(train_df):,} rows...")
+        X_train = train_df[active_feats].values.astype(np.float32)
+        y_train = train_df["home_win"].values.astype(np.float32)
+
+        early_mask = (
+            (train_df["home_games_played"] < T.EARLY_CUTOFF) |
+            (train_df["away_games_played"] < T.EARLY_CUTOFF)
+        ) if T.EARLY_CUTOFF else pd.Series(False, index=train_df.index)
+
+        early_clf = None
+        if is_early and T.EARLY_CUTOFF and early_mask.sum() > 50 and early_feats:
+            ef = [f for f in early_feats if f in train_df.columns]
+            X_early = train_df.loc[early_mask, ef].values.astype(np.float32)
+            y_early = y_train[early_mask.values]
+            early_clf = T.build_early_lr(X_early, y_early)
+            print("  Using early-season specialist model.")
+
+        reg_mask  = ~early_mask.values if T.EARLY_CUTOFF else np.ones(len(train_df), dtype=bool)
+        X_tr_reg  = X_train[reg_mask]
+        y_tr_reg  = y_train[reg_mask]
+
+        if T.MODEL == "lgb":
+            clf = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+        elif T.MODEL == "xgb":
+            clf = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+        elif T.MODEL == "lr":
+            clf = T.build_lr(X_tr_reg, y_tr_reg)
+        elif T.MODEL == "mlp":
+            clf = T.build_mlp(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+        elif T.MODEL in ("ensemble_avg", "ensemble_stack"):
+            clf_lgb = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+            clf_xgb = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+            clf_lr  = T.build_lr(X_tr_reg, y_tr_reg)
+            clf = (clf_lgb, clf_xgb, clf_lr)
+        else:
+            sys.exit(f"Unknown MODEL: {T.MODEL!r}")
 
     # --- Predict -------------------------------------------------------------
     X_target = target_df[active_feats].values.astype(np.float32)
@@ -401,15 +522,36 @@ def predict(game_info: dict):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict MLB game outcome and bet size.")
-    group  = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--game_pk",   type=str, help="MLB Stats API game_pk")
-    group.add_argument("--game_date", type=str, help="Game date YYYY-MM-DD (with --home_team / --away_team)")
-    parser.add_argument("--home_team", type=str, default=None)
-    parser.add_argument("--away_team", type=str, default=None)
+    # --prepare_only is a separate mode; --game_pk and --game_date are predict modes
+    parser.add_argument("--prepare_only", action="store_true", help="Pre-train and cache model artifacts for a batch")
+    group  = parser.add_mutually_exclusive_group()
+    group.add_argument("--game_pk",      type=str, help="MLB Stats API game_pk")
+    group.add_argument("--game_date",    type=str, help="Game date YYYY-MM-DD (with --home_team / --away_team)")
+    parser.add_argument("--home_team",   type=str, default=None)
+    parser.add_argument("--away_team",   type=str, default=None)
+    parser.add_argument("--output",      type=str, default=None, help="Output path for --prepare_only cache")
+    parser.add_argument("--shared_data", type=str, default=None, help="Path to pre-trained model cache")
     args = parser.parse_args()
+
+    if args.prepare_only:
+        if not args.output:
+            parser.error("--prepare_only requires --output PATH")
+        if not args.game_date:
+            parser.error("--prepare_only requires --game_date YYYY-MM-DD")
+        prepare_shared_data(args.game_date, args.output)
+        sys.exit(0)
+
+    if not args.game_pk and not args.game_date:
+        parser.error("one of --game_pk or --game_date is required")
 
     if args.game_date and (not args.home_team or not args.away_team):
         parser.error("--game_date requires --home_team and --away_team")
 
     game_info = find_target_game(args)
-    predict(game_info)
+
+    shared = None
+    if args.shared_data and os.path.exists(args.shared_data):
+        print(f"Loading shared model cache from {args.shared_data}...")
+        shared = joblib.load(args.shared_data)
+
+    predict(game_info, shared_data=shared)
