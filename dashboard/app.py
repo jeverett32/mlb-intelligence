@@ -121,7 +121,7 @@ def logout(request: Request):
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     if not _get_session_email(request):
-        return RedirectResponse("/login", status_code=302)
+        return (TEMPLATES_DIR / "public.html").read_text(encoding="utf-8")
     return (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
 
 
