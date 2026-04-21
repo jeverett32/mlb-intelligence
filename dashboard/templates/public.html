@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="MLB betting model — public performance dashboard." />
   <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#14110E" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#0F1724" media="(prefers-color-scheme: dark)" />
   <title>MLB Model Performance</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -50,42 +50,42 @@
       color-scheme: light;
     }
     :root[data-theme="dark"] {
-      --bg-primary: #14110E;
-      --bg-card: #1E1A16;
-      --bg-elevated: #252017;
-      --text-primary: #F5F1EA;
-      --text-secondary: #A8A199;
-      --text-muted: #6F685F;
-      --accent: #D4A44A;
-      --accent-light: #3A2F1C;
-      --success: #6CBF93;
-      --danger: #E07A8A;
-      --border: #2E2820;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-      --grid-color: #2E2820;
-      --tick-color: #6F685F;
-      --axis-title-color: #A8A199;
+      --bg-primary: #0F1724;
+      --bg-card: #182233;
+      --bg-elevated: #202C40;
+      --text-primary: #E8EDF6;
+      --text-secondary: #AAB8CC;
+      --text-muted: #7D8BA1;
+      --accent: #F2B84B;
+      --accent-light: #31425F;
+      --success: #63C8A2;
+      --danger: #F28C8C;
+      --border: #2B3951;
+      --shadow-sm: 0 1px 3px rgba(3,7,18,0.35);
+      --shadow-md: 0 10px 24px rgba(3,7,18,0.32);
+      --grid-color: #31425F;
+      --tick-color: #7D8BA1;
+      --axis-title-color: #AAB8CC;
       color-scheme: dark;
     }
     @media (prefers-color-scheme: dark) {
       :root[data-theme="auto"] {
-        --bg-primary: #14110E;
-        --bg-card: #1E1A16;
-        --bg-elevated: #252017;
-        --text-primary: #F5F1EA;
-        --text-secondary: #A8A199;
-        --text-muted: #6F685F;
-        --accent: #D4A44A;
-        --accent-light: #3A2F1C;
-        --success: #6CBF93;
-        --danger: #E07A8A;
-        --border: #2E2820;
-        --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-        --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-        --grid-color: #2E2820;
-        --tick-color: #6F685F;
-        --axis-title-color: #A8A199;
+        --bg-primary: #0F1724;
+        --bg-card: #182233;
+        --bg-elevated: #202C40;
+        --text-primary: #E8EDF6;
+        --text-secondary: #AAB8CC;
+        --text-muted: #7D8BA1;
+        --accent: #F2B84B;
+        --accent-light: #31425F;
+        --success: #63C8A2;
+        --danger: #F28C8C;
+        --border: #2B3951;
+        --shadow-sm: 0 1px 3px rgba(3,7,18,0.35);
+        --shadow-md: 0 10px 24px rgba(3,7,18,0.32);
+        --grid-color: #31425F;
+        --tick-color: #7D8BA1;
+        --axis-title-color: #AAB8CC;
         color-scheme: dark;
       }
     }
@@ -93,8 +93,8 @@
     body {
       font-family: 'DM Sans', -apple-system, sans-serif;
       background:
-        radial-gradient(circle at top left, rgba(184, 134, 11, 0.14), transparent 30%),
-        radial-gradient(circle at top right, rgba(45, 106, 79, 0.10), transparent 32%),
+        radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 18%, transparent), transparent 30%),
+        radial-gradient(circle at top right, color-mix(in srgb, var(--success) 14%, transparent), transparent 32%),
         linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-primary) 260px);
       color: var(--text-primary);
       font-size: 14px;
