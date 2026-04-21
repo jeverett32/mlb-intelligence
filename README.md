@@ -158,15 +158,18 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
-User=root
+Type=notify
+NotifyAccess=all
+WatchdogSec=120
+User=mlb
+Group=mlb
 WorkingDirectory=/opt/mlb/pipeline
-ExecStart=/root/.local/bin/uv run run_pipeline.py
+ExecStart=/opt/mlb/pipeline/.venv/bin/python3 run_pipeline.py
 Restart=on-failure
 RestartSec=60
 StandardOutput=journal
 StandardError=journal
-Environment=HOME=/root
+Environment=HOME=/opt/mlb
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
@@ -182,20 +185,25 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=mlb
+Group=mlb
 WorkingDirectory=/opt/mlb/pipeline
-ExecStart=/root/.local/bin/uv run uvicorn dashboard.app:app --host 0.0.0.0 --port 8080
+ExecStart=/opt/mlb/pipeline/.venv/bin/uvicorn dashboard.app:app --host 0.0.0.0 --port 8080
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-Environment=HOME=/root
+Environment=HOME=/opt/mlb
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
+useradd --system --home-dir /opt/mlb --shell /usr/sbin/nologin mlb
+chown -R mlb:mlb /opt/mlb/pipeline
+chmod 700 /opt/mlb/pipeline
+chmod 600 /opt/mlb/pipeline/.env /opt/mlb/pipeline/kalshi-key.pem
 systemctl daemon-reload
 systemctl enable --now mlb-pipeline mlb-dashboard
 ```
