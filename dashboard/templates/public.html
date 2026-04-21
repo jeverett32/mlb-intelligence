@@ -92,46 +92,114 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'DM Sans', -apple-system, sans-serif;
-      background: var(--bg-primary);
+      background:
+        radial-gradient(circle at top left, rgba(184, 134, 11, 0.14), transparent 30%),
+        radial-gradient(circle at top right, rgba(45, 106, 79, 0.10), transparent 32%),
+        linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-primary) 260px);
       color: var(--text-primary);
       font-size: 14px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
     }
 
     .top-bar {
-      background: var(--bg-card);
-      border-bottom: 1px solid var(--border);
-      padding: 0 32px;
+      padding: 24px 24px 8px;
+    }
+    .top-bar-shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 26px 28px;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 95%, var(--accent) 5%), var(--bg-card));
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .top-bar-left {
+      display: grid;
+      gap: 10px;
+      max-width: 700px;
+    }
+    .eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .brand-row {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      height: 64px;
-      box-shadow: var(--shadow-sm);
+      gap: 12px;
+      flex-wrap: wrap;
     }
-    .top-bar-left { display: flex; align-items: baseline; gap: 16px; }
     .top-bar-left .logo {
       font-family: 'Playfair Display', serif;
-      font-size: 1.4rem;
+      font-size: clamp(1.8rem, 2.6vw, 2.8rem);
       font-weight: 600;
       color: var(--text-primary);
-      letter-spacing: -0.02em;
+      letter-spacing: -0.04em;
+      line-height: 1;
     }
-    .top-bar-left .subtitle {
-      font-size: 0.8rem;
-      color: var(--text-muted);
+    .subtitle-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
-    .top-bar-right { display: flex; align-items: center; gap: 12px; }
+    .hero-copy {
+      color: var(--text-secondary);
+      font-size: 0.98rem;
+      max-width: 620px;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
 
     .theme-select {
+      min-width: 130px;
       background: var(--bg-elevated);
       color: var(--text-secondary);
       border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 8px 10px;
+      border-radius: 16px;
+      padding: 12px 14px;
       font: inherit;
       font-size: 0.8rem;
-      font-weight: 500;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
       cursor: pointer;
     }
     .theme-select:hover, .theme-select:focus { border-color: var(--accent-light); outline: none; }
@@ -139,19 +207,23 @@
     .login-btn {
       display: inline-flex;
       align-items: center;
-      padding: 8px 16px;
-      background: var(--accent);
+      justify-content: center;
+      min-width: 128px;
+      padding: 12px 18px;
+      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 76%, var(--text-primary) 24%));
       color: #fff;
-      border-radius: var(--radius-md);
-      font-size: 0.8rem;
-      font-weight: 600;
+      border-radius: 16px;
+      font-size: 0.82rem;
+      font-weight: 700;
       text-decoration: none;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      box-shadow: var(--shadow-sm);
       transition: transform 0.2s ease, filter 0.2s ease;
     }
     .login-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
-    main { padding: 32px; max-width: 1440px; margin: 0 auto; }
+    main { padding: 18px 24px 40px; max-width: 1440px; margin: 0 auto; }
 
     .stat-row {
       display: grid;
@@ -162,7 +234,7 @@
     .stat-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
+      border-radius: 20px;
       overflow: hidden;
       box-shadow: var(--shadow-sm);
     }
@@ -227,7 +299,7 @@
     .panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
+      border-radius: 20px;
       overflow: hidden;
       box-shadow: var(--shadow-sm);
     }
@@ -252,30 +324,76 @@
     }
 
     @media (max-width: 768px) {
-      .top-bar { padding: 0 14px; height: auto; padding-top: 10px; padding-bottom: 10px; flex-wrap: wrap; gap: 10px; }
-      .top-bar-right { gap: 8px; }
-      main { padding: 14px; }
+      .top-bar {
+        padding: 14px 12px 6px;
+      }
+      .top-bar-shell {
+        padding: 18px 16px;
+        border-radius: 22px;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .brand-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .hero-copy {
+        font-size: 0.9rem;
+      }
+      .top-bar-right {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .theme-select,
+      .login-btn {
+        width: 100%;
+        min-width: 0;
+      }
+      main { padding: 14px 12px 28px; }
       .stat-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .stat-card-body .big { font-size: 1.5rem; }
       .panel-row { grid-template-columns: 1fr; gap: 12px; }
       .chart-wrap { height: 200px; }
+    }
+
+    @media (max-width: 560px) {
+      .top-bar-right {
+        grid-template-columns: 1fr;
+      }
+      .stat-row,
+      .section-stats {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
 
 <header class="top-bar">
-  <div class="top-bar-left">
-    <span class="logo">MLB Betting</span>
-    <span class="subtitle">Public Performance</span>
-  </div>
-  <div class="top-bar-right">
-    <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
-      <option value="auto">Auto</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
-    <a class="login-btn" href="/login">Login</a>
+  <div class="top-bar-shell">
+    <div class="top-bar-left">
+      <span class="eyebrow">Public Performance</span>
+      <div class="brand-row">
+        <span class="logo">MLB Betting</span>
+        <span class="subtitle-pill">Open Dashboard</span>
+      </div>
+      <p class="hero-copy">A public read on model accuracy, market comparison, and real-money wagering results. No login required to view the big picture.</p>
+      <div class="hero-meta">
+        <span class="meta-pill">Model vs Market</span>
+        <span class="meta-pill">Real Bets Only</span>
+        <span class="meta-pill">Updated Live</span>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+        <option value="auto">Auto</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <a class="login-btn" href="/login">Member Login</a>
+    </div>
   </div>
 </header>
 
