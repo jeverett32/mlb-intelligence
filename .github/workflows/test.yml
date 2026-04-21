@@ -28,4 +28,9 @@ jobs:
           uv run python -m compileall -q bet dashboard fetch model db.py notify.py run_pipeline.py settle_games.py
 
       - name: Run tests (DB-backed tests skip automatically without DATABASE)
-        run: uv run pytest -q tests/
+        run: |
+          set +e
+          uv run pytest -q tests/
+          rc=$?
+          # rc=5 means all tests were skipped (no DB in CI) — not a failure.
+          if [ "$rc" != "0" ] && [ "$rc" != "5" ]; then exit "$rc"; fi
