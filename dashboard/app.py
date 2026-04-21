@@ -166,6 +166,14 @@ def get_bets(limit: int = 100, offset: int = 0, email: str = Depends(require_aut
     if df.empty:
         return {"bets": [], "total": 0}
 
+    if "bet_dollars" in df.columns:
+        df = df[df["bet_dollars"].notna()].copy()
+        if not df.empty:
+            df = df[df["bet_dollars"].astype(float) > 0].copy()
+
+    if df.empty:
+        return {"bets": [], "total": 0}
+
     if "result" in df.columns and "bet_dollars" in df.columns:
 
         def calc_pnl(row):
@@ -174,15 +182,21 @@ def get_bets(limit: int = 100, offset: int = 0, email: str = Depends(require_aut
             won = (row["result"] is True and row["bet_side"] == "home") or (
                 row["result"] is False and row["bet_side"] == "away"
             )
-            mp = row.get("market_implied_prob")
             bd = float(row["bet_dollars"] or 0)
-            if mp and float(mp) > 0:
-                ratio = (
-                    (1 / float(mp) - 1)
-                    if row["bet_side"] == "home"
-                    else (1 / (1 - float(mp)) - 1)
-                )
-                return round(bd * ratio, 2) if won else -bd
+            n_contracts = row.get("n_contracts")
+            if won and n_contracts is not None:
+                return round(float(n_contracts) - bd, 2)
+            if won:
+                mp = row.get("market_implied_prob")
+                if mp and float(mp) > 0:
+                    ratio = (
+                        (1 / float(mp) - 1)
+                        if row["bet_side"] == "home"
+                        else (1 / (1 - float(mp)) - 1)
+                    )
+                    return round(bd * ratio, 2)
+            if not won:
+                return -bd
             return None
 
         df["profit_loss"] = df.apply(calc_pnl, axis=1)
@@ -294,11 +308,18 @@ def _compute_performance():
     total_wagered = settled["bet_dollars"].astype(float).sum()
     total_returned = 0.0
     for _, r in settled.iterrows():
-        mp = r.get("market_implied_prob")
         bd = float(r.get("bet_dollars") or 0)
-        if mp and float(mp) > 0:
-            ratio = 1 / float(mp) if r["bet_side"] == "home" else 1 / (1 - float(mp))
-            total_returned += bd * ratio if won(r) else 0
+        n_contracts = r.get("n_contracts")
+        if won(r):
+            if n_contracts is not None:
+                total_returned += float(n_contracts)
+            else:
+                mp = r.get("market_implied_prob")
+                if mp and float(mp) > 0:
+                    ratio = 1 / float(mp) if r["bet_side"] == "home" else 1 / (1 - float(mp))
+                    total_returned += bd * ratio
+                else:
+                    total_returned += bd
 
     roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
 
