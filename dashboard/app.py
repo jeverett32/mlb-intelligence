@@ -41,7 +41,15 @@ def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+class _CachedStatic(StaticFiles):
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        if resp.status_code == 200:
+            resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        return resp
+
+
+app.mount("/static", _CachedStatic(directory=str(STATIC_DIR)), name="static")
 
 
 def _hash_password(password: str) -> str:
