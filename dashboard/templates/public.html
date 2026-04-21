@@ -342,14 +342,19 @@ function calChartCfg(data) {
   const grid = cssVar('--grid-color') || '#E8E4DE';
   const tick = cssVar('--tick-color') || '#9C9690';
   const axisTitle = cssVar('--axis-title-color') || '#6B6560';
+  const points = data.map(d => ({
+    x: d.predicted,
+    y: d.actual,
+    n: d.n ?? 0,
+  }));
   return {
     type: 'scatter',
     data: {
       datasets: [{
         label: 'Calibration',
-        data: data.map(d => ({ x: d.predicted, y: d.actual })),
+        data: points,
         backgroundColor: accent,
-        pointRadius: d => Math.min(8, Math.max(4, d.raw.n/2)),
+        pointRadius: ctx => Math.min(8, Math.max(4, (ctx.raw?.n ?? 0) / 2)),
       }]
     },
     options: {
@@ -357,7 +362,7 @@ function calChartCfg(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: d => `Pred: ${(d.parsed.x*100).toFixed(0)}% | Actual: ${(d.parsed.y*100).toFixed(0)}% (n=${d.raw.n})` }}
+        tooltip: { callbacks: { label: d => `Pred: ${(d.parsed.x*100).toFixed(0)}% | Actual: ${(d.parsed.y*100).toFixed(0)}% (n=${d.raw?.n ?? 0})` }}
       },
       scales: {
         x: {
