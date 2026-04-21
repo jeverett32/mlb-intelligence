@@ -117,9 +117,17 @@ def upsert_games(df: pd.DataFrame):
     cols = list(rows[0].keys())
     values = [[r.get(c) for c in cols] for r in rows]
     col_list = ", ".join(cols)
-    update_list = ", ".join(
-        c + " = EXCLUDED." + c for c in cols if c != "game_pk"
-    )
+    update_parts = []
+    for c in cols:
+        if c == "game_pk":
+            continue
+        if c == "extra":
+            update_parts.append(
+                "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)"
+            )
+        else:
+            update_parts.append(c + " = EXCLUDED." + c)
+    update_list = ", ".join(update_parts)
     sql = (
         "INSERT INTO games (" + col_list + ") VALUES %s "
         "ON CONFLICT (game_pk) DO UPDATE SET "
@@ -150,6 +158,9 @@ def get_games_df(season: int = None, upcoming_only: bool = False) -> pd.DataFram
                 params.append(season)
             if upcoming_only:
                 conditions.append("home_win IS NULL")
+                conditions.append(
+                    "COALESCE(extra->>'game_status', '') NOT IN ('postponed', 'cancelled')"
+                )
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
             cur.execute(f"SELECT * FROM games {where} ORDER BY game_date, game_pk", params)
             rows = cur.fetchall()
@@ -279,6 +290,69 @@ def update_bet_order(game_pk, kalshi_order_id, bet_dollars, n_contracts):
                 (kalshi_order_id, float(bet_dollars), int(n_contracts), int(game_pk)),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def update_bet_result(game_pk, home_win):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE bets SET
+                       result = %s,
+                       profit_loss = CASE
+                           WHEN bet_side IS NULL OR bet_side = 'none'
+                                OR bet_dollars IS NULL OR market_implied_prob IS NULL THEN NULL
+                           WHEN (%s AND bet_side = 'home') OR (NOT %s AND bet_side = 'away') THEN
+                               ROUND((bet_dollars * (
+                                   CASE WHEN bet_side = 'home'
+                                        THEN (1.0 / NULLIF(market_implied_prob, 0) - 1)
+                                        ELSE (1.0 / NULLIF(1.0 - market_implied_prob, 0) - 1)
+                                   END
+                               ))::numeric, 2)
+                           ELSE -bet_dollars
+                       END,
+                       updated_at = NOW()
+                   WHERE game_pk = %s""",
+                (bool(home_win), bool(home_win), bool(home_win), int(game_pk)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def backfill_bet_results():
+    """Copy settled game outcomes into bets.result and compute profit_loss."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE bets b
+                SET result = g.home_win,
+                    profit_loss = CASE
+                        WHEN b.bet_side IS NULL OR b.bet_side = 'none'
+                             OR b.bet_dollars IS NULL OR b.market_implied_prob IS NULL THEN NULL
+                        WHEN (g.home_win AND b.bet_side = 'home') OR (NOT g.home_win AND b.bet_side = 'away') THEN
+                            ROUND((b.bet_dollars * (
+                                CASE WHEN b.bet_side = 'home'
+                                     THEN (1.0 / NULLIF(b.market_implied_prob, 0) - 1)
+                                     ELSE (1.0 / NULLIF(1.0 - b.market_implied_prob, 0) - 1)
+                                END
+                            ))::numeric, 2)
+                        ELSE -b.bet_dollars
+                    END,
+                    updated_at = NOW()
+                FROM games g
+                WHERE b.game_pk = g.game_pk
+                  AND g.home_win IS NOT NULL
+                  AND (b.result IS DISTINCT FROM g.home_win OR b.profit_loss IS NULL)
+                """
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
     finally:
         conn.close()
 

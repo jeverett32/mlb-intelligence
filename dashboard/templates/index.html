@@ -3,13 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="MLB betting dashboard — live balance, bet log, and model performance." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#14110E" media="(prefers-color-scheme: dark)" />
   <title>MLB Betting Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
   <style>
-    :root {
+    @font-face {
+      font-family: 'DM Sans';
+      font-style: normal;
+      font-weight: 400 600;
+      font-display: swap;
+      src: url('/static/fonts/dm-sans-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Playfair Display';
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url('/static/fonts/playfair-display-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    :root, :root[data-theme="light"] {
       --bg-primary: #FAF9F7;
       --bg-card: #FFFFFF;
       --bg-elevated: #F5F3EF;
@@ -29,6 +47,58 @@
       --radius-sm: 4px;
       --radius-md: 8px;
       --radius-lg: 12px;
+      --grid-color: #E8E4DE;
+      --tick-color: #9C9690;
+      --axis-title-color: #6B6560;
+      color-scheme: light;
+    }
+
+    :root[data-theme="dark"] {
+      --bg-primary: #14110E;
+      --bg-card: #1E1A16;
+      --bg-elevated: #252017;
+      --text-primary: #F5F1EA;
+      --text-secondary: #A8A199;
+      --text-muted: #6F685F;
+      --accent: #D4A44A;
+      --accent-light: #3A2F1C;
+      --success: #6CBF93;
+      --success-light: #1F3A2A;
+      --danger: #E07A8A;
+      --danger-light: #3A1D23;
+      --border: #2E2820;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+      --grid-color: #2E2820;
+      --tick-color: #6F685F;
+      --axis-title-color: #A8A199;
+      color-scheme: dark;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --bg-primary: #14110E;
+        --bg-card: #1E1A16;
+        --bg-elevated: #252017;
+        --text-primary: #F5F1EA;
+        --text-secondary: #A8A199;
+        --text-muted: #6F685F;
+        --accent: #D4A44A;
+        --accent-light: #3A2F1C;
+        --success: #6CBF93;
+        --success-light: #1F3A2A;
+        --danger: #E07A8A;
+        --danger-light: #3A1D23;
+        --border: #2E2820;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+        --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+        --grid-color: #2E2820;
+        --tick-color: #6F685F;
+        --axis-title-color: #A8A199;
+        color-scheme: dark;
+      }
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -383,6 +453,59 @@
       .panel-row { grid-template-columns: 1fr; }
       .stat-row { grid-template-columns: repeat(2, 1fr); }
     }
+
+    /* ── Theme selector ── */
+    .theme-select {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+    .theme-select:hover, .theme-select:focus { border-color: var(--accent-light); outline: none; }
+
+    .login-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-decoration: none;
+      letter-spacing: 0.03em;
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+    .login-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+    @media (max-width: 768px) {
+      .top-bar {
+        height: auto;
+        padding: 10px 16px;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .top-bar-right { gap: 10px; flex-wrap: wrap; }
+      .toggle-wrap { padding: 6px 10px; }
+      .balance-chip { font-size: 0.8rem; }
+      nav {
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      nav::-webkit-scrollbar { display: none; }
+      nav button { padding: 14px 14px; font-size: 0.75rem; white-space: nowrap; }
+      main { padding: 14px; }
+      .stat-card-body .big { font-size: 1.5rem; }
+      .stat-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .panel-row { gap: 12px; }
+      .chart-wrap { height: 200px; }
+    }
   </style>
 </head>
 <body>
@@ -404,6 +527,11 @@
     <div class="balance-chip">
       Balance: <strong id="hdr-balance">$0.00</strong>
     </div>
+    <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+      <option value="auto">Auto</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
   </div>
 </header>
 
@@ -477,21 +605,21 @@
   <!-- ── PERFORMANCE ── -->
   <div id="page-performance" class="page">
     <!-- Model accuracy -->
-    <div class="panel-header model" style="background:#fff;color:#2D6A4F;font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 16px;border-radius:8px 8px 0 0;margin-bottom:0;border:1px solid var(--border);border-bottom:none">
+    <div class="panel-header model" style="background:var(--bg-card);color:var(--success);font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 16px;border-radius:8px 8px 0 0;margin-bottom:0;border:1px solid var(--border);border-bottom:none">
       Model Accuracy — All Predicted Games
     </div>
-    <div class="stat-row" style="margin-top:0;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;background:#fff;padding:8px;margin-bottom:20px;">
+    <div class="stat-row" style="margin-top:0;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;background:var(--bg-card);padding:8px;margin-bottom:20px;">
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Games</span></div>
         <div class="stat-card-body" style="padding:8px"><div class="big" id="m-total">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Correct</span></div>
-        <div class="stat-card-body" style="padding:8px"><div class="big" id="m-correct" style="color:#2D6A4F">—</div></div>
+        <div class="stat-card-body" style="padding:8px"><div class="big" id="m-correct" style="color:var(--success)">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Incorrect</span></div>
-        <div class="stat-card-body" style="padding:8px"><div class="big" id="m-incorrect" style="color:#9B2335">—</div></div>
+        <div class="stat-card-body" style="padding:8px"><div class="big" id="m-incorrect" style="color:var(--danger)">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Accuracy</span></div>
@@ -500,21 +628,21 @@
     </div>
 
     <!-- Market accuracy -->
-    <div class="panel-header market" style="background:#fff;color:#B8860B;font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 16px;border-radius:8px 8px 0 0;margin-bottom:0;border:1px solid var(--border);border-bottom:none">
+    <div class="panel-header market" style="background:var(--bg-card);color:var(--accent);font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 16px;border-radius:8px 8px 0 0;margin-bottom:0;border:1px solid var(--border);border-bottom:none">
       Market Accuracy — Sportsbook Odds
     </div>
-    <div class="stat-row" style="margin-top:0;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;background:#fff;padding:8px;margin-bottom:20px;">
+    <div class="stat-row" style="margin-top:0;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;background:var(--bg-card);padding:8px;margin-bottom:20px;">
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Games</span></div>
         <div class="stat-card-body" style="padding:8px"><div class="big" id="mk-total">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Correct</span></div>
-        <div class="stat-card-body" style="padding:8px"><div class="big" id="mk-correct" style="color:#2D6A4F">—</div></div>
+        <div class="stat-card-body" style="padding:8px"><div class="big" id="mk-correct" style="color:var(--success)">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Incorrect</span></div>
-        <div class="stat-card-body" style="padding:8px"><div class="big" id="mk-incorrect" style="color:#9B2335">—</div></div>
+        <div class="stat-card-body" style="padding:8px"><div class="big" id="mk-incorrect" style="color:var(--danger)">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Accuracy</span></div>
@@ -523,21 +651,21 @@
     </div>
 
     <!-- Bet performance -->
-    <div class="panel-header bets" style="background:#fff;color:#1A1814;font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 16px;border-radius:8px 8px 0 0;margin-bottom:0;border:1px solid var(--border);border-bottom:none">
+    <div class="panel-header bets" style="background:var(--bg-card);color:var(--text-primary);font-size:0.75rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 16px;border-radius:8px 8px 0 0;margin-bottom:0;border:1px solid var(--border);border-bottom:none">
       Bet Performance — Real Wagers
     </div>
-    <div class="stat-row" style="margin-top:0;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;background:#fff;padding:8px;margin-bottom:20px;">
+    <div class="stat-row" style="margin-top:0;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;background:var(--bg-card);padding:8px;margin-bottom:20px;">
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Bets</span></div>
         <div class="stat-card-body" style="padding:8px"><div class="big" id="p-total">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Wins</span></div>
-        <div class="stat-card-body" style="padding:8px"><div class="big" id="p-wins" style="color:#2D6A4F">—</div></div>
+        <div class="stat-card-body" style="padding:8px"><div class="big" id="p-wins" style="color:var(--success)">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Losses</span></div>
-        <div class="stat-card-body" style="padding:8px"><div class="big" id="p-losses" style="color:#9B2335">—</div></div>
+        <div class="stat-card-body" style="padding:8px"><div class="big" id="p-losses" style="color:var(--danger)">—</div></div>
       </div>
       <div class="stat-card" style="box-shadow:none;border:none;background:transparent">
         <div class="stat-card-header" style="background:transparent;padding:8px"><span>Accuracy</span></div>
@@ -615,7 +743,7 @@ function utcToMT(utc) {
   return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
 }
 function badge(text, cls) {
-  return `<span class="badge ${cls}">${text}</span>`;
+  return `<span class="badge${cls ? ' '+cls : ''}">${text}</span>`;
 }
 function sideBadge(side) {
   if (side === 'home') return badge('Home','blue');
@@ -624,6 +752,7 @@ function sideBadge(side) {
 }
 function resultBadge(result, side) {
   if (result === null) return 'Pending';
+  if (!side || side === 'none') return result === true ? badge('Home Win', null) : badge('Away Win', null);
   if (result === true) return side === 'home' ? badge('Win','green') : badge('Loss','red');
   return side === 'away' ? badge('Win','green') : badge('Loss','red');
 }
@@ -634,16 +763,38 @@ function pnlBadge(pl) {
   return badge((n >= 0 ? '+' : '') + '$' + n.toFixed(2), cls);
 }
 
+// ── Theme ────────────────────────────────────────────────────────────────
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function setTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  localStorage.setItem('theme', mode);
+  const sel = document.getElementById('theme-select');
+  if (sel) sel.value = mode;
+  // Repaint charts so they pick up new variable values
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) {} });
+  charts = {};
+  if (typeof loadAll === 'function') loadAll();
+}
+(function initTheme() {
+  const saved = localStorage.getItem('theme') || 'auto';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+
 // ── Charts ───────────────────────────────────────────────────────────────────
 function lineChartCfg(labels, data) {
+  const accent = cssVar('--accent') || '#B8860B';
+  const grid = cssVar('--grid-color') || '#E8E4DE';
+  const tick = cssVar('--tick-color') || '#9C9690';
   return {
     type: 'line',
     data: {
       labels,
       datasets: [{
         data,
-        borderColor: '#B8860B',
-        backgroundColor: 'rgba(184,134,11,0.08)',
+        borderColor: accent,
+        backgroundColor: accent + '1A',
         fill: true,
         tension: 0.4,
         pointRadius: 0,
@@ -656,42 +807,46 @@ function lineChartCfg(labels, data) {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { display: false }, ticks: { color: '#9C9690', font: {size: 11} } },
-        y: { grid: { color: '#E8E4DE' }, ticks: { color: '#9C9690', font: {size: 11} } }
+        x: { grid: { display: false }, ticks: { color: tick, font: {size: 11} } },
+        y: { grid: { color: grid }, ticks: { color: tick, font: {size: 11} } }
       }
     }
   };
 }
 function calChartCfg(data) {
+  const accent = cssVar('--accent') || '#B8860B';
+  const grid = cssVar('--grid-color') || '#E8E4DE';
+  const tick = cssVar('--tick-color') || '#9C9690';
+  const axisTitle = cssVar('--axis-title-color') || '#6B6560';
   return {
     type: 'scatter',
     data: {
       datasets: [{
         label: 'Calibration',
         data: data.map(d => ({ x: d.predicted, y: d.actual })),
-        backgroundColor: '#B8860B',
+        backgroundColor: accent,
         pointRadius: d => Math.min(8, Math.max(4, d.raw.n/2)),
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { 
+      plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: d => `Pred: ${(d.parsed.x*100).toFixed(0)}% | Actual: ${(d.parsed.y*100).toFixed(0)}% (n=${d.raw.n})` }}
       },
       scales: {
-        x: { 
-          title: { display: true, text: 'Predicted Probability', color: '#6B6560', font: {size: 11} },
+        x: {
+          title: { display: true, text: 'Predicted Probability', color: axisTitle, font: {size: 11} },
           min: 0, max: 1,
-          grid: { color: '#E8E4DE' },
-          ticks: { color: '#9C9690', callback: v => (v*100)+'%' }
+          grid: { color: grid },
+          ticks: { color: tick, callback: v => (v*100)+'%' }
         },
-        y: { 
-          title: { display: true, text: 'Actual Win Rate', color: '#6B6560', font: {size: 11} },
+        y: {
+          title: { display: true, text: 'Actual Win Rate', color: axisTitle, font: {size: 11} },
           min: 0, max: 1,
-          grid: { color: '#E8E4DE' },
-          ticks: { color: '#9C9690', callback: v => (v*100)+'%' }
+          grid: { color: grid },
+          ticks: { color: tick, callback: v => (v*100)+'%' }
         }
       }
     }
@@ -743,12 +898,12 @@ function renderOverview(bal, perf) {
   const acc = perf.accuracy;
   const wrEl = document.getElementById('s-winrate');
   wrEl.textContent = perf.total_bets ? fmtPct(acc) : '—';
-  wrEl.style.color = acc >= 0.5 ? '#2D6A4F' : (perf.total_bets ? '#9B2335' : '#1A1814');
+  wrEl.style.color = acc >= 0.5 ? 'var(--success)' : (perf.total_bets ? 'var(--danger)' : 'var(--text-primary)');
 
   const roi = perf.roi_pct;
   const roiEl = document.getElementById('s-roi');
   roiEl.textContent = perf.total_bets ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
-  roiEl.style.color = roi >= 0 ? '#2D6A4F' : '#9B2335';
+  roiEl.style.color = roi >= 0 ? 'var(--success)' : 'var(--danger)';
 
   document.getElementById('s-wagered').textContent = '$' + (perf.total_wagered || 0).toFixed(2);
 
@@ -841,7 +996,7 @@ function renderPerformance(perf, modelAcc) {
   document.getElementById('m-incorrect').textContent = modelAcc.incorrect ?? '—';
   const mAccEl = document.getElementById('m-acc');
   mAccEl.textContent = mTotal ? fmtPct(modelAcc.accuracy) : '—';
-  mAccEl.style.color = modelAcc.accuracy >= 0.5 ? '#2D6A4F' : (mTotal ? '#9B2335' : '#1A1814');
+  mAccEl.style.color = modelAcc.accuracy >= 0.5 ? 'var(--success)' : (mTotal ? 'var(--danger)' : 'var(--text-primary)');
 
   // Market accuracy
   const mkTotal = modelAcc.market_total || 0;
@@ -850,7 +1005,7 @@ function renderPerformance(perf, modelAcc) {
   document.getElementById('mk-incorrect').textContent = modelAcc.market_incorrect ?? '—';
   const mkAccEl = document.getElementById('mk-acc');
   mkAccEl.textContent = mkTotal ? fmtPct(modelAcc.market_accuracy) : '—';
-  mkAccEl.style.color = modelAcc.market_accuracy >= 0.5 ? '#2D6A4F' : (mkTotal ? '#9B2335' : '#1A1814');
+  mkAccEl.style.color = modelAcc.market_accuracy >= 0.5 ? 'var(--success)' : (mkTotal ? 'var(--danger)' : 'var(--text-primary)');
 
   if (modelAcc.calibration && modelAcc.calibration.length) {
     makeChart('chart-cal-model', calChartCfg(modelAcc.calibration));
@@ -904,7 +1059,7 @@ function renderPerformance(perf, modelAcc) {
   const roi = perf.roi_pct;
   const roiEl = document.getElementById('p-roi');
   roiEl.textContent = perf.total_bets ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
-  roiEl.style.color = roi >= 0 ? '#2D6A4F' : '#9B2335';
+  roiEl.style.color = roi >= 0 ? 'var(--success)' : 'var(--danger)';
   if (perf.calibration && perf.calibration.length) {
     makeChart('chart-cal-perf', calChartCfg(perf.calibration));
   } else {
@@ -951,8 +1106,13 @@ async function toggleLive() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
-(async () => {
+document.addEventListener('DOMContentLoaded', async () => {
   try {
+    // Sync theme selector to persisted value
+    const savedTheme = localStorage.getItem('theme') || 'auto';
+    const themeSel = document.getElementById('theme-select');
+    if (themeSel) themeSel.value = savedTheme;
+
     // Restore persisted page BEFORE rendering
     const savedPage = localStorage.getItem('dashboard_page') || 'overview';
     const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
@@ -969,9 +1129,9 @@ async function toggleLive() {
     loadDbTable();
   } catch (e) {
     console.error('Init error:', e);
-    document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#9B2335;">Error loading dashboard. Check console for details.</div>';
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger);">Error loading dashboard. Check console for details.</div>';
   }
-})();
+});
 </script>
 </body>
 </html>

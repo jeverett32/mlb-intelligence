@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="MLB betting model — public performance dashboard." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#14110E" media="(prefers-color-scheme: dark)" />
+  <title>MLB Model Performance</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
+  <style>
+    @font-face {
+      font-family: 'DM Sans';
+      font-style: normal;
+      font-weight: 400 600;
+      font-display: swap;
+      src: url('/static/fonts/dm-sans-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: 'Playfair Display';
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url('/static/fonts/playfair-display-latin.woff2') format('woff2');
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    :root, :root[data-theme="light"] {
+      --bg-primary: #FAF9F7;
+      --bg-card: #FFFFFF;
+      --bg-elevated: #F5F3EF;
+      --text-primary: #1A1814;
+      --text-secondary: #6B6560;
+      --text-muted: #9C9690;
+      --accent: #B8860B;
+      --accent-light: #E8DFD0;
+      --success: #2D6A4F;
+      --danger: #9B2335;
+      --border: #E8E4DE;
+      --shadow-sm: 0 1px 3px rgba(26,24,20,0.04);
+      --shadow-md: 0 4px 12px rgba(26,24,20,0.06);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --grid-color: #E8E4DE;
+      --tick-color: #9C9690;
+      --axis-title-color: #6B6560;
+      color-scheme: light;
+    }
+    :root[data-theme="dark"] {
+      --bg-primary: #14110E;
+      --bg-card: #1E1A16;
+      --bg-elevated: #252017;
+      --text-primary: #F5F1EA;
+      --text-secondary: #A8A199;
+      --text-muted: #6F685F;
+      --accent: #D4A44A;
+      --accent-light: #3A2F1C;
+      --success: #6CBF93;
+      --danger: #E07A8A;
+      --border: #2E2820;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+      --grid-color: #2E2820;
+      --tick-color: #6F685F;
+      --axis-title-color: #A8A199;
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --bg-primary: #14110E;
+        --bg-card: #1E1A16;
+        --bg-elevated: #252017;
+        --text-primary: #F5F1EA;
+        --text-secondary: #A8A199;
+        --text-muted: #6F685F;
+        --accent: #D4A44A;
+        --accent-light: #3A2F1C;
+        --success: #6CBF93;
+        --danger: #E07A8A;
+        --border: #2E2820;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+        --grid-color: #2E2820;
+        --tick-color: #6F685F;
+        --axis-title-color: #A8A199;
+        color-scheme: dark;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .top-bar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      box-shadow: var(--shadow-sm);
+    }
+    .top-bar-left { display: flex; align-items: baseline; gap: 16px; }
+    .top-bar-left .logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+    .top-bar-left .subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .top-bar-right { display: flex; align-items: center; gap: 12px; }
+
+    .theme-select {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .theme-select:hover, .theme-select:focus { border-color: var(--accent-light); outline: none; }
+
+    .login-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-decoration: none;
+      letter-spacing: 0.03em;
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+    .login-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+    main { padding: 32px; max-width: 1440px; margin: 0 auto; }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-card-header {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .stat-card-body { padding: 20px 16px; }
+    .stat-card-body .big {
+      font-size: 2rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.1;
+      font-feature-settings: 'tnum';
+    }
+
+    .section-header {
+      background: var(--bg-card);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 14px 16px;
+      border-radius: var(--radius-md) var(--radius-md) 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+    }
+    .section-header.model { color: var(--success); }
+    .section-header.market { color: var(--accent); }
+    .section-header.bets { color: var(--text-primary); }
+
+    .section-stats {
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--radius-md) var(--radius-md);
+      background: var(--bg-card);
+      padding: 8px;
+      margin-bottom: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0;
+    }
+    .section-stats .stat-card {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+    }
+    .section-stats .stat-card-header { background: transparent; padding: 8px; border-bottom: none; }
+    .section-stats .stat-card-body { padding: 8px; }
+
+    .panel-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .panel-header {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-body { padding: 16px; }
+    .chart-wrap { position: relative; height: 220px; }
+
+    .empty {
+      padding: 40px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 768px) {
+      .top-bar { padding: 0 14px; height: auto; padding-top: 10px; padding-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+      .top-bar-right { gap: 8px; }
+      main { padding: 14px; }
+      .stat-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .stat-card-body .big { font-size: 1.5rem; }
+      .panel-row { grid-template-columns: 1fr; gap: 12px; }
+      .chart-wrap { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="top-bar">
+  <div class="top-bar-left">
+    <span class="logo">MLB Betting</span>
+    <span class="subtitle">Public Performance</span>
+  </div>
+  <div class="top-bar-right">
+    <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+      <option value="auto">Auto</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+    <a class="login-btn" href="/login">Login</a>
+  </div>
+</header>
+
+<main>
+  <div class="section-header model">Model Accuracy — All Predicted Games</div>
+  <div class="section-stats">
+    <div class="stat-card"><div class="stat-card-header">Games</div><div class="stat-card-body"><div class="big" id="m-total">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Correct</div><div class="stat-card-body"><div class="big" id="m-correct" style="color:var(--success)">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Incorrect</div><div class="stat-card-body"><div class="big" id="m-incorrect" style="color:var(--danger)">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Accuracy</div><div class="stat-card-body"><div class="big" id="m-acc">—</div></div></div>
+  </div>
+
+  <div class="section-header market">Market Accuracy — Sportsbook Odds</div>
+  <div class="section-stats">
+    <div class="stat-card"><div class="stat-card-header">Games</div><div class="stat-card-body"><div class="big" id="mk-total">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Correct</div><div class="stat-card-body"><div class="big" id="mk-correct" style="color:var(--success)">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Incorrect</div><div class="stat-card-body"><div class="big" id="mk-incorrect" style="color:var(--danger)">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Accuracy</div><div class="stat-card-body"><div class="big" id="mk-acc">—</div></div></div>
+  </div>
+
+  <div class="section-header bets">Bet Performance — Real Wagers</div>
+  <div class="section-stats">
+    <div class="stat-card"><div class="stat-card-header">Bets</div><div class="stat-card-body"><div class="big" id="p-total">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Wins</div><div class="stat-card-body"><div class="big" id="p-wins" style="color:var(--success)">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Losses</div><div class="stat-card-body"><div class="big" id="p-losses" style="color:var(--danger)">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">Accuracy</div><div class="stat-card-body"><div class="big" id="p-acc">—</div></div></div>
+    <div class="stat-card"><div class="stat-card-header">ROI</div><div class="stat-card-body"><div class="big" id="p-roi">—</div></div></div>
+  </div>
+
+  <div class="panel-row">
+    <div class="panel">
+      <div class="panel-header">Model Calibration</div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="chart-cal-model"></canvas></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Bet Calibration</div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="chart-cal-perf"></canvas></div></div>
+    </div>
+  </div>
+</main>
+
+<script>
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+let charts = {};
+function setTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  localStorage.setItem('theme', mode);
+  const sel = document.getElementById('theme-select');
+  if (sel) sel.value = mode;
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) {} });
+  charts = {};
+  load();
+}
+(function initTheme() {
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
+})();
+
+function fmtPct(v) { return v != null ? (Number(v)*100).toFixed(1) + '%' : '—'; }
+
+function calChartCfg(data) {
+  const accent = cssVar('--accent') || '#B8860B';
+  const grid = cssVar('--grid-color') || '#E8E4DE';
+  const tick = cssVar('--tick-color') || '#9C9690';
+  const axisTitle = cssVar('--axis-title-color') || '#6B6560';
+  return {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'Calibration',
+        data: data.map(d => ({ x: d.predicted, y: d.actual })),
+        backgroundColor: accent,
+        pointRadius: d => Math.min(8, Math.max(4, d.raw.n/2)),
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: d => `Pred: ${(d.parsed.x*100).toFixed(0)}% | Actual: ${(d.parsed.y*100).toFixed(0)}% (n=${d.raw.n})` }}
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Predicted Probability', color: axisTitle, font: {size: 11} },
+          min: 0, max: 1,
+          grid: { color: grid },
+          ticks: { color: tick, callback: v => (v*100)+'%' }
+        },
+        y: {
+          title: { display: true, text: 'Actual Win Rate', color: axisTitle, font: {size: 11} },
+          min: 0, max: 1,
+          grid: { color: grid },
+          ticks: { color: tick, callback: v => (v*100)+'%' }
+        }
+      }
+    }
+  };
+}
+
+function makeChart(id, cfg) {
+  const c = document.getElementById(id);
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(c, cfg);
+}
+
+async function load() {
+  try {
+    const [perf, modelAcc] = await Promise.all([
+      fetch('/api/public/performance').then(r => r.json()),
+      fetch('/api/public/model-accuracy').then(r => r.json()),
+    ]);
+
+    const mTotal = modelAcc.total || 0;
+    document.getElementById('m-total').textContent = mTotal;
+    document.getElementById('m-correct').textContent = modelAcc.correct ?? '—';
+    document.getElementById('m-incorrect').textContent = modelAcc.incorrect ?? '—';
+    const mAccEl = document.getElementById('m-acc');
+    mAccEl.textContent = mTotal ? fmtPct(modelAcc.accuracy) : '—';
+    mAccEl.style.color = modelAcc.accuracy >= 0.5 ? 'var(--success)' : (mTotal ? 'var(--danger)' : 'var(--text-primary)');
+
+    const mkTotal = modelAcc.market_total || 0;
+    document.getElementById('mk-total').textContent = mkTotal;
+    document.getElementById('mk-correct').textContent = modelAcc.market_correct ?? '—';
+    document.getElementById('mk-incorrect').textContent = modelAcc.market_incorrect ?? '—';
+    const mkAccEl = document.getElementById('mk-acc');
+    mkAccEl.textContent = mkTotal ? fmtPct(modelAcc.market_accuracy) : '—';
+    mkAccEl.style.color = modelAcc.market_accuracy >= 0.5 ? 'var(--success)' : (mkTotal ? 'var(--danger)' : 'var(--text-primary)');
+
+    if (modelAcc.calibration && modelAcc.calibration.length) {
+      makeChart('chart-cal-model', calChartCfg(modelAcc.calibration));
+    } else {
+      document.getElementById('chart-cal-model').parentElement.innerHTML = '<div class="empty">No settled predictions</div>';
+    }
+
+    document.getElementById('p-total').textContent = perf.total_bets;
+    document.getElementById('p-wins').textContent = perf.wins;
+    document.getElementById('p-losses').textContent = perf.losses;
+    document.getElementById('p-acc').textContent = perf.total_bets ? fmtPct(perf.accuracy) : '—';
+    const roi = perf.roi_pct;
+    const roiEl = document.getElementById('p-roi');
+    roiEl.textContent = perf.total_bets ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
+    roiEl.style.color = roi >= 0 ? 'var(--success)' : 'var(--danger)';
+
+    if (perf.calibration && perf.calibration.length) {
+      makeChart('chart-cal-perf', calChartCfg(perf.calibration));
+    } else {
+      document.getElementById('chart-cal-perf').parentElement.innerHTML = '<div class="empty">No settled bets</div>';
+    }
+  } catch (e) {
+    console.error('load error:', e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('theme-select');
+  if (sel) sel.value = localStorage.getItem('theme') || 'auto';
+  load();
+});
+</script>
+</body>
+</html>

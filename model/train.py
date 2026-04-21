@@ -194,7 +194,9 @@ EARLY_FEATURE_COLUMNS = [
     "sp_whip_DIFF",
     "sp_k9_DIFF",
     "sp_bb9_DIFF",
-    "sp_fip_DIFF",
+    "rolling_era_DIFF",
+    "rolling_whip_DIFF",
+    "rolling_k9_DIFF",
     "market_implied_prob",
     "park_factor",
     "home_rest_days",
@@ -635,11 +637,20 @@ def load_and_engineer_features():
     a_momentum = _gcol(df_feat, f"a_win_pct_{MOMENTUM_W}") - _gcol(df_feat, f"a_win_pct_{W}")
     df_feat["momentum_DIFF"]           = h_momentum - a_momentum
 
-    # Pitcher DIFFs (from lagged long-format)
-    df_feat["sp_fip_DIFF"]             = _gcol(df_feat, "a_fip_lag1")                  - _gcol(df_feat, "h_fip_lag1")
-    df_feat["sp_era_DIFF"]             = _gcol(df_feat, "a_sp_era_lag1")               - _gcol(df_feat, "h_sp_era_lag1")
-    df_feat["sp_k9_DIFF"]              = _gcol(df_feat, "h_sp_k9_lag1")                - _gcol(df_feat, "a_sp_k9_lag1")
-    df_feat["sp_bb9_DIFF"]             = _gcol(df_feat, "a_sp_bb9_lag1")               - _gcol(df_feat, "h_sp_bb9_lag1")
+    # Pitcher DIFFs. Historical rows use lagged long-format columns; live rows
+    # use announced-starter columns from fetch_data.py.
+    h_fip = _gcol(df_feat, "h_fip_lag1").combine_first(_gcol(df_feat, "home_sp_fip")).combine_first(_gcol(df_feat, "home_starter_fip"))
+    a_fip = _gcol(df_feat, "a_fip_lag1").combine_first(_gcol(df_feat, "away_sp_fip")).combine_first(_gcol(df_feat, "away_starter_fip"))
+    h_era = _gcol(df_feat, "h_sp_era_lag1").combine_first(_gcol(df_feat, "home_sp_era")).combine_first(_gcol(df_feat, "home_starter_era"))
+    a_era = _gcol(df_feat, "a_sp_era_lag1").combine_first(_gcol(df_feat, "away_sp_era")).combine_first(_gcol(df_feat, "away_starter_era"))
+    h_k9 = _gcol(df_feat, "h_sp_k9_lag1").combine_first(_gcol(df_feat, "home_sp_k9")).combine_first(_gcol(df_feat, "home_starter_k9"))
+    a_k9 = _gcol(df_feat, "a_sp_k9_lag1").combine_first(_gcol(df_feat, "away_sp_k9")).combine_first(_gcol(df_feat, "away_starter_k9"))
+    h_bb9 = _gcol(df_feat, "h_sp_bb9_lag1").combine_first(_gcol(df_feat, "home_sp_bb9")).combine_first(_gcol(df_feat, "home_starter_bb9"))
+    a_bb9 = _gcol(df_feat, "a_sp_bb9_lag1").combine_first(_gcol(df_feat, "away_sp_bb9")).combine_first(_gcol(df_feat, "away_starter_bb9"))
+    df_feat["sp_fip_DIFF"]             = pd.to_numeric(a_fip, errors="coerce") - pd.to_numeric(h_fip, errors="coerce")
+    df_feat["sp_era_DIFF"]             = pd.to_numeric(a_era, errors="coerce") - pd.to_numeric(h_era, errors="coerce")
+    df_feat["sp_k9_DIFF"]              = pd.to_numeric(h_k9, errors="coerce")  - pd.to_numeric(a_k9, errors="coerce")
+    df_feat["sp_bb9_DIFF"]             = pd.to_numeric(a_bb9, errors="coerce") - pd.to_numeric(h_bb9, errors="coerce")
 
     # FanGraphs season-to-date batting DIFFs (already lagged above)
     df_feat["wrc_plus_DIFF"]           = _gcol(df_feat, "home_wrc_plus")               - _gcol(df_feat, "away_wrc_plus")

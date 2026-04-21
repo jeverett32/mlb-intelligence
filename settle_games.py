@@ -10,6 +10,7 @@ Usage:
 """
 
 import sys
+import json
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -39,6 +40,7 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                   AND g.home_win IS NULL
                   AND g.game_time_utc IS NOT NULL
                   AND g.game_time_utc::timestamptz < %s
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                 ORDER BY g.game_date, g.game_pk
             """,
                 (cutoff,),
@@ -70,6 +72,26 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
 
             game_data = dates[0]["games"][0]
             abstract_state = game_data.get("status", {}).get("abstractGameState", "")
+            detailed_state = game_data.get("status", {}).get("detailedState", "")
+            if "postponed" in detailed_state.lower():
+                conn2 = DB.get_connection()
+                try:
+                    with conn2.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE games
+                            SET extra = COALESCE(extra, '{}'::jsonb) || %s::jsonb,
+                                updated_at = NOW()
+                            WHERE game_pk = %s
+                            """,
+                            (json.dumps({"game_status": "postponed"}), int(game_pk)),
+                        )
+                    conn2.commit()
+                finally:
+                    conn2.close()
+                print(f"  Marked postponed: {away_team} @ {home_team}")
+                continue
+
             if abstract_state != "Final":
                 print(
                     f"  {away_team} @ {home_team}: status={abstract_state!r}, skipping."
@@ -104,6 +126,7 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                 conn2.commit()
             finally:
                 conn2.close()
+            DB.update_bet_result(game_pk, home_win)
 
             result = "Home win" if home_win else "Away win"
             print(
