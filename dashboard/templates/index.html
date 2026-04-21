@@ -1065,10 +1065,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const themeSel = document.getElementById('theme-select');
     if (themeSel) themeSel.value = savedTheme;
 
-    const savedPage = localStorage.getItem('dashboard_page') || 'overview';
-    const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
-    if (savedBtn) showPage(savedPage, savedBtn);
-    else if (savedPage === 'settings') showPage('settings', null);
+    const savedPage = localStorage.getItem('dashboard_page');
+    if (savedPage && savedPage !== 'settings') {
+      const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
+      if (savedBtn) showPage(savedPage, savedBtn);
+      else showPage('overview', document.querySelector('button[data-page="overview"]'));
+    } else {
+      showPage('overview', document.querySelector('button[data-page="overview"]'));
+    }
 
     await loadAll();
     const live = await fetch('/api/settings').then(r => r.json());
