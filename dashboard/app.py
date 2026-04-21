@@ -63,8 +63,14 @@ def _verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-# Ensure auth tables exist on startup
+# Ensure auth tables exist on startup, then purge expired sessions
 DB.init_auth_tables()
+try:
+    _purged = DB.purge_expired_sessions()
+    if _purged:
+        print(f"Purged {_purged} expired session(s) on startup.")
+except Exception as _e:
+    print(f"Session purge on startup failed: {_e}")
 
 COOKIE_NAME = "mlb_session"
 COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days in seconds
@@ -110,6 +116,7 @@ def login_page(request: Request, error: str = ""):
 
 
 @app.post("/login")
+@limiter.limit("10/minute")
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
     stored_hash = DB.get_user_hash(email)
     if not stored_hash or not _verify_password(password, stored_hash):
@@ -156,6 +163,27 @@ def index(request: Request):
 @limiter.limit("60/minute")
 def public_page(request: Request):
     return (TEMPLATES_DIR / "public.html").read_text(encoding="utf-8")
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "db": DB.ping()}
+
+
+@app.exception_handler(404)
+def _not_found(request: Request, exc):
+    path = (TEMPLATES_DIR / "404.html")
+    if path.exists():
+        return HTMLResponse(path.read_text(encoding="utf-8"), status_code=404)
+    return JSONResponse({"detail": "Not found"}, status_code=404)
+
+
+@app.exception_handler(500)
+def _server_error(request: Request, exc):
+    path = (TEMPLATES_DIR / "500.html")
+    if path.exists():
+        return HTMLResponse(path.read_text(encoding="utf-8"), status_code=500)
+    return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
