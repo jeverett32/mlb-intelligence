@@ -6,6 +6,7 @@ Run from project root: uv run uvicorn dashboard.app:app --host 0.0.0.0 --port 80
 """
 
 import math
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -14,13 +15,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
 
 import bcrypt as _bcrypt
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
+limiter = Limiter(key_func=get_remote_address, default_limits=[])
 app = FastAPI(title="MLB Betting Dashboard")
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests — slow down."},
+        headers={"Retry-After": "60"},
+    )
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -44,6 +60,8 @@ DB.init_auth_tables()
 
 COOKIE_NAME = "mlb_session"
 COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days in seconds
+# Set MLB_COOKIE_SECURE=1 when serving over HTTPS (behind Caddy/nginx).
+COOKIE_SECURE = os.environ.get("MLB_COOKIE_SECURE", "0") == "1"
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +117,7 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
         max_age=COOKIE_MAX_AGE,
         httponly=True,
         samesite="lax",
+        secure=COOKIE_SECURE,
     )
     return response
 
@@ -126,7 +145,8 @@ def index(request: Request):
 
 
 @app.get("/public", response_class=HTMLResponse)
-def public_page():
+@limiter.limit("60/minute")
+def public_page(request: Request):
     return (TEMPLATES_DIR / "public.html").read_text(encoding="utf-8")
 
 
@@ -298,44 +318,46 @@ def _compute_performance():
     if settled.empty:
         return _empty_perf()
 
-    def won(r):
-        return (r["result"] is True and r["bet_side"] == "home") or (
-            r["result"] is False and r["bet_side"] == "away"
-        )
+    result = settled["result"].astype(bool)
+    side = settled["bet_side"]
+    won_mask = ((result & (side == "home")) | (~result & (side == "away"))).to_numpy()
+
+    bd = settled["bet_dollars"].astype(float).to_numpy()
+    n_contracts = settled.get("n_contracts")
+    n_contracts_arr = (
+        pd.to_numeric(n_contracts, errors="coerce").to_numpy()
+        if n_contracts is not None
+        else np.full(len(settled), np.nan)
+    )
+    mp = pd.to_numeric(settled.get("market_implied_prob"), errors="coerce").to_numpy()
+    is_home = (side == "home").to_numpy()
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(is_home, np.where(mp > 0, 1.0 / mp, 1.0),
+                         np.where((mp > 0) & (mp < 1), 1.0 / (1.0 - mp), 1.0))
+    returned_row = np.where(
+        ~np.isnan(n_contracts_arr), n_contracts_arr, bd * ratio
+    )
 
     total_bets = len(settled)
-    wins = int(settled.apply(won, axis=1).sum())
-    total_wagered = settled["bet_dollars"].astype(float).sum()
-    total_returned = 0.0
-    for _, r in settled.iterrows():
-        bd = float(r.get("bet_dollars") or 0)
-        n_contracts = r.get("n_contracts")
-        if won(r):
-            if n_contracts is not None:
-                total_returned += float(n_contracts)
-            else:
-                mp = r.get("market_implied_prob")
-                if mp and float(mp) > 0:
-                    ratio = 1 / float(mp) if r["bet_side"] == "home" else 1 / (1 - float(mp))
-                    total_returned += bd * ratio
-                else:
-                    total_returned += bd
-
+    wins = int(won_mask.sum())
+    total_wagered = float(bd.sum())
+    total_returned = float(returned_row[won_mask].sum())
     roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
 
     calibration = []
     if "predicted_prob" in settled.columns:
-        settled["pred_bin"] = (settled["predicted_prob"].astype(float) * 10).astype(
-            int
-        ) / 10
-        for bucket, grp in settled.groupby("pred_bin"):
-            calibration.append(
-                {
-                    "predicted": float(bucket),
-                    "actual": float(grp.apply(won, axis=1).mean()),
-                    "n": len(grp),
-                }
-            )
+        settled = settled.assign(
+            _won=won_mask,
+            _pred_bin=(settled["predicted_prob"].astype(float) * 10).astype(int) / 10,
+        )
+        grouped = settled.groupby("_pred_bin")["_won"].agg(["mean", "size"])
+        for bucket, row in grouped.iterrows():
+            calibration.append({
+                "predicted": float(bucket),
+                "actual": float(row["mean"]),
+                "n": int(row["size"]),
+            })
 
     return {
         "total_bets": total_bets,
@@ -366,12 +388,14 @@ def get_performance(email: str = Depends(require_auth)):
 
 
 @app.get("/api/public/performance")
-def get_public_performance():
+@limiter.limit("30/minute")
+def get_public_performance(request: Request):
     return _compute_performance()
 
 
 @app.get("/api/public/model-accuracy")
-def get_public_model_accuracy():
+@limiter.limit("30/minute")
+def get_public_model_accuracy(request: Request):
     return _compute_model_accuracy(include_recent=False)
 
 

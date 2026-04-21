@@ -14,7 +14,6 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -23,6 +22,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# Cap BLAS/OpenMP threads before importing numerical libs so concurrent
+# prediction workers do not oversubscribe the CPU.
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 
 # Ensure uv is findable when launched from systemd (no user PATH)
 _UV = Path(os.environ.get("HOME", "/root")) / ".local/bin/uv"
@@ -34,6 +39,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import db as DB
+sys.path.insert(0, str(Path(__file__).parent / "model"))
+sys.path.insert(0, str(Path(__file__).parent / "bet"))
+from model import predict as PREDICT  # noqa: E402
+from bet import place_bet as PLACE_BET  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path("data/mlb_2026.csv")  # local CSV fallback
@@ -46,6 +55,43 @@ BATCH_WINDOW_MINUTES = 30
 
 # Don't process games that start less than this many minutes from now
 MIN_GAME_TIME_MINUTES = 10
+
+# Skip the pre-batch schedule refresh if we fetched more recently than this
+FETCH_STALE_SECONDS = 300
+
+_LAST_FETCH_TS: float = 0.0
+
+
+def _sd_notify(state: str) -> None:
+    sock_path = os.environ.get("NOTIFY_SOCKET")
+    if not sock_path:
+        return
+    try:
+        import socket
+        addr = "\0" + sock_path[1:] if sock_path.startswith("@") else sock_path
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.sendto(state.encode(), addr)
+    except Exception:
+        pass
+
+
+def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
+    """Sleep in chunks, pinging the systemd watchdog between chunks."""
+    remaining = max(0.0, total_secs)
+    while remaining > 0:
+        chunk = min(ping_interval, remaining)
+        time.sleep(chunk)
+        remaining -= chunk
+        _sd_notify("WATCHDOG=1")
+
+
+def _mark_fetched() -> None:
+    global _LAST_FETCH_TS
+    _LAST_FETCH_TS = time.time()
+
+
+def _fetch_is_fresh() -> bool:
+    return (time.time() - _LAST_FETCH_TS) < FETCH_STALE_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -92,23 +138,11 @@ def get_game_start_utc(game: dict) -> datetime:
 
 def get_all_upcoming_unprocessed() -> list[dict]:
     """
-    Return all upcoming 2026 games that need predictions (predicted_prob is NULL),
-    sorted by start time.
+    Return all upcoming 2026 games that need predictions, sorted by start time.
+    Uses a single JOIN query against the DB; falls back to CSV if DB is down.
     """
     try:
-        df = DB.get_games_df(season=2026, upcoming_only=True)
-        if df.empty:
-            return []
-
-        # Get game_pks that already have predictions - these are done
-        conn = DB.get_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT game_pk FROM bets WHERE predicted_prob IS NOT NULL")
-            done_game_pks = {row[0] for row in cur.fetchall()}
-        conn.close()
-
-        # Filter out games that already have predictions
-        df = df[~df["game_pk"].astype(str).isin({str(p) for p in done_game_pks})]
+        df = DB.get_upcoming_needing_prediction(season=2026)
     except Exception as e:
         print(f"  WARNING: DB unavailable ({e}), falling back to CSV.")
         if not MLB_CSV.exists():
@@ -173,82 +207,71 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 # ---------------------------------------------------------------------------
 
 
-def run_predict_and_bet(game_pk: str, shared_data_path: str | None = None):
-    """Run predict + place_bet for one game (fetch already done by caller)."""
+def _predict_and_bet(game_pk: str, shared: dict) -> None:
+    """Run predict + place_bet for one game, in-process. Logs and swallows per-game errors."""
     try:
-        predict_cmd = ["uv", "run", "model/predict.py", "--game_pk", game_pk]
-        if shared_data_path:
-            predict_cmd += ["--shared_data", shared_data_path]
-        run_step(predict_cmd)
-        run_step(["uv", "run", "bet/place_bet.py", "--game_pk", game_pk])
-        print(f"\n  game_pk={game_pk} complete.")
-    except RuntimeError as e:
-        print(f"\n  ERROR for game_pk={game_pk}: {e}")
+        PREDICT.predict_one(game_pk, shared)
+    except Exception as e:
+        print(f"  PREDICT ERROR game_pk={game_pk}: {e}")
+        return
+    try:
+        PLACE_BET.place_bet(game_pk)
+    except PLACE_BET.PlaceBetError as e:
+        print(f"  PLACE_BET ERROR game_pk={game_pk}: {e}")
+    except Exception as e:
+        print(f"  PLACE_BET unexpected error game_pk={game_pk}: {e}")
 
 
-def run_batch(games: list[dict]):
+def run_batch(games: list[dict]) -> None:
     """
     Full pipeline for a batch of games:
       1. fetch_data + fetch_balance once (shared)
-      2. predict + place_bet in parallel for each game
+      2. prepare shared model once
+      3. predict + place_bet in parallel, in-process
     """
     labels = ", ".join(f"{g.get('away_team')}@{g.get('home_team')}" for g in games)
     print(f"\n{'=' * 60}")
     print(f"BATCH START — {len(games)} game(s): {labels}")
     print(f"{'=' * 60}")
 
-    # Shared fetch steps — run once for the whole batch
     try:
         run_step(["uv", "run", "fetch/fetch_data.py"])
+        _mark_fetched()
         run_step(["uv", "run", "fetch/fetch_balance.py"])
     except RuntimeError as e:
         print(f"\nERROR in shared fetch step: {e}")
         print("Aborting batch.")
         return
 
-    # Init all bet rows before spawning threads
     for game in games:
         init_game_row(game)
 
-    # Predict + bet in parallel
     pks = [str(g["game_pk"]) for g in games]
 
-    # For multi-game batches, pre-train the model once and share across predictions
-    shared_data_path = None
-    if len(pks) > 1:
-        game_date = str(games[-1].get("game_date", ""))[:10]
-        shared_data_path = f"/tmp/mlb_shared_{game_date.replace('-', '')}.pkl"
-        print(f"\n  Pre-training shared model for {game_date}...")
-        try:
-            run_step([
-                "uv", "run", "model/predict.py",
-                "--prepare_only", "--game_date", game_date,
-                "--output", shared_data_path,
-            ])
-        except RuntimeError as e:
-            print(f"  WARNING: shared model prep failed ({e}), falling back to per-game training.")
-            shared_data_path = None
+    # Use the earliest game's date as the training cutoff so batches spanning
+    # UTC midnight still see a consistent training frontier.
+    earliest = min(get_game_start_utc(g) for g in games)
+    prep_date = earliest.astimezone(timezone.utc).date().isoformat()
+
+    print(f"\n  Preparing shared model for {prep_date} ({len(pks)} game(s))...")
+    try:
+        shared = PREDICT.prepare_shared(pks, prep_date)
+    except PREDICT.PredictError as e:
+        print(f"ERROR preparing shared model: {e}")
+        print("Aborting batch.")
+        return
 
     if len(pks) == 1:
-        run_predict_and_bet(pks[0])
+        _predict_and_bet(pks[0], shared)
     else:
         print(f"\n  Running predict+bet for {len(pks)} games in parallel...")
         with ThreadPoolExecutor(max_workers=min(3, len(pks))) as executor:
-            futures = {
-                executor.submit(run_predict_and_bet, pk, shared_data_path): pk
-                for pk in pks
-            }
+            futures = {executor.submit(_predict_and_bet, pk, shared): pk for pk in pks}
             for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as e:
                     print(f"  Thread error for game_pk={futures[future]}: {e}")
-
-    if shared_data_path:
-        try:
-            Path(shared_data_path).unlink(missing_ok=True)
-        except OSError:
-            pass
 
     print(f"\n{'=' * 60}")
     print(f"BATCH COMPLETE — {len(games)} game(s)")
@@ -262,10 +285,16 @@ def run_pipeline_for_game(game_pk: str):
     print(f"{'=' * 60}")
     try:
         run_step(["uv", "run", "fetch/fetch_data.py"])
+        _mark_fetched()
         run_step(["uv", "run", "fetch/fetch_balance.py"])
-        run_step(["uv", "run", "model/predict.py", "--game_pk", game_pk])
-        run_step(["uv", "run", "bet/place_bet.py", "--game_pk", game_pk])
     except RuntimeError as e:
+        print(f"\nERROR: {e}")
+        return
+    try:
+        info = PREDICT.find_target_game(game_pk=str(game_pk))
+        shared = PREDICT.prepare_shared([info["game_pk"]], info["game_date"])
+        _predict_and_bet(info["game_pk"], shared)
+    except PREDICT.PredictError as e:
         print(f"\nERROR: {e}")
         return
     print(f"\n{'=' * 60}")
@@ -280,47 +309,31 @@ def run_pipeline_for_game(game_pk: str):
 
 def settle_completed_games():
     """
-    Fetch final scores from the MLB Stats API for any 2026 game that:
-      - is in the bets table (was processed by the pipeline)
-      - still has home_win = NULL in the games table (not yet settled)
-      - started more than 4 hours ago (safely complete)
-    Writes home_score, away_score, home_win back to the games table.
+    For each bet whose game started >4h ago and still has no result:
+      - fetch the final from MLB Stats API by gamePk
+      - accumulate finals / postponements
+      - apply all updates + bet backfill in one transaction at the end
     """
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(hours=4)
 
     try:
-        conn = DB.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
-                           g.game_time_utc
-                    FROM games g
-                    JOIN bets b ON g.game_pk = b.game_pk
-                    WHERE g.season = 2026
-                      AND g.home_win IS NULL
-                      AND g.game_time_utc IS NOT NULL
-                      AND g.game_time_utc::timestamptz < %s
-                      AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-                """,
-                    (cutoff,),
-                )
-                rows = cur.fetchall()
-        finally:
-            conn.close()
+        rows = DB.get_settleable_games(2026, cutoff)
     except Exception as e:
         print(f"  Settlement check failed: {e}")
         return
-
     if not rows:
         return
 
     print(f"  Settling {len(rows)} completed game(s)...")
     import requests as _requests
 
-    for game_pk, game_date, home_team, away_team, _ in rows:
+    finals: list[dict] = []
+    postponed: list[int] = []
+    for r in rows:
+        game_pk = r["game_pk"]
+        home_team = r["home_team"]
+        away_team = r["away_team"]
         try:
             resp = _requests.get(
                 "https://statsapi.mlb.com/api/v1/schedule",
@@ -328,70 +341,40 @@ def settle_completed_games():
                 timeout=10,
             )
             resp.raise_for_status()
-            data = resp.json()
-            dates = data.get("dates", [])
+            dates = resp.json().get("dates", [])
             if not dates:
                 continue
-
             game_data = dates[0]["games"][0]
             status = game_data.get("status", {})
-            abstract_state = status.get("abstractGameState", "")
-            detailed_state = status.get("detailedState", "")
-            if "postponed" in detailed_state.lower():
-                conn2 = DB.get_connection()
-                try:
-                    with conn2.cursor() as cur:
-                        cur.execute(
-                            """
-                            UPDATE games
-                            SET extra = COALESCE(extra, '{}'::jsonb) || %s::jsonb,
-                                updated_at = NOW()
-                            WHERE game_pk = %s
-                        """,
-                            (json.dumps({"game_status": "postponed"}), int(game_pk)),
-                        )
-                    conn2.commit()
-                finally:
-                    conn2.close()
+            if "postponed" in status.get("detailedState", "").lower():
+                postponed.append(int(game_pk))
                 print(f"    Marked postponed: {away_team} @ {home_team}")
                 continue
-
-            if abstract_state != "Final":
+            if status.get("abstractGameState", "") != "Final":
                 continue
-
-            linescore = game_data.get("linescore", {})
-            teams_ls = linescore.get("teams", {})
-            h_score = teams_ls.get("home", {}).get("runs")
-            a_score = teams_ls.get("away", {}).get("runs")
-
+            ls = game_data.get("linescore", {}).get("teams", {})
+            h_score = ls.get("home", {}).get("runs")
+            a_score = ls.get("away", {}).get("runs")
             if h_score is None or a_score is None:
                 continue
-
             home_win = bool(h_score > a_score)
-            conn2 = DB.get_connection()
-            try:
-                with conn2.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE games
-                        SET home_score = %s,
-                            away_score = %s,
-                            home_win   = %s,
-                            updated_at = NOW()
-                        WHERE game_pk = %s
-                    """,
-                        (int(h_score), int(a_score), home_win, int(game_pk)),
-                    )
-                conn2.commit()
-            finally:
-                conn2.close()
-            DB.update_bet_result(game_pk, home_win)
+            finals.append({
+                "game_pk":    game_pk,
+                "home_score": h_score,
+                "away_score": a_score,
+                "home_win":   home_win,
+            })
             print(
                 f"    Settled: {away_team} @ {home_team} — "
                 f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)"
             )
         except Exception as e:
             print(f"    Could not settle game_pk={game_pk}: {e}")
+
+    try:
+        DB.apply_settlements(finals, postponed)
+    except Exception as e:
+        print(f"  Settlement write failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -424,22 +407,32 @@ def main():
 
     # ── Main loop ─────────────────────────────────────────────────────────
     print("MLB pipeline orchestrator started. Press Ctrl+C to stop.\n")
+    _sd_notify("READY=1")
 
     while True:
+        _sd_notify("WATCHDOG=1")
         settle_completed_games()
 
-        print("Refreshing MLB schedule...")
-        try:
-            subprocess.run([UV, "run", "fetch/fetch_data.py"], check=False)
-        except Exception as e:
-            print(f"  Schedule refresh failed: {e}")
+        if _fetch_is_fresh():
+            print(
+                f"Schedule refresh skipped — last fetch "
+                f"{int(time.time() - _LAST_FETCH_TS)}s ago."
+            )
+        else:
+            print("Refreshing MLB schedule...")
+            try:
+                rc = subprocess.run([UV, "run", "fetch/fetch_data.py"], check=False).returncode
+                if rc == 0:
+                    _mark_fetched()
+            except Exception as e:
+                print(f"  Schedule refresh failed: {e}")
 
         batch, run_at_utc = get_next_batch()
         now_utc = datetime.now(timezone.utc)
 
         if not batch:
             print("No upcoming unprocessed games found. Rechecking in 30 minutes...")
-            time.sleep(1800)
+            _watchdog_sleep(1800)
             continue
 
         first_start = get_game_start_utc(batch[0])
@@ -455,7 +448,7 @@ def main():
             print(
                 f"Sleeping {sleep_secs / 60:.1f} minutes until {LEAD_MINUTES} min before first pitch..."
             )
-            time.sleep(sleep_secs)
+            _watchdog_sleep(sleep_secs)
 
         run_batch(batch)
 

@@ -5,28 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="MLB betting dashboard — live balance, bet log, and model performance." />
   <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#181512" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Betting Dashboard</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4" defer></script>
   <style>
-    @font-face {
-      font-family: 'DM Sans';
-      font-style: normal;
-      font-weight: 400 600;
-      font-display: swap;
-      src: url('/static/fonts/dm-sans-latin.woff2') format('woff2');
-      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-    }
-    @font-face {
-      font-family: 'Playfair Display';
-      font-style: normal;
-      font-weight: 600;
-      font-display: swap;
-      src: url('/static/fonts/playfair-display-latin.woff2') format('woff2');
-      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-    }
     :root, :root[data-theme="light"] {
       --bg-primary: #FAF9F7;
       --bg-card: #FFFFFF;
@@ -54,99 +39,53 @@
     }
 
     :root[data-theme="dark"] {
-      --bg-primary: #181512;
-      --bg-card: #211D19;
-      --bg-elevated: #2A2520;
-      --text-primary: #F5F1EA;
-      --text-secondary: #B5ADA3;
-      --text-muted: #7F766C;
-      --accent: #D4A44A;
-      --accent-light: #41372A;
-      --success: #78C6A0;
-      --success-light: #23372E;
-      --danger: #EF9AA6;
-      --danger-light: #422730;
-      --border: #383129;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,0.38);
-      --shadow-md: 0 4px 12px rgba(0,0,0,0.46);
-      --shadow-lg: 0 10px 28px rgba(0,0,0,0.54);
-      --grid-color: #383129;
-      --tick-color: #7F766C;
-      --axis-title-color: #B5ADA3;
+      --bg-primary: #12171C;
+      --bg-card: #1A2128;
+      --bg-elevated: #232D36;
+      --text-primary: #F4EFE7;
+      --text-secondary: #C3B9AC;
+      --text-muted: #918779;
+      --accent: #E0A446;
+      --accent-light: #4A3821;
+      --success: #7FD0A8;
+      --success-light: #1F3A31;
+      --danger: #F0A1AB;
+      --danger-light: #45252D;
+      --border: #313C45;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
+      --shadow-lg: 0 10px 28px rgba(0,0,0,0.42);
+      --grid-color: #313C45;
+      --tick-color: #918779;
+      --axis-title-color: #C3B9AC;
       color-scheme: dark;
     }
 
     @media (prefers-color-scheme: dark) {
       :root[data-theme="auto"] {
-        --bg-primary: #181512;
-        --bg-card: #211D19;
-        --bg-elevated: #2A2520;
-        --text-primary: #F5F1EA;
-        --text-secondary: #B5ADA3;
-        --text-muted: #7F766C;
-        --accent: #D4A44A;
-        --accent-light: #41372A;
-        --success: #78C6A0;
-        --success-light: #23372E;
-        --danger: #EF9AA6;
-        --danger-light: #422730;
-        --border: #383129;
-        --shadow-sm: 0 1px 3px rgba(0,0,0,0.38);
-        --shadow-md: 0 4px 12px rgba(0,0,0,0.46);
-        --shadow-lg: 0 10px 28px rgba(0,0,0,0.54);
-        --grid-color: #383129;
-        --tick-color: #7F766C;
-        --axis-title-color: #B5ADA3;
+        --bg-primary: #12171C;
+        --bg-card: #1A2128;
+        --bg-elevated: #232D36;
+        --text-primary: #F4EFE7;
+        --text-secondary: #C3B9AC;
+        --text-muted: #918779;
+        --accent: #E0A446;
+        --accent-light: #4A3821;
+        --success: #7FD0A8;
+        --success-light: #1F3A31;
+        --danger: #F0A1AB;
+        --danger-light: #45252D;
+        --border: #313C45;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
+        --shadow-lg: 0 10px 28px rgba(0,0,0,0.42);
+        --grid-color: #313C45;
+        --tick-color: #918779;
+        --axis-title-color: #C3B9AC;
         color-scheme: dark;
       }
     }
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'DM Sans', -apple-system, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      font-size: 14px;
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    .top-bar {
-      background: var(--bg-card);
-      border-bottom: 1px solid var(--border);
-      padding: 0 32px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      height: 64px;
-      box-shadow: var(--shadow-sm);
-    }
-    .top-bar-left {
-      display: flex;
-      align-items: baseline;
-      gap: 16px;
-      min-width: 0;
-    }
-    .top-bar-left .logo {
-      font-family: 'Playfair Display', serif;
-      font-size: 1.4rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      letter-spacing: -0.02em;
-    }
-    .top-bar-left .subtitle {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      font-weight: 400;
-    }
-    .top-bar-right {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 0 0 auto;
-    }
     .balance-chip {
       font-size: 0.85rem;
       color: var(--text-secondary);
@@ -243,56 +182,6 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    .stat-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .stat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
-      box-shadow: var(--shadow-sm);
-      transition: all 0.3s ease;
-    }
-    .stat-card:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
-    }
-    .stat-card-header {
-      background: var(--bg-elevated);
-      color: var(--text-secondary);
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      padding: 10px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--border);
-    }
-    .stat-card-header .icon { opacity: 0.6; font-size: 0.9rem; }
-    .stat-card-body { padding: 20px 16px; }
-    .stat-card-body .big {
-      font-size: 2rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      line-height: 1.1;
-      font-feature-settings: 'tnum';
-    }
-    .stat-card-body .delta {
-      font-size: 0.75rem;
-      font-weight: 500;
-      margin-top: 8px;
-      color: var(--text-muted);
-    }
-    .delta.pos { color: var(--success); }
-    .delta.neg { color: var(--danger); }
-    .delta.neu { color: var(--text-muted); }
-
     .panel-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -300,28 +189,9 @@
       margin-bottom: 24px;
     }
     .panel-row.full { grid-template-columns: 1fr; }
-    .panel {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
-      box-shadow: var(--shadow-sm);
-    }
-    .panel-header {
-      background: var(--bg-elevated);
-      color: var(--text-secondary);
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    .panel-header.model { border-left: 3px solid #2D6A4F; }
-    .panel-header.market { border-left: 3px solid #B8860B; }
-    .panel-header.bets { border-left: 3px solid #1A1814; }
-    .panel-body { padding: 16px; }
-    .chart-wrap { position: relative; height: 220px; }
+    .panel-header.model { border-left: 3px solid var(--success); }
+    .panel-header.market { border-left: 3px solid var(--accent); }
+    .panel-header.bets { border-left: 3px solid var(--text-primary); }
 
     .table-wrap { overflow-x: auto; border-radius: var(--radius-md); }
     table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
@@ -360,13 +230,6 @@
     .badge.red { background: var(--danger-light); color: var(--danger); }
     .badge.blue { background: #E8F0FE; color: #1A73E8; }
     .badge.gray { background: var(--bg-elevated); color: var(--text-secondary); }
-
-    .empty {
-      padding: 40px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-    }
 
     .pagination {
       display: flex;
