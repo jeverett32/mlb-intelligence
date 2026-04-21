@@ -535,6 +535,19 @@ def get_open_bets(user: dict = Depends(require_approved_user)):
 def get_balance(user: dict = Depends(require_approved_user)):
     df = DB.get_user_balance_history(user["email"])
     if df.empty:
+        account = DB.get_kalshi_account(user["email"])
+        if account and account.get("is_active"):
+            try:
+                fetch_balance_for_account(
+                    key_id=account["key_id"],
+                    key_path=account["key_path"],
+                    kalshi_env=account["kalshi_env"],
+                    email=user["email"],
+                )
+                df = DB.get_user_balance_history(user["email"])
+            except Exception:
+                pass
+    if df.empty:
         return {"history": [], "current_dollars": 0.0}
     return {
         "history": _safe_records(df),
