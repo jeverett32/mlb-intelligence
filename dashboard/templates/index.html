@@ -137,7 +137,7 @@
       font-weight: 400;
     }
 
-    .top-bar-right { display: flex; align-items: center; gap: 24px; }
+    .top-bar-right { display: flex; align-items: center; gap: 16px; }
 
     /* Live betting toggle */
     .toggle-wrap {
@@ -454,8 +454,62 @@
       .stat-row { grid-template-columns: repeat(2, 1fr); }
     }
 
-    /* ── Theme selector ── */
+    /* ── Settings menu ── */
+    .settings-menu {
+      position: relative;
+    }
+    .settings-trigger {
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 1rem;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+      list-style: none;
+    }
+    .settings-trigger:hover,
+    .settings-trigger:focus-visible {
+      border-color: var(--accent-light);
+      transform: translateY(-1px);
+      outline: none;
+    }
+    .settings-menu[open] .settings-trigger {
+      border-color: var(--accent-light);
+      background: var(--bg-card);
+    }
+    .settings-panel {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 10px);
+      width: 220px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--bg-card);
+      box-shadow: var(--shadow-lg);
+      display: grid;
+      gap: 12px;
+      z-index: 20;
+    }
+    .settings-row {
+      display: grid;
+      gap: 6px;
+    }
+    .settings-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
     .theme-select {
+      width: 100%;
       background: var(--bg-elevated);
       color: var(--text-secondary);
       border: 1px solid var(--border);
@@ -469,20 +523,24 @@
     }
     .theme-select:hover, .theme-select:focus { border-color: var(--accent-light); outline: none; }
 
-    .login-btn {
+    .settings-action {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
+      width: 100%;
       padding: 8px 16px;
       background: var(--accent);
       color: #fff;
+      border: none;
       border-radius: var(--radius-md);
       font-size: 0.8rem;
       font-weight: 600;
       text-decoration: none;
       letter-spacing: 0.03em;
+      cursor: pointer;
       transition: transform 0.2s ease, filter 0.2s ease;
     }
-    .login-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .settings-action:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
     @media (max-width: 768px) {
       .top-bar {
@@ -494,6 +552,10 @@
       .top-bar-right { gap: 10px; flex-wrap: wrap; }
       .toggle-wrap { padding: 6px 10px; }
       .balance-chip { font-size: 0.8rem; }
+      .settings-panel {
+        right: 0;
+        width: min(220px, calc(100vw - 28px));
+      }
       nav {
         overflow-x: auto;
         scrollbar-width: none;
@@ -527,11 +589,22 @@
     <div class="balance-chip">
       Balance: <strong id="hdr-balance">$0.00</strong>
     </div>
-    <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
-      <option value="auto">Auto</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
+    <details class="settings-menu">
+      <summary class="settings-trigger" aria-label="Settings">⚙</summary>
+      <div class="settings-panel">
+        <div class="settings-row">
+          <label class="settings-label" for="theme-select">Theme</label>
+          <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <form method="post" action="/logout">
+          <button class="settings-action" type="submit">Logout</button>
+        </form>
+      </div>
+    </details>
   </div>
 </header>
 
@@ -818,14 +891,19 @@ function calChartCfg(data) {
   const grid = cssVar('--grid-color') || '#E8E4DE';
   const tick = cssVar('--tick-color') || '#9C9690';
   const axisTitle = cssVar('--axis-title-color') || '#6B6560';
+  const points = data.map(d => ({
+    x: d.predicted,
+    y: d.actual,
+    n: d.n ?? 0,
+  }));
   return {
     type: 'scatter',
     data: {
       datasets: [{
         label: 'Calibration',
-        data: data.map(d => ({ x: d.predicted, y: d.actual })),
+        data: points,
         backgroundColor: accent,
-        pointRadius: d => Math.min(8, Math.max(4, d.raw.n/2)),
+        pointRadius: ctx => Math.min(8, Math.max(4, (ctx.raw?.n ?? 0) / 2)),
       }]
     },
     options: {
@@ -833,7 +911,7 @@ function calChartCfg(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: d => `Pred: ${(d.parsed.x*100).toFixed(0)}% | Actual: ${(d.parsed.y*100).toFixed(0)}% (n=${d.raw.n})` }}
+        tooltip: { callbacks: { label: d => `Pred: ${(d.parsed.x*100).toFixed(0)}% | Actual: ${(d.parsed.y*100).toFixed(0)}% (n=${d.raw?.n ?? 0})` }}
       },
       scales: {
         x: {
