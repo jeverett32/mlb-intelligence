@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="MLB betting model — public performance dashboard." />
   <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#0F1724" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#181512" media="(prefers-color-scheme: dark)" />
   <title>MLB Model Performance</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -50,136 +50,88 @@
       color-scheme: light;
     }
     :root[data-theme="dark"] {
-      --bg-primary: #0F1724;
-      --bg-card: #182233;
-      --bg-elevated: #202C40;
-      --text-primary: #E8EDF6;
-      --text-secondary: #AAB8CC;
-      --text-muted: #7D8BA1;
-      --accent: #F2B84B;
-      --accent-light: #31425F;
-      --success: #63C8A2;
-      --danger: #F28C8C;
-      --border: #2B3951;
-      --shadow-sm: 0 1px 3px rgba(3,7,18,0.35);
-      --shadow-md: 0 10px 24px rgba(3,7,18,0.32);
-      --grid-color: #31425F;
-      --tick-color: #7D8BA1;
-      --axis-title-color: #AAB8CC;
+      --bg-primary: #181512;
+      --bg-card: #211D19;
+      --bg-elevated: #2A2520;
+      --text-primary: #F5F1EA;
+      --text-secondary: #B5ADA3;
+      --text-muted: #7F766C;
+      --accent: #D4A44A;
+      --accent-light: #41372A;
+      --success: #78C6A0;
+      --danger: #EF9AA6;
+      --border: #383129;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.38);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.46);
+      --grid-color: #383129;
+      --tick-color: #7F766C;
+      --axis-title-color: #B5ADA3;
       color-scheme: dark;
     }
     @media (prefers-color-scheme: dark) {
       :root[data-theme="auto"] {
-        --bg-primary: #0F1724;
-        --bg-card: #182233;
-        --bg-elevated: #202C40;
-        --text-primary: #E8EDF6;
-        --text-secondary: #AAB8CC;
-        --text-muted: #7D8BA1;
-        --accent: #F2B84B;
-        --accent-light: #31425F;
-        --success: #63C8A2;
-        --danger: #F28C8C;
-        --border: #2B3951;
-        --shadow-sm: 0 1px 3px rgba(3,7,18,0.35);
-        --shadow-md: 0 10px 24px rgba(3,7,18,0.32);
-        --grid-color: #31425F;
-        --tick-color: #7D8BA1;
-        --axis-title-color: #AAB8CC;
+        --bg-primary: #181512;
+        --bg-card: #211D19;
+        --bg-elevated: #2A2520;
+        --text-primary: #F5F1EA;
+        --text-secondary: #B5ADA3;
+        --text-muted: #7F766C;
+        --accent: #D4A44A;
+        --accent-light: #41372A;
+        --success: #78C6A0;
+        --danger: #EF9AA6;
+        --border: #383129;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.38);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.46);
+        --grid-color: #383129;
+        --tick-color: #7F766C;
+        --axis-title-color: #B5ADA3;
         color-scheme: dark;
       }
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'DM Sans', -apple-system, sans-serif;
-      background:
-        radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 18%, transparent), transparent 30%),
-        radial-gradient(circle at top right, color-mix(in srgb, var(--success) 14%, transparent), transparent 32%),
-        linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-primary) 260px);
+      background: var(--bg-primary);
       color: var(--text-primary);
       font-size: 14px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
     }
 
     .top-bar {
-      padding: 16px 24px 10px;
-    }
-    .top-bar-shell {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 12px 18px;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: color-mix(in srgb, var(--bg-card) 96%, transparent);
-      box-shadow: var(--shadow-sm);
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 18px;
+      height: 64px;
+      box-shadow: var(--shadow-sm);
     }
-    .top-bar-left {
-      display: flex;
-      align-items: baseline;
-      gap: 14px;
-      min-width: 0;
-    }
-    .eyebrow {
-      display: none;
-    }
-    .brand-row {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-      min-width: 0;
-    }
+    .top-bar-left { display: flex; align-items: baseline; gap: 16px; min-width: 0; }
     .top-bar-left .logo {
       font-family: 'Playfair Display', serif;
-      font-size: 1.45rem;
+      font-size: 1.4rem;
       font-weight: 600;
       color: var(--text-primary);
-      letter-spacing: -0.03em;
-      line-height: 1.1;
+      letter-spacing: -0.02em;
     }
-    .subtitle-pill {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    .top-bar-left .subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
     }
-    .hero-copy {
-      color: var(--text-secondary);
-      font-size: 0.84rem;
-      max-width: 420px;
-      line-height: 1.45;
-    }
-    .top-bar-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      justify-content: flex-end;
-    }
+    .top-bar-right { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 
     .theme-select {
-      min-width: 130px;
       background: var(--bg-elevated);
       color: var(--text-secondary);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
       font: inherit;
-      font-size: 0.76rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      font-size: 0.8rem;
+      font-weight: 500;
       cursor: pointer;
     }
     .theme-select:hover, .theme-select:focus { border-color: var(--accent-light); outline: none; }
@@ -187,23 +139,20 @@
     .login-btn {
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      min-width: 128px;
-      padding: 10px 16px;
-      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 76%, var(--text-primary) 24%));
+      padding: 8px 16px;
+      background: var(--accent);
       color: #fff;
-      border-radius: 14px;
-      font-size: 0.76rem;
-      font-weight: 700;
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      font-weight: 600;
       text-decoration: none;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      box-shadow: var(--shadow-sm);
+      letter-spacing: 0.03em;
       transition: transform 0.2s ease, filter 0.2s ease;
+      white-space: nowrap;
     }
     .login-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
-    main { padding: 18px 24px 40px; max-width: 1440px; margin: 0 auto; }
+    main { padding: 32px; max-width: 1440px; margin: 0 auto; }
 
     .stat-row {
       display: grid;
@@ -214,7 +163,7 @@
     .stat-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 20px;
+      border-radius: var(--radius-lg);
       overflow: hidden;
       box-shadow: var(--shadow-sm);
     }
@@ -279,7 +228,7 @@
     .panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 20px;
+      border-radius: var(--radius-lg);
       overflow: hidden;
       box-shadow: var(--shadow-sm);
     }
@@ -305,32 +254,15 @@
 
     @media (max-width: 768px) {
       .top-bar {
-        padding: 10px 12px 8px;
+        padding: 0 14px;
+        height: 56px;
       }
-      .top-bar-shell {
-        padding: 10px 12px;
-        border-radius: 16px;
-        display: grid;
-        gap: 10px;
-      }
-      .brand-row {
-        gap: 10px;
-      }
-      .hero-copy {
-        max-width: none;
-        font-size: 0.82rem;
-      }
-      .top-bar-right {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-      }
-      .theme-select,
-      .login-btn {
-        width: 100%;
-        min-width: 0;
-      }
-      main { padding: 14px 12px 28px; }
+      .top-bar-left .logo { font-size: 1.18rem; }
+      .top-bar-left .subtitle { display: none; }
+      .top-bar-right { gap: 8px; }
+      .theme-select { padding: 7px 9px; font-size: 0.74rem; }
+      .login-btn { padding: 7px 12px; font-size: 0.74rem; }
+      main { padding: 14px; }
       .stat-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .stat-card-body .big { font-size: 1.5rem; }
       .panel-row { grid-template-columns: 1fr; gap: 12px; }
@@ -338,18 +270,6 @@
     }
 
     @media (max-width: 560px) {
-      .top-bar {
-        padding-left: 10px;
-        padding-right: 10px;
-      }
-      .top-bar-right {
-        grid-template-columns: 1fr;
-      }
-      .brand-row {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 6px;
-      }
       .stat-row,
       .section-stats {
         grid-template-columns: 1fr;
@@ -360,22 +280,17 @@
 <body>
 
 <header class="top-bar">
-  <div class="top-bar-shell">
-    <div class="top-bar-left">
-      <div class="brand-row">
-        <span class="logo">MLB Betting</span>
-        <span class="subtitle-pill">Open Dashboard</span>
-      </div>
-      <p class="hero-copy">A public read on model accuracy, market comparison, and real-money wagering results. No login required to view the big picture.</p>
-    </div>
-    <div class="top-bar-right">
-      <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
-        <option value="auto">Auto</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-      <a class="login-btn" href="/login">Member Login</a>
-    </div>
+  <div class="top-bar-left">
+    <span class="logo">MLB Betting</span>
+    <span class="subtitle">Public Performance</span>
+  </div>
+  <div class="top-bar-right">
+    <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+      <option value="auto">Auto</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+    <a class="login-btn" href="/login">Login</a>
   </div>
 </header>
 
@@ -442,11 +357,7 @@ function calChartCfg(data) {
   const grid = cssVar('--grid-color') || '#E8E4DE';
   const tick = cssVar('--tick-color') || '#9C9690';
   const axisTitle = cssVar('--axis-title-color') || '#6B6560';
-  const points = data.map(d => ({
-    x: d.predicted,
-    y: d.actual,
-    n: d.n ?? 0,
-  }));
+  const points = data.map(d => ({ x: d.predicted, y: d.actual, n: d.n ?? 0 }));
   return {
     type: 'scatter',
     data: {
