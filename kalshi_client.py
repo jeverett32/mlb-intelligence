@@ -27,23 +27,23 @@ _BASES = {
 _PATH_PREFIX = "/trade-api/v2"
 
 
-def get_base_url() -> str:
-    env = os.environ.get("KALSHI_ENV", "prod").lower()
+def get_base_url(env: str | None = None) -> str:
+    env = (env or os.environ.get("KALSHI_ENV", "prod")).lower()
     return _BASES.get(env, _BASES["prod"])
 
 
-def load_credentials():
+def load_credentials(key_id: str | None = None, key_path: str | Path | None = None):
     """
     Load the Key ID and RSA private key from environment / .env.
     Returns (key_id: str, private_key: RSAPrivateKey).
     """
-    key_id = os.environ.get("KALSHI_KEY_ID", "").strip()
+    key_id = (key_id or os.environ.get("KALSHI_KEY_ID", "")).strip()
     if not key_id or key_id == "your-key-id-here":
         raise RuntimeError(
             "KALSHI_KEY_ID is not set. Copy .env.example to .env and fill in your Key ID."
         )
 
-    key_path = Path(os.environ.get("KALSHI_KEY_PATH", "kalshi-key.pem"))
+    key_path = Path(key_path or os.environ.get("KALSHI_KEY_PATH", "kalshi-key.pem"))
     if not key_path.exists():
         raise RuntimeError(
             f"Kalshi private key not found at: {key_path}\n"

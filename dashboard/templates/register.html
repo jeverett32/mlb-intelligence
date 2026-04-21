@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MLB Betting Dashboard — Request Access</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <style>
+    @font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/static/fonts/dm-sans-latin.woff2') format('woff2'); }
+    @font-face { font-family: 'Playfair Display'; font-style: normal; font-weight: 600; font-display: swap; src: url('/static/fonts/playfair-display-latin.woff2') format('woff2'); }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(184, 134, 11, 0.15), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(26, 45, 74, 0.18), transparent 28%),
+        linear-gradient(180deg, #f6f2ea 0%, #efeae0 100%);
+      min-height: 100vh;
+      color: #1a1814;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+    }
+    .shell {
+      width: 100%;
+      max-width: 980px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+      border: 1px solid rgba(26, 24, 20, 0.08);
+      border-radius: 28px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 24px 80px rgba(26,24,20,0.12);
+      backdrop-filter: blur(12px);
+    }
+    .hero {
+      padding: 44px 40px;
+      background: linear-gradient(160deg, rgba(26,45,74,0.96), rgba(18,27,43,0.98));
+      color: #fff;
+      display: grid;
+      gap: 24px;
+      align-content: center;
+    }
+    .eyebrow { font-size: 0.76rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #d4a44a; }
+    h1 { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 0.98; letter-spacing: -0.05em; max-width: 11ch; }
+    .hero p { color: #c6d2e1; line-height: 1.6; max-width: 42ch; }
+    .hero ul { padding-left: 18px; color: #d8e0ea; display: grid; gap: 8px; }
+    .card { background: #fffdf9; display: grid; align-content: center; }
+    .card-header, .card-body { padding: 28px 34px; }
+    .card-header h2 { font-size: 1.55rem; letter-spacing: -0.03em; }
+    .card-header p { margin-top: 8px; color: #6b6560; line-height: 1.55; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 0.74rem; font-weight: 700; color: #6b6560; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .field input { width: 100%; padding: 13px 14px; border: 1px solid #ddd4c8; border-radius: 14px; font-size: 0.95rem; background: #fff; }
+    .error-banner { background: #fff1f0; border: 1px solid #ffa39e; border-radius: 10px; color: #cf1322; font-size: 0.82rem; padding: 9px 12px; margin-bottom: 18px; }
+    .actions { display: grid; gap: 10px; margin-top: 8px; }
+    .btn-submit, .btn-secondary {
+      width: 100%;
+      padding: 13px;
+      border-radius: 16px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-submit { border: none; background: linear-gradient(135deg, #1a2d4a, #243d62); color: #fff; cursor: pointer; }
+    .btn-secondary { border: 1px solid #ddd4c8; background: #fff; color: #1a2d4a; }
+    @media (max-width: 920px) { .shell { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <span class="eyebrow">Request Access</span>
+      <h1>Admin approval controls who gets in.</h1>
+      <p>Registration creates a pending account only. An admin must approve it before you can sign in or use any private dashboard features.</p>
+      <ul>
+        <li>Pending accounts cannot log in.</li>
+        <li>Rejected accounts stay blocked until an admin changes them.</li>
+        <li>Admin-only tools stay hidden from normal users.</li>
+      </ul>
+    </section>
+    <section class="card">
+      <div class="card-header">
+        <h2>Create Request</h2>
+        <p>Use a real email address. The account will stay pending until approved.</p>
+      </div>
+      <div class="card-body">
+        {{ERROR_BANNER}}
+        <form method="post" action="/register">
+          <div class="field">
+            <label for="full_name">Name</label>
+            <input type="text" id="full_name" name="full_name" autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" autocomplete="email" required autofocus>
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn-submit">Submit Request</button>
+            <a class="btn-secondary" href="/login">Back To Sign In</a>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

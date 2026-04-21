@@ -29,10 +29,6 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
-# Ensure uv is findable when launched from systemd (no user PATH)
-_UV = Path(os.environ.get("HOME", "/root")) / ".local/bin/uv"
-UV = str(_UV) if _UV.exists() else "uv"
-
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -103,7 +99,12 @@ def _fetch_is_fresh() -> bool:
 def run_step(cmd: list[str]):
     """Run a pipeline step as a subprocess. Raises RuntimeError on non-zero exit."""
     if cmd[0] == "uv":
-        cmd = [UV] + cmd[1:]
+        # Reuse the current interpreter so systemd services do not depend on a
+        # separate uv install or a specific HOME-owned binary path.
+        if len(cmd) >= 3 and cmd[1] == "run":
+            cmd = [sys.executable, cmd[2], *cmd[3:]]
+        else:
+            raise RuntimeError(f"Unsupported uv command: {' '.join(cmd)}")
     print(f"\n>>> {' '.join(cmd)}")
     result = subprocess.run(cmd)
     if result.returncode != 0:
@@ -209,7 +210,7 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 
 
 def _predict_and_bet(game_pk: str, shared: dict) -> None:
-    """Run predict + place_bet for one game, in-process. Logs and swallows per-game errors."""
+    """Run predict + per-user execution for one game, in-process."""
     try:
         PREDICT.predict_one(game_pk, shared)
     except Exception as e:
@@ -217,7 +218,7 @@ def _predict_and_bet(game_pk: str, shared: dict) -> None:
         NOTIFY.send(f":warning: **Predict error** `game_pk={game_pk}`: `{e}`")
         return
     try:
-        PLACE_BET.place_bet(game_pk)
+        PLACE_BET.execute_for_all_users(game_pk)
     except PLACE_BET.PlaceBetError as e:
         print(f"  PLACE_BET ERROR game_pk={game_pk}: {e}")
         NOTIFY.send(f":no_entry: **Bet failed** `game_pk={game_pk}`: `{e}`")
@@ -229,9 +230,9 @@ def _predict_and_bet(game_pk: str, shared: dict) -> None:
 def run_batch(games: list[dict]) -> None:
     """
     Full pipeline for a batch of games:
-      1. fetch_data + fetch_balance once (shared)
+      1. fetch_data once (shared)
       2. prepare shared model once
-      3. predict + place_bet in parallel, in-process
+      3. predict + per-user execution in parallel, in-process
     """
     labels = ", ".join(f"{g.get('away_team')}@{g.get('home_team')}" for g in games)
     print(f"\n{'=' * 60}")
@@ -241,7 +242,6 @@ def run_batch(games: list[dict]) -> None:
     try:
         run_step(["uv", "run", "fetch/fetch_data.py"])
         _mark_fetched()
-        run_step(["uv", "run", "fetch/fetch_balance.py"])
     except RuntimeError as e:
         print(f"\nERROR in shared fetch step: {e}")
         print("Aborting batch.")
@@ -292,7 +292,6 @@ def run_pipeline_for_game(game_pk: str):
     try:
         run_step(["uv", "run", "fetch/fetch_data.py"])
         _mark_fetched()
-        run_step(["uv", "run", "fetch/fetch_balance.py"])
     except RuntimeError as e:
         print(f"\nERROR: {e}")
         return
@@ -379,6 +378,7 @@ def settle_completed_games():
 
     try:
         DB.apply_settlements(finals, postponed)
+        DB.backfill_user_order_results()
     except Exception as e:
         print(f"  Settlement write failed: {e}")
 
@@ -427,7 +427,9 @@ def main():
         else:
             print("Refreshing MLB schedule...")
             try:
-                rc = subprocess.run([UV, "run", "fetch/fetch_data.py"], check=False).returncode
+                rc = subprocess.run(
+                    [sys.executable, "fetch/fetch_data.py"], check=False
+                ).returncode
                 if rc == 0:
                     _mark_fetched()
             except Exception as e:

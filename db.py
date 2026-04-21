@@ -650,7 +650,20 @@ def is_live_betting() -> bool:
 # Generic table browser (for dashboard DB viewer)
 # ---------------------------------------------------------------------------
 
-BROWSABLE_TABLES = {"games", "bets", "balance", "settings"}
+BROWSABLE_TABLES = {
+    "games",
+    "bets",
+    "balance",
+    "settings",
+    "users",
+    "sessions",
+    "app_users",
+    "app_sessions",
+    "user_settings",
+    "kalshi_accounts",
+    "user_balance",
+    "user_orders",
+}
 
 
 def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
@@ -681,93 +694,468 @@ def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
 
 import secrets as _secrets
 
+USER_STATUS_PENDING = "pending"
+USER_STATUS_APPROVED = "approved"
+USER_STATUS_REJECTED = "rejected"
+USER_STATUS_DISABLED = "disabled"
+USER_STATUSES = {
+    USER_STATUS_PENDING,
+    USER_STATUS_APPROVED,
+    USER_STATUS_REJECTED,
+    USER_STATUS_DISABLED,
+}
+APP_USERS_TABLE = "app_users"
+APP_SESSIONS_TABLE = "app_sessions"
+
+
+def _norm_email(email: str) -> str:
+    return (email or "").strip().lower()
+
 
 def init_auth_tables():
-    """Create users and sessions tables if they don't exist."""
+    """Create auth/execution tables owned by the app DB user and import legacy rows."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    email         TEXT PRIMARY KEY,
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {APP_USERS_TABLE} (
+                    email TEXT PRIMARY KEY,
+                    full_name TEXT,
                     password_hash TEXT NOT NULL,
-                    created_at    TIMESTAMPTZ DEFAULT NOW()
+                    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                    approval_status TEXT NOT NULL DEFAULT 'approved',
+                    approved_at TIMESTAMPTZ,
+                    approved_by TEXT,
+                    last_login_at TIMESTAMPTZ,
+                    rejection_reason TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    CONSTRAINT {APP_USERS_TABLE}_approval_status_check
+                    CHECK (approval_status IN ('pending', 'approved', 'rejected', 'disabled'))
                 )
             """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {APP_SESSIONS_TABLE} (
                     session_id TEXT PRIMARY KEY,
-                    email      TEXT REFERENCES users(email) ON DELETE CASCADE,
+                    email TEXT REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
                     expires_at TIMESTAMPTZ NOT NULL,
-                    created_at TIMESTAMPTZ DEFAULT NOW()
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    created_by_ip INET,
+                    user_agent TEXT,
+                    revoked_at TIMESTAMPTZ
                 )
             """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (email, key)
+                )
+            """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS kalshi_accounts (
+                    email TEXT PRIMARY KEY REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    label TEXT NOT NULL DEFAULT 'Primary account',
+                    key_id TEXT NOT NULL,
+                    key_path TEXT NOT NULL,
+                    kalshi_env TEXT NOT NULL DEFAULT 'prod',
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    last_verified_at TIMESTAMPTZ,
+                    last_error TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS user_balance (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    balance_cents BIGINT NOT NULL,
+                    balance_dollars DOUBLE PRECISION NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'kalshi'
+                )
+            """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS user_orders (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    game_pk BIGINT NOT NULL,
+                    game_date DATE,
+                    home_team TEXT,
+                    away_team TEXT,
+                    predicted_prob DOUBLE PRECISION,
+                    market_implied_prob DOUBLE PRECISION,
+                    edge DOUBLE PRECISION,
+                    bet_side TEXT,
+                    bet_frac DOUBLE PRECISION,
+                    bet_dollars DOUBLE PRECISION,
+                    n_contracts INTEGER,
+                    kalshi_order_id TEXT,
+                    live_price DOUBLE PRECISION,
+                    live_edge DOUBLE PRECISION,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    dry_run BOOLEAN NOT NULL DEFAULT TRUE,
+                    result BOOLEAN,
+                    profit_loss DOUBLE PRECISION,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (email, game_pk)
+                )
+            """)
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_approval_status ON {APP_USERS_TABLE} (approval_status)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_is_admin ON {APP_USERS_TABLE} (is_admin)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_SESSIONS_TABLE}_email ON {APP_SESSIONS_TABLE} (email)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_balance_email_recorded ON user_balance (email, recorded_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_email_status ON user_orders (email, status, game_date)")
+
+            cur.execute(
+                f"""
+                INSERT INTO {APP_USERS_TABLE} (
+                    email, password_hash, created_at, updated_at, approval_status, approved_at, is_admin
+                )
+                SELECT u.email, u.password_hash, COALESCE(u.created_at, NOW()), NOW(), 'approved',
+                       COALESCE(u.created_at, NOW()), FALSE
+                FROM users u
+                ON CONFLICT (email) DO NOTHING
+                """
+            )
+            cur.execute(
+                f"""
+                INSERT INTO {APP_SESSIONS_TABLE} (session_id, email, expires_at, created_at)
+                SELECT s.session_id, s.email, s.expires_at, COALESCE(s.created_at, NOW())
+                FROM sessions s
+                JOIN {APP_USERS_TABLE} u ON u.email = s.email
+                ON CONFLICT (session_id) DO NOTHING
+                """
+            )
+
+            bootstrap_admin = _norm_email(os.environ.get("MLB_BOOTSTRAP_ADMIN_EMAIL", ""))
+            if bootstrap_admin:
+                cur.execute(
+                    f"""
+                    UPDATE {APP_USERS_TABLE}
+                    SET is_admin = TRUE,
+                        approval_status = 'approved',
+                        approved_at = COALESCE(approved_at, NOW()),
+                        updated_at = NOW()
+                    WHERE email = %s
+                    """,
+                    (bootstrap_admin,),
+                )
+            else:
+                cur.execute(f"SELECT COUNT(*) FROM {APP_USERS_TABLE}")
+                user_count = cur.fetchone()[0]
+                if user_count == 1:
+                    cur.execute(
+                        f"""
+                        UPDATE {APP_USERS_TABLE}
+                        SET is_admin = TRUE,
+                            approval_status = 'approved',
+                            approved_at = COALESCE(approved_at, created_at, NOW()),
+                            updated_at = NOW()
+                        WHERE is_admin = FALSE
+                        """
+                    )
+
+            cur.execute(
+                """
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (
+                    'global_live_betting',
+                    COALESCE((SELECT value FROM settings WHERE key = 'live_betting'), 'false'),
+                    NOW()
+                )
+                ON CONFLICT (key) DO NOTHING
+                """
+            )
+            cur.execute(
+                f"""
+                INSERT INTO user_settings (email, key, value, updated_at)
+                SELECT email, 'live_betting',
+                       COALESCE((SELECT value FROM settings WHERE key = 'global_live_betting'), 'false'),
+                       NOW()
+                FROM {APP_USERS_TABLE}
+                ON CONFLICT (email, key) DO NOTHING
+                """
+            )
         conn.commit()
     finally:
         conn.close()
 
 
-def upsert_user(email: str, password_hash: str):
+def upsert_user(
+    email: str,
+    password_hash: str,
+    *,
+    full_name: str = "",
+    is_admin: bool = False,
+    approval_status: str = USER_STATUS_APPROVED,
+    approved_by: str | None = None,
+):
+    email = _norm_email(email)
+    approved_by = _norm_email(approved_by or "") or None
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO users (email, password_hash)
-                VALUES (%s, %s)
-                ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
-            """, (email, password_hash))
+                INSERT INTO app_users (
+                    email, password_hash, full_name, is_admin, approval_status,
+                    approved_at, approved_by, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    CASE WHEN %s = 'approved' THEN NOW() ELSE NULL END,
+                    %s, NOW()
+                )
+                ON CONFLICT (email) DO UPDATE SET
+                    password_hash = EXCLUDED.password_hash,
+                    full_name = EXCLUDED.full_name,
+                    is_admin = EXCLUDED.is_admin,
+                    approval_status = EXCLUDED.approval_status,
+                    approved_at = CASE
+                        WHEN EXCLUDED.approval_status = 'approved'
+                        THEN COALESCE(app_users.approved_at, NOW())
+                        ELSE app_users.approved_at
+                    END,
+                    approved_by = COALESCE(EXCLUDED.approved_by, app_users.approved_by),
+                    updated_at = NOW()
+            """, (email, password_hash, full_name, is_admin, approval_status, approval_status, approved_by))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def create_pending_user(email: str, password_hash: str, full_name: str = "") -> bool:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app_users (email, password_hash, full_name, is_admin, approval_status, updated_at)
+                VALUES (%s, %s, %s, FALSE, 'pending', NOW())
+                ON CONFLICT (email) DO NOTHING
+                """,
+                (email, password_hash, full_name.strip()),
+            )
+            created = cur.rowcount > 0
+            if created:
+                cur.execute(
+                    """
+                    INSERT INTO user_settings (email, key, value, updated_at)
+                    VALUES (%s, 'live_betting', 'false', NOW())
+                    ON CONFLICT (email, key) DO NOTHING
+                    """,
+                    (email,),
+                )
+        conn.commit()
+        return created
     finally:
         conn.close()
 
 
 def get_user_hash(email: str):
+    email = _norm_email(email)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT password_hash FROM users WHERE email = %s", (email,))
+            cur.execute("SELECT password_hash FROM app_users WHERE email = %s", (email,))
             row = cur.fetchone()
             return row[0] if row else None
     finally:
         conn.close()
 
 
-def create_session(email: str, expires_days: int = 30) -> str:
+def get_user(email: str) -> dict | None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT email, full_name, is_admin, approval_status, approved_at,
+                       approved_by, created_at, updated_at, last_login_at,
+                       rejection_reason
+                FROM app_users
+                WHERE email = %s
+                """,
+                (email,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_users(status: str = "all") -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            params = []
+            where = ""
+            if status != "all":
+                where = "WHERE approval_status = %s"
+                params.append(status)
+            cur.execute(
+                f"""
+                SELECT email, full_name, is_admin, approval_status, approved_at,
+                       approved_by, created_at, updated_at, last_login_at,
+                       rejection_reason
+                FROM app_users
+                {where}
+                ORDER BY created_at DESC, email
+                """,
+                params,
+            )
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def set_user_approval_status(
+    email: str,
+    status: str,
+    *,
+    actor_email: str | None = None,
+    rejection_reason: str = "",
+):
+    if status not in USER_STATUSES:
+        raise ValueError(f"Invalid approval status: {status}")
+    email = _norm_email(email)
+    actor_email = _norm_email(actor_email or "") or None
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE app_users
+                SET approval_status = %s,
+                    approved_at = CASE WHEN %s = 'approved' THEN NOW() ELSE approved_at END,
+                    approved_by = CASE WHEN %s = 'approved' THEN %s ELSE approved_by END,
+                    rejection_reason = CASE
+                        WHEN %s IN ('rejected', 'disabled') THEN NULLIF(%s, '')
+                        ELSE NULL
+                    END,
+                    updated_at = NOW()
+                WHERE email = %s
+                """,
+                (status, status, status, actor_email, status, rejection_reason.strip(), email),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_user_admin(email: str, is_admin: bool):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE app_users
+                SET is_admin = %s,
+                    updated_at = NOW()
+                WHERE email = %s
+                """,
+                (bool(is_admin), email),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_user_login(email: str):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE app_users SET last_login_at = NOW(), updated_at = NOW() WHERE email = %s",
+                (email,),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def create_session(
+    email: str,
+    expires_days: int = 30,
+    *,
+    created_by_ip: str | None = None,
+    user_agent: str = "",
+) -> str:
+    email = _norm_email(email)
     session_id = _secrets.token_urlsafe(32)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO sessions (session_id, email, expires_at)
-                VALUES (%s, %s, NOW() + (%s || ' days')::INTERVAL)
-            """, (session_id, email, str(expires_days)))
+                INSERT INTO app_sessions (
+                    session_id, email, expires_at, created_by_ip, user_agent
+                )
+                VALUES (%s, %s, NOW() + (%s || ' days')::INTERVAL, %s, %s)
+            """, (session_id, email, str(expires_days), created_by_ip, user_agent[:512]))
         conn.commit()
     finally:
         conn.close()
     return session_id
 
 
-def get_session_email(session_id: str):
+def get_session_user(session_id: str):
     if not session_id:
         return None
     conn = get_connection()
     try:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
-                SELECT email FROM sessions
-                WHERE session_id = %s AND expires_at > NOW()
+                SELECT u.email, u.full_name, u.is_admin, u.approval_status,
+                       u.approved_at, u.approved_by, u.created_at, u.updated_at,
+                       u.last_login_at, u.rejection_reason
+                FROM app_sessions s
+                JOIN app_users u ON u.email = s.email
+                WHERE s.session_id = %s
+                  AND s.expires_at > NOW()
+                  AND s.revoked_at IS NULL
             """, (session_id,))
             row = cur.fetchone()
-            return row[0] if row else None
+            return dict(row) if row else None
     finally:
         conn.close()
+
+
+def get_session_email(session_id: str):
+    user = get_session_user(session_id)
+    return user["email"] if user else None
 
 
 def delete_session(session_id: str):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM sessions WHERE session_id = %s", (session_id,))
+            cur.execute("DELETE FROM app_sessions WHERE session_id = %s", (session_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def revoke_sessions_for_email(email: str):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE app_sessions
+                SET revoked_at = NOW()
+                WHERE email = %s AND revoked_at IS NULL
+                """,
+                (email,),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -777,10 +1165,377 @@ def purge_expired_sessions() -> int:
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM sessions WHERE expires_at < NOW()")
+            cur.execute("DELETE FROM app_sessions WHERE expires_at < NOW()")
             n = cur.rowcount
         conn.commit()
         return n
+    finally:
+        conn.close()
+
+
+def get_user_setting(email: str, key: str, default: str = "") -> str:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM user_settings WHERE email = %s AND key = %s",
+                (email, key),
+            )
+            row = cur.fetchone()
+            return row[0] if row else default
+    finally:
+        conn.close()
+
+
+def set_user_setting(email: str, key: str, value: str):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_settings (email, key, value, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (email, key)
+                DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                """,
+                (email, key, value),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def is_global_live_betting() -> bool:
+    return get_setting("global_live_betting", get_setting("live_betting", "false")).lower() == "true"
+
+
+def is_user_live_betting(email: str) -> bool:
+    return get_user_setting(email, "live_betting", "true").lower() == "true"
+
+
+def upsert_kalshi_account(
+    email: str,
+    *,
+    key_id: str,
+    key_path: str,
+    kalshi_env: str,
+    label: str = "Primary account",
+    is_active: bool = True,
+    last_verified: bool = False,
+    last_error: str = "",
+):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO kalshi_accounts (
+                    email, label, key_id, key_path, kalshi_env, is_active,
+                    last_verified_at, last_error, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    CASE WHEN %s THEN NOW() ELSE NULL END,
+                    NULLIF(%s, ''),
+                    NOW()
+                )
+                ON CONFLICT (email) DO UPDATE SET
+                    label = EXCLUDED.label,
+                    key_id = EXCLUDED.key_id,
+                    key_path = EXCLUDED.key_path,
+                    kalshi_env = EXCLUDED.kalshi_env,
+                    is_active = EXCLUDED.is_active,
+                    last_verified_at = CASE
+                        WHEN %s THEN NOW() ELSE kalshi_accounts.last_verified_at
+                    END,
+                    last_error = NULLIF(%s, ''),
+                    updated_at = NOW()
+                """,
+                (
+                    email,
+                    label,
+                    key_id.strip(),
+                    key_path,
+                    kalshi_env.strip().lower() or "prod",
+                    bool(is_active),
+                    bool(last_verified),
+                    last_error,
+                    bool(last_verified),
+                    last_error,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_kalshi_account(email: str) -> dict | None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT email, label, key_id, key_path, kalshi_env, is_active,
+                       last_verified_at, last_error, created_at, updated_at
+                FROM kalshi_accounts
+                WHERE email = %s
+                """,
+                (email,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_kalshi_account(email: str):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM kalshi_accounts WHERE email = %s", (email,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_approved_users_with_accounts() -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT u.email, u.is_admin, u.approval_status,
+                       a.key_id, a.key_path, a.kalshi_env, a.is_active
+                FROM users u
+                JOIN kalshi_accounts a ON a.email = u.email
+                WHERE u.approval_status = 'approved'
+                  AND a.is_active = TRUE
+                ORDER BY u.email
+                """
+            )
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def insert_user_balance(email: str, balance_cents: int, source: str = "kalshi"):
+    email = _norm_email(email)
+    balance_dollars = balance_cents / 100.0
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_balance (
+                    email, recorded_at, balance_cents, balance_dollars, source
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (email, datetime.now(timezone.utc), int(balance_cents), balance_dollars, source),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_last_user_balance_cents(email: str) -> int | None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT balance_cents
+                FROM user_balance
+                WHERE email = %s
+                ORDER BY recorded_at DESC, id DESC
+                LIMIT 1
+                """,
+                (email,),
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_balance_history(email: str) -> pd.DataFrame:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT recorded_at, balance_cents, balance_dollars, source
+                FROM user_balance
+                WHERE email = %s
+                ORDER BY recorded_at
+                """,
+                (email,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+
+def upsert_user_order(
+    email: str,
+    game_pk: str | int,
+    *,
+    game_date: str = "",
+    home_team: str = "",
+    away_team: str = "",
+    predicted_prob=None,
+    market_implied_prob=None,
+    edge=None,
+    bet_side: str = "none",
+    bet_frac: float = 0.0,
+    bet_dollars=None,
+    n_contracts=None,
+    kalshi_order_id: str | None = None,
+    live_price=None,
+    live_edge=None,
+    status: str = "pending",
+    dry_run: bool = True,
+):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_orders (
+                    email, game_pk, game_date, home_team, away_team,
+                    predicted_prob, market_implied_prob, edge,
+                    bet_side, bet_frac, bet_dollars, n_contracts,
+                    kalshi_order_id, live_price, live_edge, status, dry_run, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, NOW()
+                )
+                ON CONFLICT (email, game_pk) DO UPDATE SET
+                    game_date = EXCLUDED.game_date,
+                    home_team = EXCLUDED.home_team,
+                    away_team = EXCLUDED.away_team,
+                    predicted_prob = EXCLUDED.predicted_prob,
+                    market_implied_prob = EXCLUDED.market_implied_prob,
+                    edge = EXCLUDED.edge,
+                    bet_side = EXCLUDED.bet_side,
+                    bet_frac = EXCLUDED.bet_frac,
+                    bet_dollars = COALESCE(EXCLUDED.bet_dollars, user_orders.bet_dollars),
+                    n_contracts = COALESCE(EXCLUDED.n_contracts, user_orders.n_contracts),
+                    kalshi_order_id = COALESCE(EXCLUDED.kalshi_order_id, user_orders.kalshi_order_id),
+                    live_price = EXCLUDED.live_price,
+                    live_edge = EXCLUDED.live_edge,
+                    status = EXCLUDED.status,
+                    dry_run = EXCLUDED.dry_run,
+                    updated_at = NOW()
+                """,
+                (
+                    email,
+                    int(game_pk),
+                    str(game_date)[:10] or None,
+                    home_team,
+                    away_team,
+                    float(predicted_prob) if predicted_prob is not None else None,
+                    float(market_implied_prob) if market_implied_prob is not None else None,
+                    float(edge) if edge is not None and edge == edge else None,
+                    bet_side,
+                    float(bet_frac or 0.0),
+                    float(bet_dollars) if bet_dollars is not None else None,
+                    int(n_contracts) if n_contracts is not None else None,
+                    kalshi_order_id,
+                    float(live_price) if live_price is not None else None,
+                    float(live_edge) if live_edge is not None else None,
+                    status,
+                    bool(dry_run),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_orders(email: str) -> pd.DataFrame:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM user_orders
+                WHERE email = %s
+                ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                """,
+                (email,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
+    return df
+
+
+def get_user_order(email: str, game_pk: str | int) -> dict | None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM user_orders WHERE email = %s AND game_pk = %s",
+                (email, int(game_pk)),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def backfill_user_order_results():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE user_orders uo
+                SET result = g.home_win,
+                    profit_loss = CASE
+                        WHEN uo.bet_side IS NULL OR uo.bet_side = 'none'
+                             OR uo.bet_dollars IS NULL THEN NULL
+                        WHEN (g.home_win AND uo.bet_side = 'home') OR (NOT g.home_win AND uo.bet_side = 'away') THEN
+                            ROUND((
+                                CASE
+                                    WHEN uo.n_contracts IS NOT NULL THEN uo.n_contracts::numeric - uo.bet_dollars
+                                    WHEN uo.market_implied_prob IS NOT NULL AND uo.bet_side = 'home' THEN uo.bet_dollars * (1.0 / NULLIF(uo.market_implied_prob, 0) - 1)
+                                    WHEN uo.market_implied_prob IS NOT NULL AND uo.bet_side = 'away' THEN uo.bet_dollars * (1.0 / NULLIF(1.0 - uo.market_implied_prob, 0) - 1)
+                                    ELSE NULL
+                                END
+                            )::numeric, 2)
+                        ELSE -uo.bet_dollars
+                    END,
+                    updated_at = NOW()
+                FROM games g
+                WHERE uo.game_pk = g.game_pk
+                  AND g.home_win IS NOT NULL
+                  AND (uo.result IS DISTINCT FROM g.home_win OR uo.profit_loss IS NULL)
+                """
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
     finally:
         conn.close()
 

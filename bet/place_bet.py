@@ -19,6 +19,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
 import db as DB
+from fetch.fetch_balance import fetch_balance_for_account
 
 MLB_SERIES = "KXMLBGAME"
 ORDER_SLIPPAGE_CENTS = int(os.environ.get("KALSHI_ORDER_SLIPPAGE_CENTS", "3"))
@@ -61,13 +62,13 @@ def _kelly_stake(prob: float, decimal_odds: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def find_kalshi_market(home_team: str, away_team: str, game_date: str):
+def find_kalshi_market(home_team: str, away_team: str, game_date: str, *, base_url: str | None = None):
     """
     Dynamically find the open Kalshi market for this game.
     Searches KXMLBGAME series and matches by team abbreviations + date.
     Returns (ticker, market_dict) or (None, None).
     """
-    base_url = get_base_url()
+    base_url = base_url or get_base_url()
     resp = requests.get(
         base_url + "/markets",
         params={"series_ticker": MLB_SERIES, "status": "open", "limit": 200},
@@ -101,20 +102,17 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str):
 # ---------------------------------------------------------------------------
 
 
-def place_bet(game_pk: str) -> dict:
-    """Place a Kalshi bet for the given game. Returns a status dict.
-    Raises PlaceBetError on unrecoverable failures."""
-    row = DB.get_bet(game_pk)
-    if row is None:
-        raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
-
+def _execute_bet_row(
+    row: dict,
+    *,
+    key_id: str,
+    key_path: str,
+    kalshi_env: str,
+    balance_cents: int,
+    dry_run: bool,
+) -> dict:
     original_bet_frac = float(row.get("bet_frac") or 0)
     bet_side = str(row.get("bet_side") or "none").strip().lower()
-
-    if original_bet_frac <= 0 or bet_side == "none":
-        print("No bet indicated — skipping.")
-        return {"game_pk": str(game_pk), "status": "skipped_no_bet"}
-
     home_team = str(row["home_team"])
     away_team = str(row["away_team"])
     game_date = str(row["game_date"])[:10]
@@ -128,13 +126,12 @@ def place_bet(game_pk: str) -> dict:
     market_prob = float(market_prob)
     predicted_prob = float(predicted_prob)
 
-    # --- Load Kalshi credentials ---
-    key_id, private_key = load_credentials()
-    base_url = get_base_url()
+    key_id, private_key = load_credentials(key_id=key_id, key_path=key_path)
+    base_url = get_base_url(kalshi_env)
 
     # --- Find market ---
     print(f"\n  Searching Kalshi market: {away_team} @ {home_team} on {game_date}...")
-    ticker, _ = find_kalshi_market(home_team, away_team, game_date)
+    ticker, _ = find_kalshi_market(home_team, away_team, game_date, base_url=base_url)
 
     if ticker is None:
         raise PlaceBetError(
@@ -169,14 +166,17 @@ def place_bet(game_pk: str) -> dict:
         print(f"  Live Kalshi price: {live_price:.4f} ({price_field})")
         print(f"  Live edge:         {live_edge:.4f}")
         print("  Live Kalshi price removed the edge — skipping.")
-        return {"game_pk": str(game_pk), "status": "skipped_no_live_edge", "live_edge": live_edge}
+        return {
+            "game_pk": str(row.get("game_pk")),
+            "status": "skipped_no_live_edge",
+            "live_edge": live_edge,
+            "live_price": live_price,
+            "bet_dollars": 0.0,
+        }
 
     live_bet_frac = _kelly_stake(model_prob, 1.0 / live_price)
     bet_frac = min(original_bet_frac, live_bet_frac) if original_bet_frac > 0 else live_bet_frac
 
-    balance_cents = DB.get_last_balance_cents()
-    if balance_cents is None:
-        raise PlaceBetError("No balance in DB. Run fetch/fetch_balance.py first.")
     balance_dollars = balance_cents / 100.0
     bet_dollars = round(balance_dollars * bet_frac, 2)
 
@@ -209,7 +209,6 @@ def place_bet(game_pk: str) -> dict:
     )
 
     # --- Place order ---
-    dry_run = not DB.is_live_betting()
     if dry_run:
         print(f"\n  [DRY RUN] Would place market order:")
         print(f"    Ticker:        {ticker}")
@@ -218,7 +217,15 @@ def place_bet(game_pk: str) -> dict:
         print(f"    Contracts:     {n_contracts}")
         print(f"    Max cost:      ${max_cost:.2f}")
         print(f"  [DRY RUN] No real order was placed.")
-        return {"game_pk": str(game_pk), "status": "dry_run", "ticker": ticker}
+        return {
+            "game_pk": str(row.get("game_pk")),
+            "status": "dry_run",
+            "ticker": ticker,
+            "bet_dollars": max_cost,
+            "contracts": n_contracts,
+            "live_price": live_price,
+            "live_edge": live_edge,
+        }
 
     order_path = api_path("portfolio/orders")
     headers = auth_headers(key_id, private_key, "POST", order_path)
@@ -271,7 +278,107 @@ def place_bet(game_pk: str) -> dict:
         "order_id":  order_id,
         "fill_cost": round(actual_cost, 2),
         "contracts": max(1, int(round(fill_count))),
+        "live_price": live_price,
+        "live_edge": live_edge,
     }
+
+
+def place_bet(game_pk: str) -> dict:
+    """Legacy single-account placement path using env-configured Kalshi credentials."""
+    row = DB.get_bet(game_pk)
+    if row is None:
+        raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
+    original_bet_frac = float(row.get("bet_frac") or 0)
+    bet_side = str(row.get("bet_side") or "none").strip().lower()
+    if original_bet_frac <= 0 or bet_side == "none":
+        print("No bet indicated — skipping.")
+        return {"game_pk": str(game_pk), "status": "skipped_no_bet"}
+    balance_cents = DB.get_last_balance_cents()
+    if balance_cents is None:
+        raise PlaceBetError("No balance in DB. Run fetch/fetch_balance.py first.")
+    result = _execute_bet_row(
+        row,
+        key_id=os.environ.get("KALSHI_KEY_ID", ""),
+        key_path=os.environ.get("KALSHI_KEY_PATH", "kalshi-key.pem"),
+        kalshi_env=os.environ.get("KALSHI_ENV", "prod"),
+        balance_cents=balance_cents,
+        dry_run=not DB.is_live_betting(),
+    )
+    if result.get("status") == "filled":
+        DB.update_bet_order(
+            game_pk,
+            result["order_id"],
+            result["fill_cost"],
+            result["contracts"],
+        )
+        print("  Filled order recorded in bets table.")
+    return result
+
+
+def place_user_bet(email: str, game_pk: str) -> dict:
+    email = email.strip().lower()
+    user = DB.get_user(email)
+    if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
+        return {"game_pk": str(game_pk), "email": email, "status": "skipped_unapproved"}
+    account = DB.get_kalshi_account(email)
+    if not account or not account.get("is_active"):
+        return {"game_pk": str(game_pk), "email": email, "status": "skipped_no_account"}
+    row = DB.get_bet(game_pk)
+    if row is None:
+        raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
+
+    original_bet_frac = float(row.get("bet_frac") or 0)
+    bet_side = str(row.get("bet_side") or "none").strip().lower()
+    if original_bet_frac <= 0 or bet_side == "none":
+        return {"game_pk": str(game_pk), "email": email, "status": "skipped_no_bet"}
+
+    balance_cents = fetch_balance_for_account(
+        key_id=account["key_id"],
+        key_path=account["key_path"],
+        kalshi_env=account["kalshi_env"],
+        email=email,
+    )
+    dry_run = not (DB.is_global_live_betting() and DB.is_user_live_betting(email))
+    result = _execute_bet_row(
+        row,
+        key_id=account["key_id"],
+        key_path=account["key_path"],
+        kalshi_env=account["kalshi_env"],
+        balance_cents=balance_cents,
+        dry_run=dry_run,
+    )
+    DB.upsert_user_order(
+        email,
+        game_pk,
+        game_date=row.get("game_date", ""),
+        home_team=row.get("home_team", ""),
+        away_team=row.get("away_team", ""),
+        predicted_prob=row.get("predicted_prob"),
+        market_implied_prob=row.get("market_implied_prob"),
+        edge=row.get("edge"),
+        bet_side=row.get("bet_side") or "none",
+        bet_frac=row.get("bet_frac") or 0.0,
+        bet_dollars=result.get("fill_cost") or result.get("bet_dollars"),
+        n_contracts=result.get("contracts"),
+        kalshi_order_id=result.get("order_id"),
+        live_price=result.get("live_price"),
+        live_edge=result.get("live_edge"),
+        status=result.get("status", "pending"),
+        dry_run=dry_run,
+    )
+    return result
+
+
+def execute_for_all_users(game_pk: str) -> list[dict]:
+    results = []
+    for user in DB.list_approved_users_with_accounts():
+        try:
+            results.append(place_user_bet(user["email"], game_pk))
+        except Exception as exc:
+            results.append(
+                {"game_pk": str(game_pk), "email": user["email"], "status": "error", "error": str(exc)}
+            )
+    return results
 
 
 if __name__ == "__main__":
