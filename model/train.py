@@ -222,7 +222,7 @@ LGB_PARAMS = {
     "reg_alpha":         0.1,
     "reg_lambda":        1.0,
     "random_state":      42,
-    "n_jobs":            -1,
+    "n_jobs":            1,
     "verbose":           -1,
 }
 
@@ -238,7 +238,7 @@ XGB_PARAMS = {
     "reg_alpha":             0.1,
     "reg_lambda":            1.0,
     "random_state":          42,
-    "n_jobs":                -1,
+    "n_jobs":                1,
     "verbosity":             0,
     "early_stopping_rounds": 50,
 }
@@ -249,7 +249,7 @@ LR_PARAMS = {
     "max_iter":     2000,
     "solver":       "saga",
     "random_state": 42,
-    "n_jobs":       -1,
+    "n_jobs":       1,
 }
 
 # Betting

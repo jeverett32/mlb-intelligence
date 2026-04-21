@@ -37,6 +37,10 @@ MLB_TO_KALSHI = {
 }
 
 
+class PlaceBetError(RuntimeError):
+    pass
+
+
 def _to_float(value):
     if value is None or value == "":
         return None
@@ -97,18 +101,19 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str):
 # ---------------------------------------------------------------------------
 
 
-def place_bet(game_pk: str):
-    # --- Load bet row from DB ---
+def place_bet(game_pk: str) -> dict:
+    """Place a Kalshi bet for the given game. Returns a status dict.
+    Raises PlaceBetError on unrecoverable failures."""
     row = DB.get_bet(game_pk)
     if row is None:
-        sys.exit(f"ERROR: game_pk={game_pk} not found in bets table.")
+        raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
 
     original_bet_frac = float(row.get("bet_frac") or 0)
     bet_side = str(row.get("bet_side") or "none").strip().lower()
 
     if original_bet_frac <= 0 or bet_side == "none":
         print("No bet indicated — skipping.")
-        return
+        return {"game_pk": str(game_pk), "status": "skipped_no_bet"}
 
     home_team = str(row["home_team"])
     away_team = str(row["away_team"])
@@ -117,8 +122,8 @@ def place_bet(game_pk: str):
     predicted_prob = row.get("predicted_prob")
 
     if market_prob is None or predicted_prob is None:
-        sys.exit(
-            "ERROR: predicted_prob or market_implied_prob missing in bets table. Cannot size the bet."
+        raise PlaceBetError(
+            "predicted_prob or market_implied_prob missing in bets table."
         )
     market_prob = float(market_prob)
     predicted_prob = float(predicted_prob)
@@ -132,19 +137,17 @@ def place_bet(game_pk: str):
     ticker, _ = find_kalshi_market(home_team, away_team, game_date)
 
     if ticker is None:
-        sys.exit(
-            f"ERROR: No open Kalshi market found for {away_team} @ {home_team} on {game_date}.\n"
-            "       The market may not be listed yet, or the game has been postponed."
+        raise PlaceBetError(
+            f"No open Kalshi market found for {away_team} @ {home_team} on {game_date}."
         )
     print(f"  Market found:    {ticker}")
 
-    # Confirm market is still open (Kalshi uses "open" or "active")
     resp = requests.get(base_url + f"/markets/{ticker}", timeout=10)
     resp.raise_for_status()
     market = resp.json().get("market", {})
     mkt_status = market.get("status", "unknown")
     if mkt_status not in ("open", "active"):
-        sys.exit(f"ERROR: Market {ticker} is '{mkt_status}' — cannot place order.")
+        raise PlaceBetError(f"Market {ticker} is '{mkt_status}' — cannot place order.")
 
     if bet_side == "home":
         side = "yes"
@@ -158,7 +161,7 @@ def place_bet(game_pk: str):
         model_prob = 1.0 - predicted_prob
 
     if live_price is None or not (0 < live_price < 1):
-        sys.exit(f"ERROR: Market {ticker} has no live {price_field} available.")
+        raise PlaceBetError(f"Market {ticker} has no live {price_field} available.")
 
     live_edge = model_prob - live_price
     if live_edge <= EXECUTION_MIN_EDGE:
@@ -166,14 +169,14 @@ def place_bet(game_pk: str):
         print(f"  Live Kalshi price: {live_price:.4f} ({price_field})")
         print(f"  Live edge:         {live_edge:.4f}")
         print("  Live Kalshi price removed the edge — skipping.")
-        return
+        return {"game_pk": str(game_pk), "status": "skipped_no_live_edge", "live_edge": live_edge}
 
     live_bet_frac = _kelly_stake(model_prob, 1.0 / live_price)
     bet_frac = min(original_bet_frac, live_bet_frac) if original_bet_frac > 0 else live_bet_frac
 
     balance_cents = DB.get_last_balance_cents()
     if balance_cents is None:
-        sys.exit("ERROR: No balance in DB. Run fetch/fetch_balance.py first.")
+        raise PlaceBetError("No balance in DB. Run fetch/fetch_balance.py first.")
     balance_dollars = balance_cents / 100.0
     bet_dollars = round(balance_dollars * bet_frac, 2)
 
@@ -186,7 +189,7 @@ def place_bet(game_pk: str):
 
     if bet_dollars < 0.01:
         print("  Bet rounds to $0.00 — skipping.")
-        return
+        return {"game_pk": str(game_pk), "status": "skipped_too_small"}
 
     live_price_cents = max(1, min(99, math.ceil(live_price * 100)))
     limit_price_cents = max(1, min(99, live_price_cents + ORDER_SLIPPAGE_CENTS))
@@ -197,7 +200,7 @@ def place_bet(game_pk: str):
             f"  Kelly bet ${bet_dollars:.2f} is below 1-contract cost "
             f"(${cost_per_contract:.2f}) — skipping to respect sizing."
         )
-        return
+        return {"game_pk": str(game_pk), "status": "skipped_below_contract"}
 
     print(f"  Side:            {side} ({price_field}={limit_price_cents}c IOC)")
     max_cost = round(n_contracts * cost_per_contract, 2)
@@ -215,7 +218,7 @@ def place_bet(game_pk: str):
         print(f"    Contracts:     {n_contracts}")
         print(f"    Max cost:      ${max_cost:.2f}")
         print(f"  [DRY RUN] No real order was placed.")
-        return
+        return {"game_pk": str(game_pk), "status": "dry_run", "ticker": ticker}
 
     order_path = api_path("portfolio/orders")
     headers = auth_headers(key_id, private_key, "POST", order_path)
@@ -249,11 +252,11 @@ def place_bet(game_pk: str):
         print(f"  Filled:          {fill_count:.2f}")
         print(f"  Fill cost:       ${actual_cost:.2f}")
     else:
-        sys.exit(f"ERROR placing order ({resp.status_code}): {resp.text}")
+        raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
 
     if fill_count <= 0 or actual_cost <= 0:
         print("  Order was accepted but not filled. Not recording it as a placed bet.")
-        return
+        return {"game_pk": str(game_pk), "status": "unfilled", "order_id": order_id}
 
     DB.update_bet_order(
         game_pk,
@@ -262,6 +265,13 @@ def place_bet(game_pk: str):
         max(1, int(round(fill_count))),
     )
     print("  Filled order recorded in bets table.")
+    return {
+        "game_pk":   str(game_pk),
+        "status":    "filled",
+        "order_id":  order_id,
+        "fill_cost": round(actual_cost, 2),
+        "contracts": max(1, int(round(fill_count))),
+    }
 
 
 if __name__ == "__main__":
@@ -270,4 +280,7 @@ if __name__ == "__main__":
         "--game_pk", required=True, type=str, help="MLB Stats API game_pk"
     )
     args = parser.parse_args()
-    place_bet(args.game_pk)
+    try:
+        place_bet(args.game_pk)
+    except PlaceBetError as e:
+        sys.exit(f"ERROR: {e}")

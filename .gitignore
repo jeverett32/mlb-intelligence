@@ -12,6 +12,7 @@ __pycache__/
 *.csv
 !data/master_mlb.csv
 *.parquet
+*.tsv
 data/cache/
 
 # ── IDE / editor ─────────────────────────────────────────────────────────────

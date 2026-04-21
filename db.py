@@ -11,8 +11,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import threading
+from contextlib import contextmanager
+
 import pandas as pd
 import psycopg2
+from psycopg2 import pool as _pg_pool
 from psycopg2.extras import RealDictCursor, execute_values
 from dotenv import load_dotenv
 
@@ -59,14 +63,62 @@ REAL_COLS = {
 # Connection
 # ---------------------------------------------------------------------------
 
-def get_connection():
-    return psycopg2.connect(
+def _conn_kwargs() -> dict:
+    return dict(
         host=os.environ["DB_HOST"],
         port=int(os.environ.get("DB_PORT", 5432)),
         dbname=os.environ["DB_NAME"],
         user=os.environ["DB_USER"],
         password=os.environ["DB_PASSWORD"],
     )
+
+
+def get_connection():
+    return psycopg2.connect(**_conn_kwargs())
+
+
+_POOL: _pg_pool.ThreadedConnectionPool | None = None
+_POOL_LOCK = threading.Lock()
+
+
+def _get_pool() -> _pg_pool.ThreadedConnectionPool:
+    global _POOL
+    if _POOL is None:
+        with _POOL_LOCK:
+            if _POOL is None:
+                _POOL = _pg_pool.ThreadedConnectionPool(
+                    minconn=1,
+                    maxconn=int(os.environ.get("DB_POOL_MAX", "8")),
+                    **_conn_kwargs(),
+                )
+    return _POOL
+
+
+@contextmanager
+def pooled_connection():
+    """Checkout a pooled connection; reconnect if the pool returns a dead one."""
+    pool = _get_pool()
+    conn = pool.getconn()
+    try:
+        # Cheap liveness probe; on failure, replace with a fresh connection.
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = psycopg2.connect(**_conn_kwargs())
+        yield conn
+    finally:
+        try:
+            pool.putconn(conn)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +235,109 @@ def get_games_df(season: int = None, upcoming_only: bool = False) -> pd.DataFram
         records.append(r)
 
     return pd.DataFrame(records)
+
+
+def get_upcoming_needing_prediction(season: int = 2026) -> pd.DataFrame:
+    """
+    Single-query version of the old run_pipeline filter:
+    games that haven't started (home_win IS NULL), not postponed/cancelled,
+    and either not in bets or have no predicted_prob yet.
+    """
+    sql = """
+        SELECT g.*
+        FROM games g
+        LEFT JOIN bets b ON b.game_pk = g.game_pk
+        WHERE g.season = %s
+          AND g.home_win IS NULL
+          AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+          AND (b.game_pk IS NULL OR b.predicted_prob IS NULL)
+        ORDER BY g.game_date, g.game_pk
+    """
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, (season,))
+            rows = cur.fetchall()
+    if not rows:
+        return pd.DataFrame()
+    records = []
+    for row in rows:
+        r = dict(row)
+        extra = r.pop("extra", None) or {}
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        r.update(extra)
+        r.pop("created_at", None)
+        r.pop("updated_at", None)
+        records.append(r)
+    return pd.DataFrame(records)
+
+
+def get_settleable_games(season: int, cutoff_utc: datetime) -> list[dict]:
+    """Rows from games∩bets that started before cutoff and still lack a result."""
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
+                       g.game_time_utc
+                FROM games g
+                JOIN bets b ON g.game_pk = b.game_pk
+                WHERE g.season = %s
+                  AND g.home_win IS NULL
+                  AND g.game_time_utc IS NOT NULL
+                  AND g.game_time_utc::timestamptz < %s
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+                """,
+                (season, cutoff_utc),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+def apply_settlements(finals: list[dict], postponed_pks: list[int]) -> None:
+    """
+    Batch-apply settlement results in a single transaction.
+    finals: [{"game_pk", "home_score", "away_score", "home_win"}]
+    postponed_pks: list of game_pks to mark postponed in extra JSONB.
+    Also refreshes bets.result / profit_loss via the standard backfill query.
+    """
+    if not finals and not postponed_pks:
+        return
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            if finals:
+                execute_values(
+                    cur,
+                    """
+                    UPDATE games AS g SET
+                        home_score = v.home_score,
+                        away_score = v.away_score,
+                        home_win   = v.home_win,
+                        updated_at = NOW()
+                    FROM (VALUES %s) AS v(game_pk, home_score, away_score, home_win)
+                    WHERE g.game_pk = v.game_pk
+                    """,
+                    [(int(f["game_pk"]), int(f["home_score"]),
+                      int(f["away_score"]), bool(f["home_win"])) for f in finals],
+                    template="(%s, %s, %s, %s)",
+                )
+            if postponed_pks:
+                execute_values(
+                    cur,
+                    """
+                    UPDATE games AS g SET
+                        extra = COALESCE(g.extra, '{}'::jsonb)
+                                || jsonb_build_object('game_status', 'postponed'),
+                        updated_at = NOW()
+                    FROM (VALUES %s) AS v(game_pk)
+                    WHERE g.game_pk = v.game_pk
+                    """,
+                    [(int(pk),) for pk in postponed_pks],
+                    template="(%s)",
+                )
+        conn.commit()
+    # Roll game outcomes forward into bets in one shot.
+    if finals:
+        backfill_bet_results()
 
 
 def get_complete_game_pks(season: int) -> set:
