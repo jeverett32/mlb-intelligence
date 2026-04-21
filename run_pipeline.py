@@ -39,6 +39,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import db as DB
+import notify as NOTIFY
 sys.path.insert(0, str(Path(__file__).parent / "model"))
 sys.path.insert(0, str(Path(__file__).parent / "bet"))
 from model import predict as PREDICT  # noqa: E402
@@ -213,13 +214,16 @@ def _predict_and_bet(game_pk: str, shared: dict) -> None:
         PREDICT.predict_one(game_pk, shared)
     except Exception as e:
         print(f"  PREDICT ERROR game_pk={game_pk}: {e}")
+        NOTIFY.send(f":warning: **Predict error** `game_pk={game_pk}`: `{e}`")
         return
     try:
         PLACE_BET.place_bet(game_pk)
     except PLACE_BET.PlaceBetError as e:
         print(f"  PLACE_BET ERROR game_pk={game_pk}: {e}")
+        NOTIFY.send(f":no_entry: **Bet failed** `game_pk={game_pk}`: `{e}`")
     except Exception as e:
         print(f"  PLACE_BET unexpected error game_pk={game_pk}: {e}")
+        NOTIFY.send(f":rotating_light: **Bet crashed** `game_pk={game_pk}`: `{e}`")
 
 
 def run_batch(games: list[dict]) -> None:
@@ -241,6 +245,7 @@ def run_batch(games: list[dict]) -> None:
     except RuntimeError as e:
         print(f"\nERROR in shared fetch step: {e}")
         print("Aborting batch.")
+        NOTIFY.send(f":rotating_light: **Batch aborted** (fetch failed): `{e}`")
         return
 
     for game in games:
@@ -259,6 +264,7 @@ def run_batch(games: list[dict]) -> None:
     except PREDICT.PredictError as e:
         print(f"ERROR preparing shared model: {e}")
         print("Aborting batch.")
+        NOTIFY.send(f":rotating_light: **Batch aborted** (shared model prep): `{e}`")
         return
 
     if len(pks) == 1:

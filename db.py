@@ -771,3 +771,29 @@ def delete_session(session_id: str):
         conn.commit()
     finally:
         conn.close()
+
+
+def purge_expired_sessions() -> int:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM sessions WHERE expires_at < NOW()")
+            n = cur.rowcount
+        conn.commit()
+        return n
+    finally:
+        conn.close()
+
+
+def ping() -> bool:
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            return True
+        finally:
+            conn.close()
+    except Exception:
+        return False
