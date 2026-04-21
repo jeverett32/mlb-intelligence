@@ -104,87 +104,67 @@
     }
 
     .top-bar {
-      padding: 24px 24px 8px;
+      padding: 16px 24px 10px;
     }
     .top-bar-shell {
       max-width: 1440px;
       margin: 0 auto;
-      padding: 26px 28px;
+      padding: 12px 18px;
       border: 1px solid var(--border);
-      border-radius: 28px;
-      background:
-        linear-gradient(135deg, color-mix(in srgb, var(--bg-card) 95%, var(--accent) 5%), var(--bg-card));
-      box-shadow: var(--shadow-md);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--bg-card) 96%, transparent);
+      box-shadow: var(--shadow-sm);
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 24px;
+      gap: 18px;
     }
     .top-bar-left {
-      display: grid;
-      gap: 10px;
-      max-width: 700px;
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      min-width: 0;
     }
     .eyebrow {
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--accent);
+      display: none;
     }
     .brand-row {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       gap: 12px;
-      flex-wrap: wrap;
+      min-width: 0;
     }
     .top-bar-left .logo {
       font-family: 'Playfair Display', serif;
-      font-size: clamp(1.8rem, 2.6vw, 2.8rem);
+      font-size: 1.45rem;
       font-weight: 600;
       color: var(--text-primary);
-      letter-spacing: -0.04em;
-      line-height: 1;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
     }
     .subtitle-pill {
       display: inline-flex;
       align-items: center;
-      padding: 7px 12px;
+      padding: 6px 10px;
       border-radius: 999px;
       background: var(--bg-elevated);
       border: 1px solid var(--border);
       color: var(--text-secondary);
-      font-size: 0.76rem;
+      font-size: 0.72rem;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
     }
     .hero-copy {
       color: var(--text-secondary);
-      font-size: 0.98rem;
-      max-width: 620px;
-    }
-    .hero-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .meta-pill {
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 12px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
-      color: var(--text-secondary);
-      font-size: 0.78rem;
-      font-weight: 600;
+      font-size: 0.84rem;
+      max-width: 420px;
+      line-height: 1.45;
     }
     .top-bar-right {
       display: flex;
       align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
+      gap: 10px;
       justify-content: flex-end;
     }
 
@@ -193,12 +173,12 @@
       background: var(--bg-elevated);
       color: var(--text-secondary);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px 14px;
+      border-radius: 14px;
+      padding: 10px 12px;
       font: inherit;
-      font-size: 0.8rem;
+      font-size: 0.76rem;
       font-weight: 700;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       cursor: pointer;
     }
@@ -209,14 +189,14 @@
       align-items: center;
       justify-content: center;
       min-width: 128px;
-      padding: 12px 18px;
+      padding: 10px 16px;
       background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 76%, var(--text-primary) 24%));
       color: #fff;
-      border-radius: 16px;
-      font-size: 0.82rem;
+      border-radius: 14px;
+      font-size: 0.76rem;
       font-weight: 700;
       text-decoration: none;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       box-shadow: var(--shadow-sm);
       transition: transform 0.2s ease, filter 0.2s ease;
@@ -325,21 +305,20 @@
 
     @media (max-width: 768px) {
       .top-bar {
-        padding: 14px 12px 6px;
+        padding: 10px 12px 8px;
       }
       .top-bar-shell {
-        padding: 18px 16px;
-        border-radius: 22px;
-        flex-direction: column;
-        gap: 18px;
+        padding: 10px 12px;
+        border-radius: 16px;
+        display: grid;
+        gap: 10px;
       }
       .brand-row {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
+        gap: 10px;
       }
       .hero-copy {
-        font-size: 0.9rem;
+        max-width: none;
+        font-size: 0.82rem;
       }
       .top-bar-right {
         width: 100%;
@@ -359,8 +338,17 @@
     }
 
     @media (max-width: 560px) {
+      .top-bar {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
       .top-bar-right {
         grid-template-columns: 1fr;
+      }
+      .brand-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
       }
       .stat-row,
       .section-stats {
@@ -374,17 +362,11 @@
 <header class="top-bar">
   <div class="top-bar-shell">
     <div class="top-bar-left">
-      <span class="eyebrow">Public Performance</span>
       <div class="brand-row">
         <span class="logo">MLB Betting</span>
         <span class="subtitle-pill">Open Dashboard</span>
       </div>
       <p class="hero-copy">A public read on model accuracy, market comparison, and real-money wagering results. No login required to view the big picture.</p>
-      <div class="hero-meta">
-        <span class="meta-pill">Model vs Market</span>
-        <span class="meta-pill">Real Bets Only</span>
-        <span class="meta-pill">Updated Live</span>
-      </div>
     </div>
     <div class="top-bar-right">
       <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
