@@ -303,14 +303,16 @@ def update_bet_result(game_pk, home_win):
                        result = %s,
                        profit_loss = CASE
                            WHEN bet_side IS NULL OR bet_side = 'none'
-                                OR bet_dollars IS NULL OR market_implied_prob IS NULL THEN NULL
+                                OR bet_dollars IS NULL THEN NULL
                            WHEN (%s AND bet_side = 'home') OR (NOT %s AND bet_side = 'away') THEN
-                               ROUND((bet_dollars * (
-                                   CASE WHEN bet_side = 'home'
-                                        THEN (1.0 / NULLIF(market_implied_prob, 0) - 1)
-                                        ELSE (1.0 / NULLIF(1.0 - market_implied_prob, 0) - 1)
+                               ROUND((
+                                   CASE
+                                       WHEN n_contracts IS NOT NULL THEN n_contracts::numeric - bet_dollars
+                                       WHEN market_implied_prob IS NOT NULL AND bet_side = 'home' THEN bet_dollars * (1.0 / NULLIF(market_implied_prob, 0) - 1)
+                                       WHEN market_implied_prob IS NOT NULL AND bet_side = 'away' THEN bet_dollars * (1.0 / NULLIF(1.0 - market_implied_prob, 0) - 1)
+                                       ELSE NULL
                                    END
-                               ))::numeric, 2)
+                               )::numeric, 2)
                            ELSE -bet_dollars
                        END,
                        updated_at = NOW()
@@ -333,14 +335,16 @@ def backfill_bet_results():
                 SET result = g.home_win,
                     profit_loss = CASE
                         WHEN b.bet_side IS NULL OR b.bet_side = 'none'
-                             OR b.bet_dollars IS NULL OR b.market_implied_prob IS NULL THEN NULL
+                             OR b.bet_dollars IS NULL THEN NULL
                         WHEN (g.home_win AND b.bet_side = 'home') OR (NOT g.home_win AND b.bet_side = 'away') THEN
-                            ROUND((b.bet_dollars * (
-                                CASE WHEN b.bet_side = 'home'
-                                     THEN (1.0 / NULLIF(b.market_implied_prob, 0) - 1)
-                                     ELSE (1.0 / NULLIF(1.0 - b.market_implied_prob, 0) - 1)
+                            ROUND((
+                                CASE
+                                    WHEN b.n_contracts IS NOT NULL THEN b.n_contracts::numeric - b.bet_dollars
+                                    WHEN b.market_implied_prob IS NOT NULL AND b.bet_side = 'home' THEN b.bet_dollars * (1.0 / NULLIF(b.market_implied_prob, 0) - 1)
+                                    WHEN b.market_implied_prob IS NOT NULL AND b.bet_side = 'away' THEN b.bet_dollars * (1.0 / NULLIF(1.0 - b.market_implied_prob, 0) - 1)
+                                    ELSE NULL
                                 END
-                            ))::numeric, 2)
+                            )::numeric, 2)
                         ELSE -b.bet_dollars
                     END,
                     updated_at = NOW()
