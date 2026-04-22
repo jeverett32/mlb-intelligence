@@ -40,6 +40,11 @@ body.landing-page {
   overflow-x: clip;
 }
 
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .brand {
   width: 48px;
   height: 48px;
@@ -2113,9 +2118,9 @@ body.auth-body {
     padding: 18px 18px 64px;
   }
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 14px;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
   }
   .nav-links {
     width: 100%;
@@ -2154,10 +2159,6 @@ body.auth-body {
   }
   .about-features {
     gap: 16px;
-  }
-  .topbar {
-    align-items: flex-start;
-    gap: 12px;
   }
   .hero-copy-stage h1,
   .analytics-hero-copy h1,
