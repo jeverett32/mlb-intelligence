@@ -1,13 +1,3 @@
-// Shared theme persistence for public-facing surfaces (landing, /public, login, register).
-// Must load without defer so data-theme is set before the body paints.
-
-(function () {
-  document.documentElement.setAttribute(
-    'data-theme',
-    localStorage.getItem('theme') || 'auto'
-  );
-})();
-
 function setTheme(mode) {
   document.documentElement.setAttribute('data-theme', mode);
   localStorage.setItem('theme', mode);
@@ -58,21 +48,51 @@ function initRevealAnimations() {
 
 function initTiltPanels() {
   var panels = document.querySelectorAll('[data-tilt]');
-  if (!panels.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (
+    !panels.length ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    window.matchMedia('(pointer: coarse)').matches ||
+    window.matchMedia('(hover: none)').matches
+  ) {
     return;
   }
 
   panels.forEach(function(panel) {
-    panel.addEventListener('mousemove', function(event) {
-      var rect = panel.getBoundingClientRect();
-      var px = (event.clientX - rect.left) / rect.width;
-      var py = (event.clientY - rect.top) / rect.height;
+    var rect = null;
+    var rafId = 0;
+    var nextX = 0;
+    var nextY = 0;
+
+    function measure() {
+      rect = panel.getBoundingClientRect();
+    }
+
+    function render() {
+      rafId = 0;
+      if (!rect) measure();
+      var px = (nextX - rect.left) / rect.width;
+      var py = (nextY - rect.top) / rect.height;
       var rx = (0.5 - py) * 8;
       var ry = (px - 0.5) * 10;
       panel.style.transform = 'rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg)';
+    }
+
+    measure();
+    panel.addEventListener('mouseenter', measure);
+    window.addEventListener('resize', measure);
+    panel.addEventListener('mousemove', function(event) {
+      nextX = event.clientX;
+      nextY = event.clientY;
+      if (!rafId) {
+        rafId = window.requestAnimationFrame(render);
+      }
     });
 
     panel.addEventListener('mouseleave', function() {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
       panel.style.transform = '';
     });
   });

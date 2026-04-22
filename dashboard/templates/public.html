@@ -9,9 +9,12 @@
   <title>MLB Model Performance</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422g">
+  <script>
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
+  </script>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422i">
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/js/public-site.js?v=20260422g"></script>
+  <script src="/static/js/public-site.js?v=20260422i" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
 <body class="public-analytics-page">
