@@ -1809,9 +1809,13 @@ body.auth-body {
   margin: 0;
 }
 
+.ps-hero .hero-copy-stage h1 {
+  margin-bottom: 64px;
+}
+
 .ps-hero-copy {
   max-width: 720px;
-  margin: 16px 0 24px;
+  margin: 0 0 24px;
   font-size: 1.05rem;
 }
 
