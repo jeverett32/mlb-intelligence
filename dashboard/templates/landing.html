@@ -9,20 +9,21 @@
   <title>MLB Betting Intelligence</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422c">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422d">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <script src="/static/js/public-site.js?v=20260422c"></script>
+  <script src="/static/js/public-site.js?v=20260422d"></script>
   <style>
     body {
       background:
-        radial-gradient(circle at top left, rgba(184, 134, 11, 0.14), transparent 32%),
-        radial-gradient(circle at top right, rgba(45, 106, 79, 0.12), transparent 28%),
+        radial-gradient(circle at top left, rgba(184, 134, 11, 0.16), transparent 28%),
+        radial-gradient(circle at 88% 12%, rgba(45, 106, 79, 0.14), transparent 24%),
+        linear-gradient(180deg, rgba(255,255,255,0.2), transparent 30%),
         var(--bg-primary);
       color: var(--text-primary);
     }
   </style>
 </head>
-<body>
+<body class="landing-page">
   <div class="ps-shell">
     <header class="topbar">
       <div class="brand">
@@ -36,32 +37,103 @@
     </header>
 
     <main>
-      <section class="ps-hero">
-        <div class="hero-copy">
+      <section class="hero-orbit" aria-hidden="true">
+        <div class="orbit orbit-a"></div>
+        <div class="orbit orbit-b"></div>
+        <div class="orbit orbit-c"></div>
+      </section>
+
+      <section class="ps-hero" data-reveal>
+        <div class="hero-copy hero-copy-stage">
           <span class="eyebrow" style="color: var(--accent)">Model insights</span>
           <h1>Track the model. Understand the edge. See the results in public.</h1>
           <p class="ps-hero-copy">
             MLB Betting Intelligence is a public-facing performance and research surface for a model-driven baseball betting workflow. The landing page explains the system. The analytics page shows the proof.
           </p>
+          <div class="hero-badges">
+            <span>Public proof</span>
+            <span>Private operator controls</span>
+            <span>Live model metrics</span>
+          </div>
           <div class="ps-hero-actions">
             <a class="primary" href="/public">View Public Analytics</a>
             <a href="/login">Log In</a>
             <a href="/register">Request Access</a>
           </div>
         </div>
-        <aside class="hero-aside" aria-label="Overview">
-          <div class="hero-note">
-            <span class="hero-note-label">Public surface</span>
-            <p>Live metrics, performance tracking, and model accuracy are visible without an account.</p>
-          </div>
-          <div class="hero-note">
-            <span class="hero-note-label">Private workspace</span>
-            <p>Approved users can manage settings, linked Kalshi access, and operational controls from the dashboard.</p>
+        <aside class="hero-demo" aria-label="Overview" data-tilt>
+          <div class="hero-demo-grid">
+            <article class="demo-panel demo-panel-primary">
+              <div class="demo-kicker">Live operating snapshot</div>
+              <div class="demo-scoreline">
+                <div>
+                  <span>Model edge</span>
+                  <strong>+4.7 pts</strong>
+                </div>
+                <div>
+                  <span>Next decision</span>
+                  <strong>STL @ MIA</strong>
+                </div>
+              </div>
+              <div class="demo-bars" aria-hidden="true">
+                <span style="--bar: 74%"></span>
+                <span style="--bar: 58%"></span>
+                <span style="--bar: 83%"></span>
+                <span style="--bar: 66%"></span>
+                <span style="--bar: 91%"></span>
+                <span style="--bar: 61%"></span>
+              </div>
+            </article>
+            <article class="demo-panel demo-panel-float">
+              <span class="demo-kicker">Public analytics</span>
+              <strong>Calibration, ROI, market comparison</strong>
+              <p>The public surface is built to show the receipts, not hide the process.</p>
+            </article>
+            <article class="demo-panel demo-panel-float alt">
+              <span class="demo-kicker">Private workspace</span>
+              <strong>Live betting state, exposure, bankroll, actions</strong>
+              <p>Operational controls stay behind approval while the evidence stays public.</p>
+            </article>
           </div>
         </aside>
       </section>
 
-      <section class="trust-metrics" data-live-metrics aria-label="Live performance metrics">
+      <section class="hero-marquee" aria-label="Capabilities" data-reveal>
+        <div class="hero-marquee-track">
+          <span>Public analytics</span>
+          <span>Model calibration</span>
+          <span>Market comparison</span>
+          <span>Bankroll tracking</span>
+          <span>Live execution controls</span>
+          <span>Request-based private access</span>
+          <span>Public analytics</span>
+          <span>Model calibration</span>
+          <span>Market comparison</span>
+          <span>Bankroll tracking</span>
+          <span>Live execution controls</span>
+          <span>Request-based private access</span>
+        </div>
+      </section>
+
+      <section class="hero-glance" data-reveal>
+        <div class="glance-card">
+          <span class="glance-label">What you see first</span>
+          <strong>The public track record.</strong>
+          <p>Visitors land on the story, then move immediately into live metrics and proof.</p>
+        </div>
+        <div class="glance-card">
+          <span class="glance-label">What stays private</span>
+          <strong>The operator dashboard.</strong>
+          <p>Execution controls, account state, and workflow tooling stay behind approval.</p>
+        </div>
+        <div class="glance-card">
+          <span class="glance-label">What makes it credible</span>
+          <strong>Numbers over claims.</strong>
+          <p>The site is designed to make the model legible instead of hiding behind vague promises.</p>
+        </div>
+      </section>
+
+      <section class="trust-metrics" data-live-metrics aria-label="Live performance metrics" data-reveal>
         <div class="metrics-grid">
           <div class="metric-card">
             <span class="metric-label">Total bets</span>
@@ -82,7 +154,7 @@
         </div>
       </section>
 
-      <section class="editorial-band" aria-label="What this project is">
+      <section class="editorial-band" aria-label="What this project is" data-reveal>
         <div class="editorial-lead">
           <span class="eyebrow">What this is</span>
           <h2>A public record of a model-driven MLB betting operation.</h2>
@@ -101,7 +173,7 @@
         </div>
       </section>
 
-      <section id="how-it-works" class="how-it-works" aria-label="How it works">
+      <section id="how-it-works" class="how-it-works" aria-label="How it works" data-reveal>
         <div class="section-header section-header-left">
           <span class="eyebrow">Process</span>
           <h2>How it works</h2>
@@ -131,7 +203,7 @@
         </div>
       </section>
 
-      <section id="methodology" class="methodology" aria-label="Model methodology">
+      <section id="methodology" class="methodology" aria-label="Model methodology" data-reveal>
         <div class="methodology-content">
           <div class="methodology-text">
             <span class="eyebrow">Technical approach</span>
@@ -182,7 +254,7 @@
         </div>
       </section>
 
-      <section id="performance-summary" class="performance-summary" data-endpoint="/api/public/summary" aria-label="Performance summary">
+      <section id="performance-summary" class="performance-summary" data-endpoint="/api/public/summary" aria-label="Performance summary" data-reveal>
         <div class="performance-layout">
           <div class="performance-intro">
             <span class="eyebrow">Track record</span>
@@ -193,51 +265,51 @@
             </div>
           </div>
           <div class="performance-grid">
-          <div class="performance-card">
-            <div class="card-header">
-              <h3>Betting performance</h3>
-              <span class="card-subtitle">Live results from model recommendations</span>
+            <div class="performance-card">
+              <div class="card-header">
+                <h3>Betting performance</h3>
+                <span class="card-subtitle">Live results from model recommendations</span>
+              </div>
+              <div class="card-body">
+                <div class="stat-row">
+                  <span class="stat-label">Win rate</span>
+                  <span class="stat-value" data-perf="accuracy">—</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Return on investment</span>
+                  <span class="stat-value" data-perf="roi_pct">—</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Total bets placed</span>
+                  <span class="stat-value" data-perf="total_bets">—</span>
+                </div>
+              </div>
             </div>
-            <div class="card-body">
-              <div class="stat-row">
-                <span class="stat-label">Win rate</span>
-                <span class="stat-value" data-perf="accuracy">—</span>
+            <div class="performance-card">
+              <div class="card-header">
+                <h3>Model accuracy</h3>
+                <span class="card-subtitle">Prediction accuracy vs market</span>
               </div>
-              <div class="stat-row">
-                <span class="stat-label">Return on investment</span>
-                <span class="stat-value" data-perf="roi_pct">—</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Total bets placed</span>
-                <span class="stat-value" data-perf="total_bets">—</span>
+              <div class="card-body">
+                <div class="stat-row">
+                  <span class="stat-label">Model accuracy</span>
+                  <span class="stat-value" data-model="accuracy">—</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Market accuracy</span>
+                  <span class="stat-value" data-model="market_accuracy">—</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Total predictions</span>
+                  <span class="stat-value" data-model="total">—</span>
+                </div>
               </div>
             </div>
           </div>
-          <div class="performance-card">
-            <div class="card-header">
-              <h3>Model accuracy</h3>
-              <span class="card-subtitle">Prediction accuracy vs market</span>
-            </div>
-            <div class="card-body">
-              <div class="stat-row">
-                <span class="stat-label">Model accuracy</span>
-                <span class="stat-value" data-model="accuracy">—</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Market accuracy</span>
-                <span class="stat-value" data-model="market_accuracy">—</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Total predictions</span>
-                <span class="stat-value" data-model="total">—</span>
-              </div>
-            </div>
-          </div>
-        </div>
         </div>
       </section>
 
-      <section id="about" class="about" aria-label="About">
+      <section id="about" class="about" aria-label="About" data-reveal>
         <div class="about-content">
           <div class="about-text">
             <span class="eyebrow">Background</span>
