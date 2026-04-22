@@ -12,10 +12,31 @@ document.addEventListener('DOMContentLoaded', function () {
 
   initRevealAnimations();
   initTiltPanels();
+  initNavToggle();
 
   // Load live metrics for landing page
   loadLiveMetrics();
 });
+
+function initNavToggle() {
+  var toggle = document.querySelector('.nav-toggle');
+  if (!toggle) return;
+  var topbar = toggle.closest('.topbar');
+
+  toggle.addEventListener('click', function () {
+    var open = topbar.classList.toggle('nav-open');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!topbar.contains(e.target)) {
+      topbar.classList.remove('nav-open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    }
+  });
+}
 
 function initRevealAnimations() {
   var sections = document.querySelectorAll('[data-reveal]');

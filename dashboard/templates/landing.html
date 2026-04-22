@@ -12,9 +12,9 @@
   <script>
     document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
   </script>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422m">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422n">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <script src="/static/js/public-site.js?v=20260422m" defer></script>
+  <script src="/static/js/public-site.js?v=20260422n" defer></script>
   <style>
     body {
       background:
@@ -32,7 +32,10 @@
       <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
         <img src="/static/favicon.svg" alt="" />
       </a>
-      <nav class="nav-links" aria-label="Primary">
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+        <span class="nav-toggle-icon"></span>
+      </button>
+      <nav class="nav-links" id="site-nav" aria-label="Primary">
         <a href="/public">Public analytics</a>
         <a href="/contact">Contact</a>
         <a href="/login">Log in</a>
