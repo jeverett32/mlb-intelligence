@@ -1461,6 +1461,48 @@ body.auth-body {
   border-color: #1a2d4a;
 }
 
+/* ── Hamburger nav toggle ───────────────────────────────────────────────── */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+.nav-toggle:hover { border-color: var(--accent); }
+.nav-toggle-icon,
+.nav-toggle-icon::before,
+.nav-toggle-icon::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.nav-toggle-icon {
+  position: relative;
+}
+.nav-toggle-icon::before,
+.nav-toggle-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+.nav-toggle-icon::before { top: -5px; }
+.nav-toggle-icon::after  { top: 5px; }
+
+.topbar.nav-open .nav-toggle-icon { background: transparent; }
+.topbar.nav-open .nav-toggle-icon::before { transform: rotate(45deg) translate(3.5px, 3.5px); }
+.topbar.nav-open .nav-toggle-icon::after  { transform: rotate(-45deg) translate(3.5px, -3.5px); }
+
 /* ── Auth surface responsive ────────────────────────────────────────────── */
 @media (max-width: 920px) {
   .ps-hero,
@@ -1654,11 +1696,11 @@ body.auth-body {
     margin-bottom: 28px;
     position: relative;
   }
-  .nav-toggle {
+  .topbar .nav-toggle {
     display: inline-flex;
     margin-left: auto;
   }
-  .nav-links {
+  .topbar .nav-links {
     display: none;
     position: absolute;
     top: calc(100% + 10px);
@@ -1676,14 +1718,14 @@ body.auth-body {
   .topbar.nav-open .nav-links {
     display: flex;
   }
-  .nav-links a {
+  .topbar .nav-links a {
     min-height: 44px;
     padding: 0 14px;
     border-radius: 10px;
     font-size: 0.95rem;
     width: 100%;
   }
-  .nav-links a:hover {
+  .topbar .nav-links a:hover {
     background: var(--bg-elevated);
   }
   .contact-card,
@@ -1749,48 +1791,6 @@ body.auth-body {
     padding-right: 18px;
   }
 }
-
-/* ── Hamburger nav toggle ───────────────────────────────────────────────── */
-.nav-toggle {
-  display: none;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  width: 44px;
-  height: 44px;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--text-primary);
-  transition: border-color 0.15s;
-}
-.nav-toggle:hover { border-color: var(--accent); }
-.nav-toggle-icon,
-.nav-toggle-icon::before,
-.nav-toggle-icon::after {
-  display: block;
-  width: 18px;
-  height: 2px;
-  background: currentColor;
-  border-radius: 2px;
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-.nav-toggle-icon {
-  position: relative;
-}
-.nav-toggle-icon::before,
-.nav-toggle-icon::after {
-  content: "";
-  position: absolute;
-  left: 0;
-}
-.nav-toggle-icon::before { top: -5px; }
-.nav-toggle-icon::after  { top: 5px; }
-
-.topbar.nav-open .nav-toggle-icon { background: transparent; }
-.topbar.nav-open .nav-toggle-icon::before { transform: rotate(45deg) translate(3.5px, 3.5px); }
-.topbar.nav-open .nav-toggle-icon::after  { transform: rotate(-45deg) translate(3.5px, -3.5px); }
 
 /* ── Public site surface (landing, /public topbar) ──────────────────────── */
 .ps-shell {
