@@ -626,9 +626,25 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
         game_times = pd.to_datetime(games_df["game_time_utc"], errors="coerce", utc=True)
         now_utc = pd.Timestamp.now(tz=timezone.utc)
         cutoff_utc = now_utc + pd.Timedelta(hours=48)
-        upcoming = games_df[(game_times >= now_utc) & (game_times <= cutoff_utc)].copy()
+        user_tz = ZoneInfo(
+            DB.get_user_setting(user["email"], "dashboard_timezone", _get_dashboard_timezone())
+        )
+        today_local = now_utc.astimezone(user_tz).date()
+        game_local_dates = game_times.dt.tz_convert(user_tz).dt.date
+        in_forward_window = (game_times >= now_utc) & (game_times <= cutoff_utc)
+        same_local_day = game_local_dates == today_local
+        no_start_time = game_times.isna()
+        date_window_start = pd.Timestamp(today_local)
+        date_window_end = date_window_start + pd.Timedelta(days=1)
+        same_day_fallback = no_start_time & (
+            (games_df["game_date"] >= date_window_start) & (games_df["game_date"] <= date_window_end)
+        )
+        upcoming = games_df[in_forward_window | same_local_day | same_day_fallback].copy()
     else:
-        today = pd.Timestamp.now(tz=timezone.utc).normalize().tz_localize(None)
+        user_tz = ZoneInfo(
+            DB.get_user_setting(user["email"], "dashboard_timezone", _get_dashboard_timezone())
+        )
+        today = pd.Timestamp.now(tz=user_tz).normalize().tz_localize(None)
         upcoming = games_df[
             (games_df["game_date"] >= today)
             & (games_df["game_date"] <= today + pd.Timedelta(days=1))
