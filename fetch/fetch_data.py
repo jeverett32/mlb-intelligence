@@ -427,7 +427,7 @@ def _merge_odds_into_cache(new_df, odds_cache):
 
 
 def fetch_odds(schedule_df, today_only=False):
-    """Fetch odds from SBR, falling back to The Odds API if SBR fails."""
+    """Fetch odds from SBR, supplementing gaps with The Odds API when needed."""
     from scraper import scrape_range_async
     from odds_api import fetch_odds_api
 
@@ -463,6 +463,24 @@ def fetch_odds(schedule_df, today_only=False):
     end = sorted_dates[-1].strftime("%Y-%m-%d")
     print(f"  Scraping SBR odds: {start} -> {end} ({len(sorted_dates)} dates)...")
 
+    def _drop_implausible_moneylines(df, source_label):
+        if df.empty:
+            return df
+        ml_cols = ["close_home_ml", "close_away_ml"]
+        bad_mask = pd.Series(False, index=df.index)
+        for col in ml_cols:
+            if col in df.columns:
+                vals = pd.to_numeric(df[col], errors="coerce").abs()
+                bad_mask = bad_mask | (vals > 700)
+        n_bad = bad_mask.sum()
+        if n_bad > 0:
+            print(
+                f"  WARNING: {n_bad} {source_label} rows have implausible "
+                f"moneylines (|ml| > 700) — dropping."
+            )
+            df = df[~bad_mask]
+        return df
+
     new_df = pd.DataFrame()
     try:
         raw = asyncio.run(scrape_range_async(
@@ -470,42 +488,59 @@ def fetch_odds(schedule_df, today_only=False):
             odds_types=["moneyline", "totals"],
         ))
         new_df = _parse_scraped_odds(raw)
-        # Sanity check: MLB moneylines should never exceed ±700 for regular games.
-        # Values beyond this indicate SBR returned futures/alternate market data.
-        if not new_df.empty:
-            ml_cols = ["close_home_ml", "close_away_ml"]
-            bad_mask = pd.Series(False, index=new_df.index)
-            for col in ml_cols:
-                if col in new_df.columns:
-                    vals = pd.to_numeric(new_df[col], errors="coerce").abs()
-                    bad_mask = bad_mask | (vals > 700)
-            n_bad = bad_mask.sum()
-            if n_bad > 0:
-                print(f"  WARNING: {n_bad} SBR rows have implausible moneylines (|ml| > 700) — dropping.")
-                new_df = new_df[~bad_mask]
+        # Values beyond this indicate futures/alternate market data.
+        new_df = _drop_implausible_moneylines(new_df, "SBR")
     except Exception as e:
         print(f"  WARNING: SBR scraping failed: {e}")
 
-    if new_df.empty:
-        print("  No valid odds from SBR. Trying The Odds API...")
-        new_df = fetch_odds_api()
-        # Apply same sanity check to Odds API data
-        if not new_df.empty:
-            ml_cols = ["close_home_ml", "close_away_ml"]
-            bad_mask = pd.Series(False, index=new_df.index)
-            for col in ml_cols:
-                if col in new_df.columns:
-                    vals = pd.to_numeric(new_df[col], errors="coerce").abs()
-                    bad_mask = bad_mask | (vals > 700)
-            n_bad = bad_mask.sum()
-            if n_bad > 0:
-                print(f"  WARNING: {n_bad} Odds API rows have implausible moneylines (|ml| > 700) — dropping.")
-                new_df = new_df[~bad_mask]
+    sbr_df = new_df
+    if not sbr_df.empty:
+        sbr_df = sbr_df.copy()
+        sbr_df["game_date"] = pd.to_datetime(sbr_df["game_date"])
 
-    if new_df.empty:
+    schedule_keys = set(
+        zip(
+            schedule_df["game_date"].dt.date,
+            schedule_df["home_team"],
+            schedule_df["away_team"],
+        )
+    )
+    sbr_keys = (
+        set(zip(sbr_df["game_date"].dt.date, sbr_df["home_team"], sbr_df["away_team"]))
+        if not sbr_df.empty
+        else set()
+    )
+    missing_keys = schedule_keys - sbr_keys
+
+    api_df = pd.DataFrame()
+    if sbr_df.empty:
+        print("  No valid odds from SBR. Trying The Odds API...")
+    elif missing_keys:
+        print(f"  SBR missing {len(missing_keys)} scheduled game(s). Supplementing from The Odds API...")
+
+    if sbr_df.empty or missing_keys:
+        api_df = fetch_odds_api()
+        api_df = _drop_implausible_moneylines(api_df, "Odds API")
+        if not api_df.empty:
+            api_df = api_df.copy()
+            api_df["game_date"] = pd.to_datetime(api_df["game_date"])
+            api_df = api_df[
+                api_df.apply(
+                    lambda r: (r["game_date"].date(), r["home_team"], r["away_team"]) in missing_keys,
+                    axis=1,
+                )
+            ]
+            if not api_df.empty:
+                print(f"  Odds API filled {len(api_df)} missing game(s).")
+
+    new_parts = [df for df in [sbr_df, api_df] if not df.empty]
+    if not new_parts:
         print("  No new odds from any source.")
         return cached
 
+    new_df = pd.concat(new_parts, ignore_index=True).drop_duplicates(
+        subset=["game_date", "home_team", "away_team"], keep="first"
+    )
     combined = _merge_odds_into_cache(new_df, odds_cache)
     print(f"  Odds cached: {len(combined)} rows total")
     return combined
@@ -1063,27 +1098,19 @@ def assemble(games_to_process, odds_df, pitcher_df, weather_df, fg_df):
     master = games_to_process.copy()
 
     # --- Odds ---
-    # Match on UTC date derived from game_time_utc + team names.
-    # The Odds API returns UTC commence_times, so using the UTC date of the
-    # game_time_utc avoids the ±1-day mismatch for late West Coast games and
-    # correctly disambiguates back-to-back series games.
+    # Join on the MLB slate date, which is how the odds sources key the market.
+    # Using normalized UTC start time shifts late games onto the next day and
+    # causes valid odds rows to miss the merge entirely.
     if not odds_df.empty:
         odds_df = odds_df.copy()
         odds_df["game_date"] = pd.to_datetime(odds_df["game_date"])
-
-        # Compute UTC date for each game row
-        if "game_time_utc" in master.columns:
-            master["_utc_date"] = pd.to_datetime(master["game_time_utc"]).dt.normalize()
-        else:
-            master["_utc_date"] = pd.to_datetime(master["game_date"])
 
         odds_cols = ["game_date", "home_team", "away_team",
                      "open_home_ml", "open_away_ml",
                      "close_home_ml", "close_away_ml",
                      "open_total", "close_total", "odds_source"]
-        odds_keyed = odds_df[odds_cols].rename(columns={"game_date": "_utc_date"})
-        master = master.merge(odds_keyed, on=["_utc_date", "home_team", "away_team"], how="left")
-        master = master.drop(columns=["_utc_date"])
+        odds_keyed = odds_df[odds_cols]
+        master = master.merge(odds_keyed, on=["game_date", "home_team", "away_team"], how="left")
 
     # --- Pitchers ---
     if not pitcher_df.empty:
