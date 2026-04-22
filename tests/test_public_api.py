@@ -6,8 +6,7 @@ def test_public_page_renders(client):
     assert r.status_code == 200
     assert "MLB Model Performance" in r.text
     assert "Public Analytics" in r.text
-    # Phase 5: Brand should align with landing page while preserving analytics identity
-    assert "MLB Betting Intelligence" in r.text
+    assert 'href="/contact"' in r.text
 
 
 def test_public_page_renders_for_approved_session(monkeypatch, app_module, client):
@@ -289,6 +288,14 @@ def test_login_hero_content_intact(client):
     assert r.status_code == 200
     assert "Members Area" in r.text
     assert "Private MLB betting workspace" in r.text
+
+
+def test_contact_page_renders(client):
+    r = client.get("/contact")
+    assert r.status_code == 200
+    assert "Reach out about the model" in r.text
+    assert "john.everett32@gmail.com" in r.text
+    assert "github.com/jeverett32" in r.text
 
 
 def test_register_includes_shared_stylesheet(client):

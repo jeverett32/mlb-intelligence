@@ -40,6 +40,24 @@ body.landing-page {
   overflow-x: clip;
 }
 
+.brand {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.52);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+.brand img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
 /* ── Theme variables (public themed surfaces: landing, /public) ─────────── */
 :root, :root[data-theme="light"] {
   --bg-primary: #faf9f7;
@@ -416,9 +434,12 @@ body.landing-page {
   border: 0;
   border-right: 1px solid var(--border);
   border-radius: 0;
-  padding: 24px 0 8px;
+  padding: 24px 18px 8px 0;
 }
-.performance-card:last-child { border-right: 0; }
+.performance-card:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
 .card-header {
   margin-bottom: 24px;
   padding-bottom: 16px;
@@ -618,17 +639,18 @@ body.landing-page {
 }
 .hero-copy-stage h1 {
   font-size: clamp(3.4rem, 8vw, 6.4rem);
-  line-height: 0.88;
+  line-height: 0.98;
   letter-spacing: -0.08em;
   text-wrap: balance;
   max-width: 10ch;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 .ps-hero-copy {
   font-size: 1.08rem;
   line-height: 1.72;
   max-width: 58ch;
   color: var(--text-secondary);
+  margin-top: 6px;
 }
 .hero-badges {
   display: flex;
@@ -918,6 +940,311 @@ body.landing-page {
   animation: floatCard 7s ease-in-out infinite;
 }
 
+.contact-main {
+  padding: 44px 0 0;
+  display: grid;
+  gap: 36px;
+}
+
+.contact-hero {
+  max-width: 760px;
+}
+
+.contact-hero h1 {
+  font-size: clamp(3rem, 7vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.07em;
+  margin: 14px 0 18px;
+}
+
+.contact-hero p {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.72;
+}
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.contact-card {
+  padding: 24px;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.24));
+  border: 1px solid rgba(255,255,255,0.34);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
+}
+
+.contact-card-primary {
+  background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(232,223,208,0.48));
+}
+
+.contact-kicker {
+  display: block;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.contact-card h2 {
+  font-size: 1.4rem;
+  line-height: 1.06;
+  margin-bottom: 12px;
+  letter-spacing: -0.04em;
+}
+
+.contact-card a {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.contact-card p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-top: 12px;
+}
+
+.contact-primary-link {
+  font-size: 1.15rem;
+}
+
+.contact-about {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: end;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.contact-about h2 {
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+  margin: 12px 0 14px;
+}
+
+.contact-about p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  max-width: 760px;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.public-analytics-main {
+  padding-top: 38px;
+}
+
+.analytics-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) 320px;
+  gap: 26px;
+  align-items: start;
+  margin-bottom: 28px;
+}
+
+.analytics-hero-copy h1 {
+  font-size: clamp(2.8rem, 6vw, 4.8rem);
+  line-height: 0.98;
+  letter-spacing: -0.07em;
+  margin: 10px 0 16px;
+  max-width: 10ch;
+}
+
+.analytics-hero-copy p {
+  color: var(--text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.72;
+  max-width: 64ch;
+}
+
+.analytics-hero-side {
+  display: grid;
+  gap: 12px;
+}
+
+.analytics-side-card,
+.analytics-overview-card,
+.analytics-panel,
+.analytics-stat-card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.66), rgba(255,255,255,0.26));
+  border: 1px solid rgba(255,255,255,0.34);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
+}
+
+.analytics-side-card {
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.analytics-side-card span {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.analytics-side-card strong,
+.analytics-side-card a {
+  color: var(--text-primary);
+  font-size: 0.98rem;
+  text-decoration: none;
+}
+
+.analytics-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.analytics-overview-card {
+  border-radius: 26px;
+  padding: 22px;
+}
+
+.analytics-card-label {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+}
+
+.analytics-overview-card strong {
+  display: block;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.06em;
+  margin-bottom: 10px;
+}
+
+.analytics-overview-card p {
+  color: var(--text-secondary);
+  line-height: 1.58;
+}
+
+.analytics-section {
+  margin-bottom: 22px;
+}
+
+.analytics-section-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.analytics-section-header h2 {
+  font-size: 1.8rem;
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+  margin-top: 8px;
+}
+
+.analytics-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.analytics-stat-grid.five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.analytics-stat-card {
+  border-radius: 22px;
+  padding: 18px;
+}
+
+.analytics-stat-card span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 10px;
+}
+
+.analytics-stat-card strong {
+  display: block;
+  font-size: 1.8rem;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.analytics-chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.analytics-panel {
+  border-radius: 28px;
+  overflow: hidden;
+}
+
+.analytics-panel-header {
+  padding: 18px 20px 0;
+  display: grid;
+  gap: 6px;
+}
+
+.analytics-panel-header span {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.analytics-panel-header strong {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.analytics-panel-body {
+  padding: 16px 20px 20px;
+}
+
+.auth-shell-wrap {
+  padding-bottom: 44px;
+}
+
+.auth-shell-v2 {
+  margin-top: 28px;
+}
+
+.auth-hero-v2 {
+  background:
+    radial-gradient(circle at top right, rgba(224,164,70,0.2), transparent 24%),
+    linear-gradient(160deg, rgba(26, 45, 74, 0.96), rgba(18, 27, 43, 0.98)),
+    #1a2d4a;
+}
+
+.auth-form-v2 {
+  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,253,249,0.96));
+}
+
 /* ── Auth surface ───────────────────────────────────────────────────────── */
 body.auth-body {
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -1135,6 +1462,8 @@ body.auth-body {
   .ps-hero,
   .hero-glance,
   .editorial-band,
+  .contact-about,
+  .analytics-hero,
   .methodology-content,
   .performance-layout,
   .about-content {
@@ -1179,6 +1508,21 @@ body.auth-body {
   .performance-grid {
     grid-template-columns: 1fr;
   }
+  .performance-card {
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .performance-card:last-child {
+    border-bottom: 0;
+  }
+  .contact-grid,
+  .analytics-overview-grid,
+  .analytics-stat-grid,
+  .analytics-stat-grid.five,
+  .analytics-chart-row {
+    grid-template-columns: 1fr;
+  }
   .auth-shell {
     grid-template-columns: 1fr;
   }
@@ -1200,6 +1544,11 @@ body.auth-body {
   }
   .hero-copy-stage h1 {
     font-size: clamp(2.8rem, 15vw, 4.2rem);
+    max-width: none;
+  }
+  .analytics-hero-copy h1,
+  .contact-hero h1 {
+    font-size: clamp(2.4rem, 13vw, 3.6rem);
     max-width: none;
   }
   .hero-badges {
@@ -1238,6 +1587,9 @@ body.auth-body {
     min-height: 36px;
     padding: 0 14px;
     font-size: 0.8rem;
+  }
+  .topbar {
+    align-items: flex-start;
   }
   .hero-orbit {
     width: 300px;

@@ -209,6 +209,11 @@ def pending_page():
     return _render_template("pending.html")
 
 
+@app.get("/contact", response_class=HTMLResponse)
+def contact_page():
+    return _render_template("contact.html")
+
+
 @app.post("/login")
 @limiter.limit("10/minute")
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
