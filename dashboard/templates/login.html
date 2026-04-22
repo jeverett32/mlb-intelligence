@@ -6,307 +6,17 @@
   <title>MLB Betting Dashboard — Sign In</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <style>
-    @font-face {
-      font-family: 'DM Sans';
-      font-style: normal;
-      font-weight: 400 700;
-      font-display: swap;
-      src: url('/static/fonts/dm-sans-latin.woff2') format('woff2');
-      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-    }
-    @font-face {
-      font-family: 'Playfair Display';
-      font-style: normal;
-      font-weight: 600;
-      font-display: swap;
-      src: url('/static/fonts/playfair-display-latin.woff2') format('woff2');
-      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(184, 134, 11, 0.15), transparent 32%),
-        radial-gradient(circle at bottom right, rgba(26, 45, 74, 0.18), transparent 28%),
-        linear-gradient(180deg, #f6f2ea 0%, #efeae0 100%);
-      min-height: 100vh;
-      color: #1a1814;
-      padding: 24px;
-      display: grid;
-      place-items: center;
-    }
-
-    .auth-shell {
-      width: 100%;
-      max-width: 1040px;
-      display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(360px, 420px);
-      border: 1px solid rgba(26, 24, 20, 0.08);
-      border-radius: 28px;
-      overflow: hidden;
-      background: rgba(255,255,255,0.92);
-      box-shadow: 0 24px 80px rgba(26,24,20,0.12);
-      backdrop-filter: blur(12px);
-    }
-
-    .hero-panel {
-      padding: 44px 40px;
-      background:
-        linear-gradient(160deg, rgba(26,45,74,0.96), rgba(18,27,43,0.98)),
-        #1a2d4a;
-      color: #fff;
-      display: grid;
-      align-content: space-between;
-      gap: 32px;
-      min-height: 620px;
-    }
-    .hero-copy {
-      display: grid;
-      gap: 18px;
-    }
-    .eyebrow {
-      font-size: 0.76rem;
-      font-weight: 700;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: #d4a44a;
-    }
-    .hero-panel h1 {
-      font-family: 'Playfair Display', Georgia, serif;
-      font-size: clamp(2.2rem, 4vw, 3.5rem);
-      font-weight: 600;
-      line-height: 0.96;
-      letter-spacing: -0.05em;
-      max-width: 9ch;
-    }
-    .hero-panel p {
-      max-width: 44ch;
-      color: #c6d2e1;
-      font-size: 1rem;
-      line-height: 1.65;
-    }
-    .hero-metrics {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-    }
-    .metric-card {
-      padding: 14px;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 18px;
-      background: rgba(255,255,255,0.06);
-    }
-    .metric-label {
-      display: block;
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #8fa8c8;
-      margin-bottom: 8px;
-    }
-    .metric-value {
-      font-size: 1.4rem;
-      font-weight: 700;
-      letter-spacing: -0.04em;
-    }
-    .hero-actions {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .hero-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 160px;
-      padding: 12px 18px;
-      border-radius: 16px;
-      text-decoration: none;
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease;
-    }
-    .hero-link:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.04);
-    }
-    .hero-link.primary {
-      background: linear-gradient(135deg, #d4a44a, #b8860b);
-      color: #fff;
-    }
-    .hero-link.secondary {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      color: #fff;
-    }
-
-    .card {
-      background: #fffdf9;
-      display: grid;
-      align-content: center;
-    }
-
-    .card-header {
-      padding: 34px 34px 12px;
-    }
-    .card-header h2 {
-      color: #1a1814;
-      font-size: 1.65rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-    }
-    .card-header p {
-      color: #6b6560;
-      font-size: 0.92rem;
-      margin-top: 8px;
-      line-height: 1.55;
-    }
-
-    .card-body {
-      padding: 12px 34px 34px;
-    }
-
-    .error-banner {
-      background: #fff1f0;
-      border: 1px solid #ffa39e;
-      border-radius: 4px;
-      color: #cf1322;
-      font-size: 0.82rem;
-      padding: 9px 12px;
-      margin-bottom: 18px;
-    }
-
-    .field {
-      margin-bottom: 16px;
-    }
-    .field label {
-      display: block;
-      font-size: 0.74rem;
-      font-weight: 700;
-      color: #6b6560;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 8px;
-    }
-    .field input {
-      width: 100%;
-      padding: 13px 14px;
-      border: 1px solid #ddd4c8;
-      border-radius: 14px;
-      font-size: 0.95rem;
-      color: #1a202c;
-      background: #fff;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .field input:focus {
-      border-color: #b8860b;
-      box-shadow: 0 0 0 4px rgba(184,134,11,0.12);
-    }
-
-    .btn-submit {
-      width: 100%;
-      padding: 13px;
-      background: linear-gradient(135deg, #1a2d4a, #243d62);
-      color: #fff;
-      border: none;
-      border-radius: 16px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      cursor: pointer;
-      margin-top: 6px;
-      transition: background 0.15s;
-    }
-    .btn-submit:hover { background: #243d62; }
-    .btn-submit:active { background: #132238; }
-
-    .actions {
-      display: grid;
-      gap: 10px;
-      margin-top: 6px;
-    }
-
-    .btn-secondary {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      padding: 13px;
-      border: 1px solid #ddd4c8;
-      border-radius: 16px;
-      background: #fff;
-      color: #1a2d4a;
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      text-decoration: none;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    .btn-secondary:hover {
-      background: #f7f9fc;
-      border-color: #1a2d4a;
-    }
-
-    @media (max-width: 920px) {
-      .auth-shell {
-        grid-template-columns: 1fr;
-      }
-      .hero-panel {
-        min-height: unset;
-        padding: 28px 24px;
-      }
-      .hero-panel h1 {
-        max-width: 12ch;
-      }
-      .card-header,
-      .card-body {
-        padding-left: 24px;
-        padding-right: 24px;
-      }
-    }
-
-    @media (max-width: 560px) {
-      body {
-        padding: 12px;
-      }
-      .auth-shell {
-        border-radius: 22px;
-      }
-      .hero-panel {
-        padding: 22px 18px;
-      }
-      .hero-metrics {
-        grid-template-columns: 1fr;
-      }
-      .hero-actions {
-        display: grid;
-      }
-      .hero-link {
-        width: 100%;
-      }
-      .card-header,
-      .card-body {
-        padding-left: 18px;
-        padding-right: 18px;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422c">
+  <script src="/static/js/public-site.js?v=20260422c"></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
-<body>
+<body class="auth-body">
   <div class="auth-shell">
-    <section class="hero-panel">
-      <div class="hero-copy">
+    <section class="auth-hero">
+      <div class="auth-hero-body">
         <span class="eyebrow">Members Area</span>
         <h1>Private MLB betting workspace.</h1>
-        <p>Review bankroll, manage live betting, and inspect the model’s edge without losing the public-facing performance page.</p>
+        <p>Review bankroll, manage live betting, and inspect the model's edge without losing the public-facing performance page.</p>
       </div>
       <div class="hero-metrics">
         <div class="metric-card">
@@ -322,17 +32,17 @@
           <span class="metric-value">Saved</span>
         </div>
       </div>
-      <div class="hero-actions">
+      <div class="auth-hero-actions">
         <a class="hero-link primary" href="/">Back To Home</a>
         <a class="hero-link secondary" href="/public">Public Stats</a>
       </div>
     </section>
-    <div class="card">
-      <div class="card-header">
+    <div class="auth-form">
+      <div class="auth-form-header">
         <h2>Sign In</h2>
         <p>Use your dashboard credentials to access the private controls and authenticated views.</p>
       </div>
-      <div class="card-body">
+      <div class="auth-form-body">
         {{ERROR_BANNER}}
         <form method="post" action="/login">
           <div class="field">

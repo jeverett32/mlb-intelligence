@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Follow a data-driven MLB betting model with public results, performance tracking, and private operator tools." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
+  <title>MLB Betting Intelligence</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422c">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <script src="/static/js/public-site.js?v=20260422c"></script>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(184, 134, 11, 0.14), transparent 32%),
+        radial-gradient(circle at top right, rgba(45, 106, 79, 0.12), transparent 28%),
+        var(--bg-primary);
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="ps-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="eyebrow">Public Site</span>
+        <strong>MLB Betting Intelligence</strong>
+      </div>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="/public">Public analytics</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="ps-hero">
+        <div class="hero-copy">
+          <span class="eyebrow" style="color: var(--accent)">Model insights</span>
+          <h1>Track the model. Understand the edge. See the results in public.</h1>
+          <p class="ps-hero-copy">
+            MLB Betting Intelligence is a public-facing performance and research surface for a model-driven baseball betting workflow. The landing page explains the system. The analytics page shows the proof.
+          </p>
+          <div class="ps-hero-actions">
+            <a class="primary" href="/public">View Public Analytics</a>
+            <a href="/login">Log In</a>
+            <a href="/register">Request Access</a>
+          </div>
+        </div>
+        <aside class="hero-aside" aria-label="Overview">
+          <div class="hero-note">
+            <span class="hero-note-label">Public surface</span>
+            <p>Live metrics, performance tracking, and model accuracy are visible without an account.</p>
+          </div>
+          <div class="hero-note">
+            <span class="hero-note-label">Private workspace</span>
+            <p>Approved users can manage settings, linked Kalshi access, and operational controls from the dashboard.</p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="trust-metrics" data-live-metrics aria-label="Live performance metrics">
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-label">Total bets</span>
+            <span class="metric-value" data-metric="total_bets">—</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Win rate</span>
+            <span class="metric-value" data-metric="accuracy">—</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">ROI</span>
+            <span class="metric-value" data-metric="roi_pct">—</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Model accuracy</span>
+            <span class="metric-value" data-metric="model_accuracy">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="editorial-band" aria-label="What this project is">
+        <div class="editorial-lead">
+          <span class="eyebrow">What this is</span>
+          <h2>A public record of a model-driven MLB betting operation.</h2>
+        </div>
+        <div class="editorial-columns">
+          <p>
+            The point of this site is not to spray picks. It is to make the workflow legible: where the model has been right, where it has been wrong, and how the public results compare with market pricing over time.
+          </p>
+          <p>
+            Visitors can explore the analytics layer first. Approved users can then move into the private dashboard to manage live betting controls, user-specific settings, and linked account execution.
+          </p>
+        </div>
+        <div class="editorial-links">
+          <a href="/public">Explore the public analytics</a>
+          <a href="/register">Request private access</a>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="how-it-works" aria-label="How it works">
+        <div class="section-header section-header-left">
+          <span class="eyebrow">Process</span>
+          <h2>How it works</h2>
+          <p>The system starts with baseball data, turns it into probability estimates, compares those estimates with market prices, and then tracks the outcome in public.</p>
+        </div>
+        <div class="process-grid">
+          <div class="process-step">
+            <div class="step-number">1</div>
+            <h3>Data collection</h3>
+            <p>Game history, team form, player inputs, weather, and pricing feeds are collected into one repeatable pipeline.</p>
+          </div>
+          <div class="process-step">
+            <div class="step-number">2</div>
+            <h3>Model prediction</h3>
+            <p>Probability estimates are generated from engineered features and checked against historical calibration, not just raw accuracy.</p>
+          </div>
+          <div class="process-step">
+            <div class="step-number">3</div>
+            <h3>Market analysis</h3>
+            <p>The model view is compared with market-implied pricing to surface situations where the forecast and the market meaningfully diverge.</p>
+          </div>
+          <div class="process-step">
+            <div class="step-number">4</div>
+            <h3>Risk management</h3>
+            <p>Position sizing and account-level controls determine whether a signal turns into a live order and how much capital is at risk.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="methodology" class="methodology" aria-label="Model methodology">
+        <div class="methodology-content">
+          <div class="methodology-text">
+            <span class="eyebrow">Technical approach</span>
+            <h2>Model methodology</h2>
+            <p>Built around probability estimation, calibration, and market comparison rather than one-off pick generation.</p>
+            <div class="methodology-features">
+              <div class="feature-item">
+                <strong>Ensemble modeling</strong>
+                <span>Gradient boosting and tree-based ensembles capture nonlinear matchup effects across team strength, starting pitching, and rolling form.</span>
+              </div>
+              <div class="feature-item">
+                <strong>Feature engineering</strong>
+                <span>Engineered inputs include rolling team indicators, schedule context, weather conditions, and matchup-specific baseball features.</span>
+              </div>
+              <div class="feature-item">
+                <strong>Calibration testing</strong>
+                <span>Out-of-sample validation checks whether predicted confidence levels actually map to real-world win frequencies.</span>
+              </div>
+              <div class="feature-item">
+                <strong>Market integration</strong>
+                <span>Live market pricing is used as a benchmark so the public record can show where the model beats or trails market consensus.</span>
+              </div>
+            </div>
+          </div>
+          <div class="methodology-visual">
+            <div class="model-pipeline">
+              <div class="pipeline-step">
+                <div class="step-icon">01</div>
+                <span>Data sources</span>
+              </div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step">
+                <div class="step-icon">02</div>
+                <span>Feature engineering</span>
+              </div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step">
+                <div class="step-icon">03</div>
+                <span>ML models</span>
+              </div>
+              <div class="pipeline-arrow">→</div>
+              <div class="pipeline-step">
+                <div class="step-icon">04</div>
+                <span>Predictions</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="performance-summary" class="performance-summary" data-endpoint="/api/public/summary" aria-label="Performance summary">
+        <div class="performance-layout">
+          <div class="performance-intro">
+            <span class="eyebrow">Track record</span>
+            <h2>Public metrics, not marketing claims.</h2>
+            <p>These headline figures are pulled from the live public endpoints that also feed the analytics page. If you want the full breakdown, the public dashboard goes deeper.</p>
+            <div class="performance-cta performance-cta-inline">
+              <a href="/public" class="primary">Explore Public Analytics</a>
+            </div>
+          </div>
+          <div class="performance-grid">
+          <div class="performance-card">
+            <div class="card-header">
+              <h3>Betting performance</h3>
+              <span class="card-subtitle">Live results from model recommendations</span>
+            </div>
+            <div class="card-body">
+              <div class="stat-row">
+                <span class="stat-label">Win rate</span>
+                <span class="stat-value" data-perf="accuracy">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Return on investment</span>
+                <span class="stat-value" data-perf="roi_pct">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Total bets placed</span>
+                <span class="stat-value" data-perf="total_bets">—</span>
+              </div>
+            </div>
+          </div>
+          <div class="performance-card">
+            <div class="card-header">
+              <h3>Model accuracy</h3>
+              <span class="card-subtitle">Prediction accuracy vs market</span>
+            </div>
+            <div class="card-body">
+              <div class="stat-row">
+                <span class="stat-label">Model accuracy</span>
+                <span class="stat-value" data-model="accuracy">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Market accuracy</span>
+                <span class="stat-value" data-model="market_accuracy">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Total predictions</span>
+                <span class="stat-value" data-model="total">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section id="about" class="about" aria-label="About">
+        <div class="about-content">
+          <div class="about-text">
+            <span class="eyebrow">Background</span>
+            <h2>About this project</h2>
+            <p>This site is meant to present the system like a serious analytics product: transparent public reporting on one side, controlled operational tooling on the other.</p>
+            <p>The public layer exists so visitors can audit the process and the outcomes. The private layer exists for approved users who need the operational controls behind it.</p>
+          </div>
+          <div class="about-cta">
+            <div class="cta-card">
+              <h3>Interested in the private workspace?</h3>
+              <p>Access requests are reviewed before private dashboard access is enabled.</p>
+              <div class="cta-actions">
+                <a href="/register" class="btn-primary">Request Access</a>
+                <a href="/login" class="btn-secondary">Member Login</a>
+              </div>
+            </div>
+            <div class="contact-info">
+              <h4>Questions?</h4>
+              <p>For methodology, data, or access questions:</p>
+              <a href="mailto:contact@mlb-intelligence.com" class="contact-link">contact@mlb-intelligence.com</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
