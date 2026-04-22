@@ -2086,8 +2086,16 @@ body.auth-body {
     gap: 16px;
   }
   .pipeline-arrow {
-    transform: rotate(90deg);
-    margin: 4px 0;
+    padding-left: 0;
+    text-align: center;
+    line-height: 1;
+    font-size: 0;
+  }
+  .pipeline-arrow::after {
+    content: "↓";
+    font-size: 1rem;
+    color: var(--accent);
+    font-weight: 600;
   }
   .performance-grid {
     grid-template-columns: 1fr;
