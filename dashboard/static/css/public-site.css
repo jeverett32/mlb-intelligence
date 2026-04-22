@@ -1528,15 +1528,6 @@ body.auth-body {
     grid-template-columns: 1fr;
   }
   .topbar {
-    align-items: flex-start;
-    gap: 18px;
-  }
-  .nav-links {
-    width: 100%;
-    gap: 14px 18px;
-  }
-  .nav-links a {
-    min-height: 40px;
     align-items: center;
   }
   .contact-main,
@@ -1610,33 +1601,47 @@ body.auth-body {
   .auth-hero-actions a,
   .actions > * {
     width: 100%;
-    min-height: 44px;
+    min-height: 48px;
     justify-content: center;
   }
+  .ps-hero-actions a:not(.primary) {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 18px;
+    background: var(--bg-card);
+  }
   .hero-demo {
-    min-height: 450px;
+    min-height: unset;
   }
   .hero-demo-grid {
-    min-height: 450px;
+    min-height: unset;
+    position: static;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
   .demo-panel-primary {
+    position: static;
+    transform: none;
     padding: 18px;
     border-radius: 26px;
+    inset: auto;
   }
   .demo-scoreline {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
   .demo-bars {
     gap: 7px;
-    height: 124px;
+    height: 100px;
+    margin-top: 16px;
   }
   .demo-panel-float {
-    position: relative;
+    position: static;
     width: 100%;
     right: auto;
     top: auto;
     bottom: auto;
-    margin-top: 12px;
+    animation: none !important;
   }
   .hero-marquee-track span {
     min-height: 36px;
@@ -1644,16 +1649,42 @@ body.auth-body {
     font-size: 0.8rem;
   }
   .topbar {
-    align-items: flex-start;
+    align-items: center;
+    flex-wrap: nowrap;
     margin-bottom: 28px;
+    position: relative;
+  }
+  .nav-toggle {
+    display: inline-flex;
+    margin-left: auto;
   }
   .nav-links {
-    gap: 10px 14px;
-    width: 100%;
+    display: none;
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    right: 0;
+    z-index: 100;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 10px;
+    box-shadow: var(--shadow-md);
+  }
+  .topbar.nav-open .nav-links {
+    display: flex;
   }
   .nav-links a {
-    min-height: 38px;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 10px;
     font-size: 0.95rem;
+    width: 100%;
+  }
+  .nav-links a:hover {
+    background: var(--bg-elevated);
   }
   .contact-card,
   .analytics-overview-card,
@@ -1718,6 +1749,48 @@ body.auth-body {
     padding-right: 18px;
   }
 }
+
+/* ── Hamburger nav toggle ───────────────────────────────────────────────── */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+.nav-toggle:hover { border-color: var(--accent); }
+.nav-toggle-icon,
+.nav-toggle-icon::before,
+.nav-toggle-icon::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.nav-toggle-icon {
+  position: relative;
+}
+.nav-toggle-icon::before,
+.nav-toggle-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+.nav-toggle-icon::before { top: -5px; }
+.nav-toggle-icon::after  { top: 5px; }
+
+.topbar.nav-open .nav-toggle-icon { background: transparent; }
+.topbar.nav-open .nav-toggle-icon::before { transform: rotate(45deg) translate(3.5px, 3.5px); }
+.topbar.nav-open .nav-toggle-icon::after  { transform: rotate(-45deg) translate(3.5px, -3.5px); }
 
 /* ── Public site surface (landing, /public topbar) ──────────────────────── */
 .ps-shell {
