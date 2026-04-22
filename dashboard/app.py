@@ -55,6 +55,56 @@ class _CachedStatic(StaticFiles):
 app.mount("/static", _CachedStatic(directory=str(STATIC_DIR)), name="static")
 
 
+class CalibrationPoint(BaseModel):
+    predicted: float
+    actual: float
+    n: int
+
+
+class PublicPerformanceResponse(BaseModel):
+    total_bets: int
+    wins: int
+    losses: int
+    accuracy: float
+    total_wagered: float
+    roi_pct: float
+    calibration: list[CalibrationPoint]
+
+
+class PublicModelAccuracyResponse(BaseModel):
+    total: int
+    correct: int
+    incorrect: int
+    accuracy: float
+    market_total: int
+    market_correct: int
+    market_incorrect: int
+    market_accuracy: float
+    calibration: list[CalibrationPoint]
+
+
+class RecentModelPick(BaseModel):
+    game_date: str
+    away_team: str
+    home_team: str
+    predicted_prob: float
+    market_prob: float | None
+    bet_side: str | None
+    home_win: bool
+    model_correct: bool
+    market_correct: bool | None
+    market_pred_home: bool | None
+
+
+class PrivateModelAccuracyResponse(PublicModelAccuracyResponse):
+    recent: list[RecentModelPick]
+
+
+class PublicSummaryResponse(BaseModel):
+    performance: PublicPerformanceResponse
+    model_accuracy: PublicModelAccuracyResponse
+
+
 def _hash_password(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
@@ -64,6 +114,10 @@ def _verify_password(password: str, hashed: str) -> bool:
         return _bcrypt.checkpw(password.encode(), hashed.encode())
     except Exception:
         return False
+
+
+def _render_template(template_name: str) -> str:
+    return (TEMPLATES_DIR / template_name).read_text(encoding="utf-8")
 
 
 def _secret_dir() -> Path:
@@ -138,11 +192,7 @@ def login_page(request: Request, error: str = ""):
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
         return RedirectResponse("/", status_code=302)
     error_html = f'<div class="error-banner">{error}</div>' if error else ""
-    return (
-        (TEMPLATES_DIR / "login.html")
-        .read_text(encoding="utf-8")
-        .replace("{{ERROR_BANNER}}", error_html)
-    )
+    return _render_template("login.html").replace("{{ERROR_BANNER}}", error_html)
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -151,16 +201,12 @@ def register_page(request: Request, error: str = ""):
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
         return RedirectResponse("/", status_code=302)
     error_html = f'<div class="error-banner">{error}</div>' if error else ""
-    return (
-        (TEMPLATES_DIR / "register.html")
-        .read_text(encoding="utf-8")
-        .replace("{{ERROR_BANNER}}", error_html)
-    )
+    return _render_template("register.html").replace("{{ERROR_BANNER}}", error_html)
 
 
 @app.get("/pending", response_class=HTMLResponse)
 def pending_page():
-    return (TEMPLATES_DIR / "pending.html").read_text(encoding="utf-8")
+    return _render_template("pending.html")
 
 
 @app.post("/login")
@@ -247,14 +293,14 @@ def logout(request: Request):
 def index(request: Request):
     user = _get_current_user(request)
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
-        return (TEMPLATES_DIR / "public.html").read_text(encoding="utf-8")
-    return (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+        return _render_template("landing.html")
+    return _render_template("index.html")
 
 
 @app.get("/public", response_class=HTMLResponse)
 @limiter.limit("60/minute")
 def public_page(request: Request):
-    return (TEMPLATES_DIR / "public.html").read_text(encoding="utf-8")
+    return _render_template("public.html")
 
 
 @app.get("/health")
@@ -660,17 +706,17 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
 # ---------------------------------------------------------------------------
 
 
-def _compute_performance(email: str | None = None):
+def _build_public_performance(email: str | None = None) -> PublicPerformanceResponse:
     bets_df = DB.get_user_orders(email) if email else DB.get_all_bets()
     if bets_df.empty:
-        return _empty_perf()
+        return _empty_public_performance()
 
     settled = bets_df[
         bets_df["result"].notna() & bets_df["bet_dollars"].notna()
     ].copy()
     settled = settled[settled["bet_dollars"].astype(float) > 0]
     if settled.empty:
-        return _empty_perf()
+        return _empty_public_performance()
 
     result = settled["result"].astype(bool)
     side = settled["bet_side"]
@@ -699,7 +745,7 @@ def _compute_performance(email: str | None = None):
     total_returned = float(returned_row[won_mask].sum())
     roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
 
-    calibration = []
+    calibration: list[CalibrationPoint] = []
     if "predicted_prob" in settled.columns:
         settled = settled.assign(
             _won=won_mask,
@@ -707,72 +753,69 @@ def _compute_performance(email: str | None = None):
         )
         grouped = settled.groupby("_pred_bin")["_won"].agg(["mean", "size"])
         for bucket, row in grouped.iterrows():
-            calibration.append({
-                "predicted": float(bucket),
-                "actual": float(row["mean"]),
-                "n": int(row["size"]),
-            })
+            calibration.append(
+                CalibrationPoint(
+                    predicted=float(bucket),
+                    actual=float(row["mean"]),
+                    n=int(row["size"]),
+                )
+            )
 
-    return {
-        "total_bets": total_bets,
-        "wins": wins,
-        "losses": total_bets - wins,
-        "accuracy": round(wins / total_bets, 4) if total_bets else 0.0,
-        "total_wagered": round(total_wagered, 2),
-        "roi_pct": round(roi * 100, 2),
-        "calibration": calibration,
-    }
-
-
-def _empty_perf():
-    return {
-        "total_bets": 0,
-        "wins": 0,
-        "losses": 0,
-        "accuracy": 0.0,
-        "total_wagered": 0.0,
-        "roi_pct": 0.0,
-        "calibration": [],
-    }
+    return PublicPerformanceResponse(
+        total_bets=total_bets,
+        wins=wins,
+        losses=total_bets - wins,
+        accuracy=round(wins / total_bets, 4) if total_bets else 0.0,
+        total_wagered=round(total_wagered, 2),
+        roi_pct=round(roi * 100, 2),
+        calibration=calibration,
+    )
 
 
-@app.get("/api/performance")
+def _empty_public_performance() -> PublicPerformanceResponse:
+    return PublicPerformanceResponse(
+        total_bets=0,
+        wins=0,
+        losses=0,
+        accuracy=0.0,
+        total_wagered=0.0,
+        roi_pct=0.0,
+        calibration=[],
+    )
+
+
+@app.get("/api/performance", response_model=PublicPerformanceResponse)
 def get_performance(user: dict = Depends(require_approved_user)):
-    return _compute_performance(user["email"])
+    return _build_public_performance(user["email"])
 
 
-@app.get("/api/public/performance")
+@app.get("/api/public/performance", response_model=PublicPerformanceResponse)
 @limiter.limit("30/minute")
 def get_public_performance(request: Request):
-    return _compute_performance()
+    return _build_public_performance()
 
 
-@app.get("/api/public/model-accuracy")
+@app.get("/api/public/model-accuracy", response_model=PublicModelAccuracyResponse)
 @limiter.limit("30/minute")
 def get_public_model_accuracy(request: Request):
-    return _compute_model_accuracy(include_recent=False)
+    return _build_public_model_accuracy()
 
 
-@app.get("/api/model-accuracy")
+@app.get("/api/public/summary", response_model=PublicSummaryResponse)
+@limiter.limit("30/minute")
+def get_public_summary(request: Request):
+    return _build_public_summary()
+
+
+@app.get("/api/model-accuracy", response_model=PrivateModelAccuracyResponse)
 def get_model_accuracy(user: dict = Depends(require_approved_user)):
-    return _compute_model_accuracy(include_recent=True)
+    return _build_private_model_accuracy()
 
 
-def _compute_model_accuracy(include_recent: bool = True):
+def _compute_model_accuracy_metrics() -> tuple[dict, pd.DataFrame]:
     df = DB.get_model_picks()
     if df.empty:
-        return {
-            "total": 0,
-            "correct": 0,
-            "incorrect": 0,
-            "accuracy": 0.0,
-            "market_total": 0,
-            "market_correct": 0,
-            "market_incorrect": 0,
-            "market_accuracy": 0.0,
-            "calibration": [],
-            "recent": [],
-        }
+        return (_empty_model_accuracy_metrics(), df)
 
     df["predicted_home_win"] = df["predicted_prob"].astype(float) > 0.5
     df["home_win"] = df["home_win"].astype(bool)
@@ -789,54 +832,98 @@ def _compute_model_accuracy(include_recent: bool = True):
     market_correct = int(df[df["market_implied_prob"].notna()]["market_correct"].sum())
 
     # Calibration buckets
-    calibration = []
+    calibration: list[CalibrationPoint] = []
     df["pred_bin"] = (df["predicted_prob"].astype(float) * 10).apply(int) / 10
     for bucket, grp in df.groupby("pred_bin"):
         calibration.append(
-            {
-                "predicted": float(bucket),
-                "actual": float(grp["home_win"].astype(float).mean()),
-                "n": len(grp),
-            }
+            CalibrationPoint(
+                predicted=float(bucket),
+                actual=float(grp["home_win"].astype(float).mean()),
+                n=len(grp),
+            )
         )
 
-    # Recent picks (last 20 settled games)
-    recent = []
-    rows_iter = df.head(20).iterrows() if include_recent else iter([])
-    for _, r in rows_iter:
+    return (
+        {
+            "total": total,
+            "correct": correct,
+            "incorrect": total - correct,
+            "accuracy": round(correct / total, 4) if total else 0.0,
+            "market_total": market_total,
+            "market_correct": market_correct,
+            "market_incorrect": market_total - market_correct,
+            "market_accuracy": round(market_correct / market_total, 4)
+            if market_total
+            else 0.0,
+            "calibration": calibration,
+        },
+        df,
+    )
+
+
+def _empty_model_accuracy_metrics() -> dict:
+    return {
+        "total": 0,
+        "correct": 0,
+        "incorrect": 0,
+        "accuracy": 0.0,
+        "market_total": 0,
+        "market_correct": 0,
+        "market_incorrect": 0,
+        "market_accuracy": 0.0,
+        "calibration": [],
+    }
+
+
+def _build_recent_model_picks(df: pd.DataFrame, limit: int = 20) -> list[RecentModelPick]:
+    recent: list[RecentModelPick] = []
+    for _, r in df.head(limit).iterrows():
         market_prob = r.get("market_implied_prob")
         has_market = pd.notna(market_prob)
         market_correct_val = bool(r["market_correct"]) if has_market else None
         market_pred_val = bool(r["market_predicted_home_win"]) if has_market else None
         recent.append(
-            {
-                "game_date": str(r["game_date"])[:10],
-                "away_team": r["away_team"],
-                "home_team": r["home_team"],
-                "predicted_prob": float(r["predicted_prob"]),
-                "market_prob": _safe_value(market_prob),
-                "bet_side": r.get("bet_side"),
-                "home_win": bool(r["home_win"]),
-                "model_correct": bool(r["correct"]),
-                "market_correct": market_correct_val,
-                "market_pred_home": market_pred_val,
-            }
+            RecentModelPick(
+                game_date=str(r["game_date"])[:10],
+                away_team=r["away_team"],
+                home_team=r["home_team"],
+                predicted_prob=float(r["predicted_prob"]),
+                market_prob=_safe_value(market_prob),
+                bet_side=r.get("bet_side"),
+                home_win=bool(r["home_win"]),
+                model_correct=bool(r["correct"]),
+                market_correct=market_correct_val,
+                market_pred_home=market_pred_val,
+            )
         )
+    return recent
 
-    return {
-        "total": total,
-        "correct": correct,
-        "incorrect": total - correct,
-        "accuracy": round(correct / total, 4) if total else 0.0,
-        "market_total": market_total,
-        "market_correct": market_correct,
-        "market_incorrect": market_total - market_correct,
-        "market_accuracy": round(market_correct / market_total, 4)
-        if market_total
-        else 0.0,
-        "calibration": calibration,
-        "recent": recent,
-    }
+
+def _compute_public_model_accuracy() -> tuple[PublicModelAccuracyResponse, pd.DataFrame]:
+    metrics, df = _compute_model_accuracy_metrics()
+    return PublicModelAccuracyResponse(**metrics), df
+
+
+def _build_public_model_accuracy() -> PublicModelAccuracyResponse:
+    model_accuracy, _ = _compute_public_model_accuracy()
+    return model_accuracy
+
+
+def _build_private_model_accuracy() -> PrivateModelAccuracyResponse:
+    model_accuracy, df = _compute_public_model_accuracy()
+    return PrivateModelAccuracyResponse(
+        **model_accuracy.model_dump(),
+        recent=_build_recent_model_picks(df),
+    )
+
+
+def _build_public_summary() -> PublicSummaryResponse:
+    performance = _build_public_performance()
+    model_accuracy = _build_public_model_accuracy()
+    return PublicSummaryResponse(
+        performance=performance,
+        model_accuracy=model_accuracy,
+    )
 
 
 # ---------------------------------------------------------------------------
