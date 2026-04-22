@@ -34,17 +34,18 @@ jobs:
         run: |
           echo "=== Starting deployment ==="
           cd /opt/mlb/pipeline
+          tmp_script="$(mktemp "${RUNNER_TEMP}/deploy.XXXXXX.sh")"
 
           # Ensure we have the latest deployment script
           git fetch origin
-          git show origin/main:scripts/deploy.sh > /tmp/deploy.sh
-          chmod +x /tmp/deploy.sh
+          git show origin/main:scripts/deploy.sh > "$tmp_script"
+          chmod +x "$tmp_script"
 
-          # /tmp may be mounted noexec on the homelab, so invoke through bash.
-          bash /tmp/deploy.sh deploy
+          # Invoke through bash so noexec temp mounts do not matter.
+          bash "$tmp_script" deploy
 
           # Cleanup
-          rm -f /tmp/deploy.sh
+          rm -f "$tmp_script"
 
         # Set a longer timeout for the deployment step
         timeout-minutes: 10
