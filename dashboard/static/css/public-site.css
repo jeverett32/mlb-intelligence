@@ -1563,7 +1563,7 @@ body.auth-body {
     font-size: clamp(2.05rem, 10.5vw, 3.1rem);
     line-height: 1.13;
     max-width: none;
-    margin-bottom: 40px;
+    margin-bottom: 34px;
   }
   .analytics-hero-copy h1,
   .contact-hero h1 {
@@ -1883,13 +1883,78 @@ body.auth-body {
 }
 
 .ps-hero .hero-copy-stage h1 {
-  margin-bottom: 64px;
+  margin-bottom: 56px;
 }
 
 .ps-hero-copy {
   max-width: 720px;
   margin: 0 0 24px;
   font-size: 1.05rem;
+}
+
+:root[data-theme="dark"] .brand,
+:root[data-theme="dark"] .hero-badges span,
+:root[data-theme="dark"] .hero-marquee-track span,
+:root[data-theme="dark"] .trust-metrics .metric-card,
+:root[data-theme="dark"] .demo-panel,
+:root[data-theme="dark"] .glance-card,
+:root[data-theme="dark"] .contact-card,
+:root[data-theme="dark"] .contact-card-primary,
+:root[data-theme="dark"] .analytics-side-card,
+:root[data-theme="dark"] .analytics-overview-card,
+:root[data-theme="dark"] .analytics-panel,
+:root[data-theme="dark"] .analytics-stat-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(35, 45, 54, 0.9), rgba(18, 23, 28, 0.76));
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .brand,
+:root[data-theme="dark"] .hero-badges span,
+:root[data-theme="dark"] .hero-marquee-track span {
+  background: rgba(26, 33, 40, 0.82);
+}
+
+:root[data-theme="dark"] .trust-metrics .metric-card {
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .trust-metrics .metric-card:last-child {
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] .brand,
+  :root[data-theme="auto"] .hero-badges span,
+  :root[data-theme="auto"] .hero-marquee-track span,
+  :root[data-theme="auto"] .trust-metrics .metric-card,
+  :root[data-theme="auto"] .demo-panel,
+  :root[data-theme="auto"] .glance-card,
+  :root[data-theme="auto"] .contact-card,
+  :root[data-theme="auto"] .contact-card-primary,
+  :root[data-theme="auto"] .analytics-side-card,
+  :root[data-theme="auto"] .analytics-overview-card,
+  :root[data-theme="auto"] .analytics-panel,
+  :root[data-theme="auto"] .analytics-stat-card {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(35, 45, 54, 0.9), rgba(18, 23, 28, 0.76));
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  :root[data-theme="auto"] .brand,
+  :root[data-theme="auto"] .hero-badges span,
+  :root[data-theme="auto"] .hero-marquee-track span {
+    background: rgba(26, 33, 40, 0.82);
+  }
+
+  :root[data-theme="auto"] .trust-metrics .metric-card,
+  :root[data-theme="auto"] .trust-metrics .metric-card:last-child {
+    border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+  }
 }
 
 .ps-grid {
