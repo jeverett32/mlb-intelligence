@@ -4,7 +4,7 @@
 
 <h1 align="center">MLB Pipeline</h1>
 
-<p align="center">Automated MLB moneyline modeling, EV detection, Kalshi execution, and dashboard monitoring.</p>
+<p align="center">A public-facing MLB betting intelligence site with transparent analytics, private operator controls, and live model tracking.</p>
 
 <p align="center">
   <a href="https://github.com/jeverett32/mlb-pipeline/actions/workflows/test.yml">
@@ -18,149 +18,110 @@
   </a>
 </p>
 
-MLB Pipeline is a Python-based betting workflow that pulls MLB game and market data, trains a gradient-boosted model, identifies positive expected value opportunities, and can place or dry-run Kalshi orders. It also exposes a FastAPI dashboard for monitoring bankroll, open positions, model performance, and execution state.
+<p align="center">
+  <img src="docs/images/dashboard-overview.png" alt="MLB Pipeline private dashboard overview" width="100%">
+</p>
+
+MLB Pipeline is a deployed web product with two distinct surfaces: a public site that explains the model and publishes performance, and a private dashboard used to operate the system behind it. Visitors can review the public record first; approved users can then access live controls, bankroll monitoring, and execution workflows.
 
 > [!WARNING]
-> This project can place real-money trades when live betting is enabled. Review the configuration, risk logic, and execution safeguards before using it against a funded Kalshi account.
+> This software can be connected to real-money betting infrastructure. Live execution should stay disabled unless the operator has reviewed the model behavior, bankroll rules, and account configuration.
 
-## At a glance
+## Product Surfaces
 
-- **Automated data pipeline:** Fetches schedules, odds, pitcher data, weather, and team statistics.
-- **Model-driven betting:** Scores games with gradient-boosted models and compares predictions against market prices.
-- **Execution controls:** Supports dry runs, live execution toggles, stake sizing, and balance sync.
-- **Operational dashboard:** FastAPI UI for bankroll snapshots, open bets, action queues, and performance review.
-- **Self-hosted stack:** Runs on your own infrastructure with PostgreSQL and standard Python tooling.
+### Public landing page
 
-## Dashboard
+The root site is the front door. It explains what the system is, how the workflow works, and where to go next.
 
-Drop your dashboard screenshot at `docs/images/dashboard-overview.png` to render it here:
+- Presents the product in plain language instead of dropping users into raw internal tooling
+- Shows live headline metrics pulled from the same public endpoints as the analytics page
+- Directs visitors to either explore the public record or request private access
 
-```md
-<p align="center">
-  <img src="docs/images/dashboard-overview.png" alt="MLB Pipeline dashboard overview" width="100%">
-</p>
-```
+### Public analytics
 
-The current UI includes operational status cards, live betting state, bankroll history, open positions, and model-versus-market tracking.
+The `/public` surface is the proof layer.
 
-## Quick Start
+- Publishes model accuracy, market comparison, calibration, and betting performance
+- Separates evidence from marketing by focusing on live numbers and historical results
+- Lets users inspect whether the model has actually outperformed market baselines
 
-### Prerequisites
+### Private dashboard
 
-- Python 3.10+
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-- PostgreSQL
-- A [Kalshi](https://kalshi.com) account with API credentials
-- An [Odds API](https://the-odds-api.com) key
+The authenticated dashboard is the operator workspace shown in the screenshot above.
 
-### Install
+- Monitor bankroll, open bets, next actions, and current system state
+- Review model-vs-market deltas, exposure, and live betting status
+- Manage private settings and operational controls without exposing them on the public site
 
-```bash
-git clone https://github.com/jeverett32/mlb-pipeline.git
-cd mlb-pipeline
-uv sync
-cp .env.example .env
-```
+## User Journey
 
-Update `.env` with your Kalshi credentials, Odds API key, and PostgreSQL connection details.
+For a normal user, the product flow is straightforward:
 
-### Load historical data
+1. Land on the homepage and understand what the system does.
+2. Open the public analytics page to inspect performance, calibration, and results.
+3. Decide whether the public record is credible enough to keep following.
+4. Request access if private dashboard features are relevant.
+5. Use the authenticated dashboard only after approval.
 
-```bash
-uv run migrate_to_postgres.py
-```
+That is the framing the README should emphasize, because that is how someone actually experiences the deployed website.
 
-This imports the historical dataset in `data/master_mlb.csv` so the model has baseline training data available in PostgreSQL.
+## What The Site Shows
 
-### Run the main surfaces
+- **Public trust layer:** landing page, methodology framing, live summary metrics, public analytics
+- **Proof layer:** model accuracy, market accuracy, calibration, ROI, and public operating history
+- **Operator layer:** bankroll snapshots, actionable signals, open positions, timezone-aware dashboard views, and live execution state
 
-```bash
-# dashboard API + UI
-uv run uvicorn dashboard.app:app --host <REDACTED_IP> --port <REDACTED_PORT>
+## How The System Works
 
-# pipeline loop
-uv run python run_pipeline.py
-```
-
-Open `http://localhost:<REDACTED_PORT>` to access the dashboard.
-
-## How It Works
+Behind the website, the application runs a model-driven MLB betting workflow:
 
 ```text
-fetch/fetch_data.py    -> collect schedules, odds, weather, pitcher, and team data
-model/predict.py       -> score games and compute edge versus market price
-bet/place_bet.py       -> place or dry-run Kalshi orders
-fetch/fetch_balance.py -> sync account balance
-run_pipeline.py        -> orchestrate the loop around upcoming games
+Data collection -> feature engineering -> win probability model -> market comparison -> bet sizing -> dashboard + public reporting
 ```
 
-The pipeline stores games, bets, balances, settings, and dashboard state in PostgreSQL. In production, it is typically run as a long-lived service that wakes ahead of scheduled games, refreshes the latest inputs, and evaluates whether any wager meets the execution thresholds.
+More concretely:
 
-## Architecture
+- `fetch/` gathers schedules, odds, weather, pitcher data, and team statistics
+- `model/` produces predictions and compares them to market-implied pricing
+- `bet/` handles execution and dry-run behavior
+- `dashboard/` serves the public site, analytics pages, auth flows, and private operator UI
 
-The repo is organized around four main concerns:
+## Why This Repo Exists
 
-- `fetch/`: data ingestion from MLB Stats API, odds providers, weather, and team stat sources
-- `model/`: training and prediction logic for win probabilities and edge calculations
-- `bet/`: Kalshi order construction and execution
-- `dashboard/`: FastAPI routes, auth, templates, and static assets for monitoring
+This repository is not just an internal pipeline dump. It is the code behind a product that tries to make a betting model legible:
 
-The current production deployment uses a separate PostgreSQL host and app server managed on a homelab. That operational setup is documented outside the main README so the primary onboarding path stays focused on the software itself.
+- the public site explains the system,
+- the analytics page shows the evidence,
+- the private dashboard runs the operation.
 
-## Configuration
-
-Core environment variables:
-
-| Variable | Purpose |
-|---|---|
-| `KALSHI_KEY_ID` | Kalshi API key ID |
-| `KALSHI_KEY_PATH` | Path to the Kalshi PEM private key |
-| `KALSHI_ENV` | `prod` for live trading or `demo` for paper trading |
-| `ODDS_API_KEY` | API key for The Odds API fallback feed |
-| `DB_HOST` | PostgreSQL host |
-| `DB_PORT` | PostgreSQL port |
-| `DB_NAME` | Database name |
-| `DB_USER` | Database user |
-| `DB_PASSWORD` | Database password |
-| `MLB_ALERT_WEBHOOK` | Optional Discord webhook for failures and alerts |
-| `MLB_COOKIE_SECURE` | Set to `1` when serving the dashboard over HTTPS |
-
-See [.env.example](/home/everjohn/projects/mlb-pipeline/.env.example) for the full set of supported variables.
+That split matters. Most projects in this space either hide the process entirely or publish picks without giving users a way to inspect the track record. This repo is built to expose the record clearly while keeping execution controls private.
 
 ## Development
 
-Common commands:
+This repository is still a Python application with a FastAPI frontend and PostgreSQL-backed state. If you are working on the codebase itself, the main local commands are:
 
 ```bash
-# run tests
+uv sync
 uv run pytest -q tests/
-
-# syntax check
-uv run python -m compileall -q bet dashboard fetch model db.py notify.py run_pipeline.py settle_games.py
-
-# dashboard
 uv run uvicorn dashboard.app:app --reload --host <REDACTED_IP> --port <REDACTED_PORT>
-
-# pipeline
 uv run python run_pipeline.py
 ```
 
-CI currently runs the test workflow in [.github/workflows/test.yml](/home/everjohn/projects/mlb-pipeline/.github/workflows/test.yml), and the repo also contains a homelab deployment workflow in [.github/workflows](/home/everjohn/projects/mlb-pipeline/.github/workflows).
+For environment variables and deployment details, start with [.env.example](/home/everjohn/projects/mlb-pipeline/.env.example) and the documents in [docs](/home/everjohn/projects/mlb-pipeline/docs).
 
 ## Project Structure
 
 ```text
 mlb-pipeline/
-├── bet/                Kalshi order placement
-├── dashboard/          FastAPI app, templates, and static assets
-├── data/               Historical MLB dataset and cache artifacts
+├── bet/                Kalshi order placement and execution logic
+├── dashboard/          Public site, auth flows, private dashboard, static assets
+├── data/               Historical MLB data and cache artifacts
 ├── docs/               Operational and module-specific documentation
 ├── fetch/              External data ingestion
 ├── model/              Training and prediction logic
 ├── db.py               PostgreSQL access helpers
 ├── kalshi_client.py    Kalshi API authentication and requests
-├── migrate_to_postgres.py
-├── run_pipeline.py
+├── run_pipeline.py     Main orchestration loop
 └── tests/
 ```
 
