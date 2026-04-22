@@ -2086,16 +2086,16 @@ body.auth-body {
     gap: 16px;
   }
   .pipeline-arrow {
-    padding-left: 0;
-    text-align: center;
-    line-height: 1;
-    font-size: 0;
+    display: none;
   }
-  .pipeline-arrow::after {
+  .pipeline-step:not(:last-child)::after {
     content: "↓";
-    font-size: 1rem;
+    display: block;
+    text-align: center;
     color: var(--accent);
     font-weight: 600;
+    font-size: 1rem;
+    padding-top: 14px;
   }
   .performance-grid {
     grid-template-columns: 1fr;
