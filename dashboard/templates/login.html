@@ -6,59 +6,72 @@
   <title>MLB Betting Dashboard — Sign In</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422c">
-  <script src="/static/js/public-site.js?v=20260422c"></script>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422e">
+  <script src="/static/js/public-site.js?v=20260422e"></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
-<body class="auth-body">
-  <div class="auth-shell">
-    <section class="auth-hero">
-      <div class="auth-hero-body">
-        <span class="eyebrow">Members Area</span>
-        <h1>Private MLB betting workspace.</h1>
-        <p>Review bankroll, manage live betting, and inspect the model's edge without losing the public-facing performance page.</p>
-      </div>
-      <div class="hero-metrics">
-        <div class="metric-card">
-          <span class="metric-label">Public Page</span>
-          <span class="metric-value">Open</span>
+<body class="auth-body auth-v2">
+  <div class="ps-shell auth-shell-wrap">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
+        <img src="/static/favicon.svg" alt="" />
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="/public">Public analytics</a>
+        <a href="/contact">Contact</a>
+        <a href="/">Home</a>
+      </nav>
+    </header>
+
+    <div class="auth-shell auth-shell-v2">
+      <section class="auth-hero auth-hero-v2">
+        <div class="auth-hero-body">
+          <span class="eyebrow">Members Area</span>
+          <h1>Private MLB betting workspace.</h1>
+          <p>Review bankroll, manage live betting, inspect the model's edge, and move between the public proof layer and the private operating console.</p>
         </div>
-        <div class="metric-card">
-          <span class="metric-label">Dashboard</span>
-          <span class="metric-value">Private</span>
+        <div class="hero-metrics">
+          <div class="metric-card">
+            <span class="metric-label">Public Page</span>
+            <span class="metric-value">Open</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Dashboard</span>
+            <span class="metric-value">Private</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Theme</span>
+            <span class="metric-value">Saved</span>
+          </div>
         </div>
-        <div class="metric-card">
-          <span class="metric-label">Theme</span>
-          <span class="metric-value">Saved</span>
+        <div class="auth-hero-actions">
+          <a class="hero-link primary" href="/public">Public Stats</a>
+          <a class="hero-link secondary" href="/contact">Contact</a>
         </div>
-      </div>
-      <div class="auth-hero-actions">
-        <a class="hero-link primary" href="/">Back To Home</a>
-        <a class="hero-link secondary" href="/public">Public Stats</a>
-      </div>
-    </section>
-    <div class="auth-form">
-      <div class="auth-form-header">
-        <h2>Sign In</h2>
-        <p>Use your dashboard credentials to access the private controls and authenticated views.</p>
-      </div>
-      <div class="auth-form-body">
-        {{ERROR_BANNER}}
-        <form method="post" action="/login">
-          <div class="field">
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" autocomplete="email" required autofocus>
-          </div>
-          <div class="field">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" autocomplete="current-password" required>
-          </div>
-          <div class="actions">
-            <button type="submit" class="btn-submit">Sign In</button>
-            <a class="btn-secondary" href="/register">Request Access</a>
-            <a class="btn-secondary" href="/">Home</a>
-          </div>
-        </form>
+      </section>
+
+      <div class="auth-form auth-form-v2">
+        <div class="auth-form-header">
+          <h2>Sign In</h2>
+          <p>Use your dashboard credentials to access private controls, account settings, and authenticated views.</p>
+        </div>
+        <div class="auth-form-body">
+          {{ERROR_BANNER}}
+          <form method="post" action="/login">
+            <div class="field">
+              <label for="email">Email</label>
+              <input type="email" id="email" name="email" autocomplete="email" required autofocus>
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn-submit">Sign In</button>
+              <a class="btn-secondary" href="/register">Request Access</a>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </div>

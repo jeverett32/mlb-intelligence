@@ -3,175 +3,146 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="MLB betting model — public performance dashboard." />
+  <meta name="description" content="MLB betting model — public analytics, calibration, ROI, and market comparison." />
   <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Model Performance</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422c">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422e">
   <script src="/static/chart.umd.min.js" defer></script>
-  <script src="/static/js/public-site.js?v=20260422c"></script>
+  <script src="/static/js/public-site.js?v=20260422e"></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <style>
-    body {
-      background:
-        radial-gradient(circle at top left, rgba(184, 134, 11, 0.08), transparent 28%),
-        var(--bg-primary);
-    }
-
-    .pub-main { padding: 0 0 48px; }
-
-    .pub-intro {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-      gap: 28px;
-      margin-bottom: 32px;
-      padding-bottom: 24px;
-      border-bottom: 1px solid var(--border);
-    }
-    .pub-intro h1 {
-      font-size: clamp(2.2rem, 4vw, 3.6rem);
-      line-height: 0.95;
-      letter-spacing: -0.05em;
-      margin: 8px 0 14px;
-    }
-    .pub-intro p,
-    .pub-intro aside {
-      color: var(--text-secondary);
-      font-size: 1rem;
-      line-height: 1.65;
-    }
-    .pub-intro aside {
-      padding-left: 20px;
-      border-left: 1px solid var(--border);
-    }
-
-    .section-header {
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      padding: 0 0 10px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 14px;
-    }
-    .section-header.model { color: var(--success); }
-    .section-header.market { color: var(--accent); }
-    .section-header.bets { color: var(--text-primary); }
-
-    .section-stats {
-      border-bottom: 1px solid var(--border);
-      padding: 0 0 18px;
-      margin-bottom: 20px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 0;
-    }
-    .section-stats .stat-card {
-      border: none;
-      background: transparent;
-      box-shadow: none;
-    }
-    .section-stats .stat-card-header { background: transparent; padding: 8px; border-bottom: none; }
-    .section-stats .stat-card-body { padding: 8px; }
-
-    .panel-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-    }
-
-    @media (max-width: 768px) {
-      .pub-intro { grid-template-columns: 1fr; }
-      .pub-intro aside {
-        padding-left: 0;
-        border-left: 0;
-        border-top: 1px solid var(--border);
-        padding-top: 16px;
-      }
-      .stat-card-body .big { font-size: 1.5rem; }
-      .panel-row { grid-template-columns: 1fr; gap: 12px; }
-      .chart-wrap { height: 200px; }
-    }
-
-    @media (max-width: 560px) {
-      .section-stats { grid-template-columns: 1fr; }
-    }
-  </style>
 </head>
-<body>
-<div class="ps-shell">
+<body class="public-analytics-page">
+  <div class="ps-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
+        <img src="/static/favicon.svg" alt="" />
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <select class="theme-chip" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+          <option value="auto">Auto</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+        <a href="/">Home</a>
+        <a href="/contact">Contact</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </header>
 
-  <header class="topbar">
-    <div class="brand">
-      <span class="eyebrow">Public Analytics</span>
-      <strong>MLB Betting Intelligence</strong>
-    </div>
-    <nav class="nav-links" aria-label="Primary">
-      <select class="theme-chip" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
-        <option value="auto">Auto</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-      <a href="/">Home</a>
-      <a href="/login">Log in</a>
-      <a href="/register">Request Access</a>
-    </nav>
-  </header>
+    <main class="public-analytics-main">
+      <section class="analytics-hero" data-reveal>
+        <div class="analytics-hero-copy">
+          <span class="eyebrow">Public Analytics</span>
+          <h1>Detailed performance, calibration, and market comparison.</h1>
+          <p>
+            This page is the evidence layer for the model. It shows how often the forecasts were right, how they compare with market pricing, and how real wagers have performed once capital was deployed.
+          </p>
+        </div>
+        <div class="analytics-hero-side">
+          <div class="analytics-side-card">
+            <span>Surface</span>
+            <strong>Public proof</strong>
+          </div>
+          <div class="analytics-side-card">
+            <span>Focus</span>
+            <strong>Accuracy, calibration, ROI</strong>
+          </div>
+          <div class="analytics-side-card">
+            <span>Next step</span>
+            <strong><a href="/register">Request private access</a></strong>
+          </div>
+        </div>
+      </section>
 
-  <main class="pub-main">
-    <section class="pub-intro" aria-label="Public analytics overview">
-      <div>
-        <span class="eyebrow" style="color: var(--accent)">Public Analytics</span>
-        <h1>Detailed performance, calibration, and market comparison.</h1>
-        <p>
-          This page is the evidence layer for the model. It shows how often the forecasts were right, how they compare with market pricing, and how real wagers have performed once capital was deployed.
-        </p>
-      </div>
-      <aside>
-        The landing page explains the system. This page is for the numbers: accuracy, calibration, and public operating history, without private dashboard controls mixed in.
-      </aside>
-    </section>
+      <section class="analytics-overview-grid" data-reveal>
+        <article class="analytics-overview-card">
+          <span class="analytics-card-label">Model Accuracy</span>
+          <strong id="m-acc">—</strong>
+          <p>All predicted games, measured against actual outcomes.</p>
+        </article>
+        <article class="analytics-overview-card">
+          <span class="analytics-card-label">Market Accuracy</span>
+          <strong id="mk-acc">—</strong>
+          <p>Sportsbook baseline, tracked against the same settled sample.</p>
+        </article>
+        <article class="analytics-overview-card">
+          <span class="analytics-card-label">Bet ROI</span>
+          <strong id="p-roi">—</strong>
+          <p>Return on real wagers from the model recommendation set.</p>
+        </article>
+      </section>
 
-    <div class="section-header model">Model Accuracy — All Predicted Games</div>
-    <div class="section-stats">
-      <div class="stat-card"><div class="stat-card-header">Games</div><div class="stat-card-body"><div class="big" id="m-total">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Correct</div><div class="stat-card-body"><div class="big" id="m-correct" style="color:var(--success)">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Incorrect</div><div class="stat-card-body"><div class="big" id="m-incorrect" style="color:var(--danger)">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Accuracy</div><div class="stat-card-body"><div class="big" id="m-acc">—</div></div></div>
-    </div>
+      <section class="analytics-section" data-reveal>
+        <div class="analytics-section-header">
+          <div>
+            <span class="eyebrow">Model Accuracy</span>
+            <h2>All predicted games</h2>
+          </div>
+        </div>
+        <div class="analytics-stat-grid">
+          <div class="analytics-stat-card"><span>Games</span><strong id="m-total">—</strong></div>
+          <div class="analytics-stat-card"><span>Correct</span><strong id="m-correct">—</strong></div>
+          <div class="analytics-stat-card"><span>Incorrect</span><strong id="m-incorrect">—</strong></div>
+          <div class="analytics-stat-card"><span>Accuracy</span><strong data-reflect="m-acc">—</strong></div>
+        </div>
+      </section>
 
-    <div class="section-header market">Market Accuracy — Sportsbook Odds</div>
-    <div class="section-stats">
-      <div class="stat-card"><div class="stat-card-header">Games</div><div class="stat-card-body"><div class="big" id="mk-total">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Correct</div><div class="stat-card-body"><div class="big" id="mk-correct" style="color:var(--success)">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Incorrect</div><div class="stat-card-body"><div class="big" id="mk-incorrect" style="color:var(--danger)">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Accuracy</div><div class="stat-card-body"><div class="big" id="mk-acc">—</div></div></div>
-    </div>
+      <section class="analytics-section" data-reveal>
+        <div class="analytics-section-header">
+          <div>
+            <span class="eyebrow">Market Accuracy</span>
+            <h2>Sportsbook odds baseline</h2>
+          </div>
+        </div>
+        <div class="analytics-stat-grid">
+          <div class="analytics-stat-card"><span>Games</span><strong id="mk-total">—</strong></div>
+          <div class="analytics-stat-card"><span>Correct</span><strong id="mk-correct">—</strong></div>
+          <div class="analytics-stat-card"><span>Incorrect</span><strong id="mk-incorrect">—</strong></div>
+          <div class="analytics-stat-card"><span>Accuracy</span><strong data-reflect="mk-acc">—</strong></div>
+        </div>
+      </section>
 
-    <div class="section-header bets">Bet Performance — Real Wagers</div>
-    <div class="section-stats">
-      <div class="stat-card"><div class="stat-card-header">Bets</div><div class="stat-card-body"><div class="big" id="p-total">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Wins</div><div class="stat-card-body"><div class="big" id="p-wins" style="color:var(--success)">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Losses</div><div class="stat-card-body"><div class="big" id="p-losses" style="color:var(--danger)">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">Accuracy</div><div class="stat-card-body"><div class="big" id="p-acc">—</div></div></div>
-      <div class="stat-card"><div class="stat-card-header">ROI</div><div class="stat-card-body"><div class="big" id="p-roi">—</div></div></div>
-    </div>
+      <section class="analytics-section" data-reveal>
+        <div class="analytics-section-header">
+          <div>
+            <span class="eyebrow">Bet Performance</span>
+            <h2>Real wagers</h2>
+          </div>
+        </div>
+        <div class="analytics-stat-grid five">
+          <div class="analytics-stat-card"><span>Bets</span><strong id="p-total">—</strong></div>
+          <div class="analytics-stat-card"><span>Wins</span><strong id="p-wins">—</strong></div>
+          <div class="analytics-stat-card"><span>Losses</span><strong id="p-losses">—</strong></div>
+          <div class="analytics-stat-card"><span>Accuracy</span><strong id="p-acc">—</strong></div>
+          <div class="analytics-stat-card"><span>ROI</span><strong data-reflect="p-roi">—</strong></div>
+        </div>
+      </section>
 
-    <div class="panel-row">
-      <div class="panel">
-        <div class="panel-header">Model Calibration</div>
-        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-cal-model"></canvas></div></div>
-      </div>
-      <div class="panel">
-        <div class="panel-header">Bet Calibration</div>
-        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-cal-perf"></canvas></div></div>
-      </div>
-    </div>
-  </main>
-
-</div>
+      <section class="analytics-chart-row" data-reveal>
+        <article class="analytics-panel">
+          <div class="analytics-panel-header">
+            <span>Model Calibration</span>
+            <strong>Predicted probability vs actual win rate</strong>
+          </div>
+          <div class="analytics-panel-body">
+            <div class="chart-wrap"><canvas id="chart-cal-model"></canvas></div>
+          </div>
+        </article>
+        <article class="analytics-panel">
+          <div class="analytics-panel-header">
+            <span>Bet Calibration</span>
+            <strong>Confidence vs realized results</strong>
+          </div>
+          <div class="analytics-panel-body">
+            <div class="chart-wrap"><canvas id="chart-cal-perf"></canvas></div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
 
 <script>
 document.addEventListener('themechange', function() {
@@ -185,7 +156,13 @@ function cssVar(name) {
 }
 var charts = {};
 
-function fmtPct(v) { return v != null ? (Number(v)*100).toFixed(1) + '%' : '—'; }
+function fmtPct(v) { return v != null ? (Number(v) * 100).toFixed(1) + '%' : '—'; }
+
+function reflectValue(sourceId, value) {
+  document.querySelectorAll('[data-reflect="' + sourceId + '"]').forEach(function(el) {
+    el.textContent = value;
+  });
+}
 
 function calChartCfg(data) {
   var accent = cssVar('--accent') || '#B8860B';
@@ -208,20 +185,26 @@ function calChartCfg(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: function(d) { return 'Pred: ' + (d.parsed.x*100).toFixed(0) + '% | Actual: ' + (d.parsed.y*100).toFixed(0) + '% (n=' + (d.raw && d.raw.n || 0) + ')'; } }}
+        tooltip: {
+          callbacks: {
+            label: function(d) {
+              return 'Pred: ' + (d.parsed.x * 100).toFixed(0) + '% | Actual: ' + (d.parsed.y * 100).toFixed(0) + '% (n=' + (d.raw && d.raw.n || 0) + ')';
+            }
+          }
+        }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Predicted Probability', color: axisTitle, font: {size: 11} },
+          title: { display: true, text: 'Predicted Probability', color: axisTitle, font: { size: 11 } },
           min: 0, max: 1,
           grid: { color: grid },
-          ticks: { color: tick, callback: function(v) { return (v*100)+'%'; } }
+          ticks: { color: tick, callback: function(v) { return (v * 100) + '%'; } }
         },
         y: {
-          title: { display: true, text: 'Actual Win Rate', color: axisTitle, font: {size: 11} },
+          title: { display: true, text: 'Actual Win Rate', color: axisTitle, font: { size: 11 } },
           min: 0, max: 1,
           grid: { color: grid },
-          ticks: { color: tick, callback: function(v) { return (v*100)+'%'; } }
+          ticks: { color: tick, callback: function(v) { return (v * 100) + '%'; } }
         }
       }
     }
@@ -248,7 +231,9 @@ async function load() {
     document.getElementById('m-correct').textContent = modelAcc.correct != null ? modelAcc.correct : '—';
     document.getElementById('m-incorrect').textContent = modelAcc.incorrect != null ? modelAcc.incorrect : '—';
     var mAccEl = document.getElementById('m-acc');
-    mAccEl.textContent = mTotal ? fmtPct(modelAcc.accuracy) : '—';
+    var mAccText = mTotal ? fmtPct(modelAcc.accuracy) : '—';
+    mAccEl.textContent = mAccText;
+    reflectValue('m-acc', mAccText);
     mAccEl.style.color = modelAcc.accuracy >= 0.5 ? 'var(--success)' : (mTotal ? 'var(--danger)' : 'var(--text-primary)');
 
     var mkTotal = modelAcc.market_total || 0;
@@ -256,31 +241,30 @@ async function load() {
     document.getElementById('mk-correct').textContent = modelAcc.market_correct != null ? modelAcc.market_correct : '—';
     document.getElementById('mk-incorrect').textContent = modelAcc.market_incorrect != null ? modelAcc.market_incorrect : '—';
     var mkAccEl = document.getElementById('mk-acc');
-    mkAccEl.textContent = mkTotal ? fmtPct(modelAcc.market_accuracy) : '—';
+    var mkAccText = mkTotal ? fmtPct(modelAcc.market_accuracy) : '—';
+    mkAccEl.textContent = mkAccText;
+    reflectValue('mk-acc', mkAccText);
     mkAccEl.style.color = modelAcc.market_accuracy >= 0.5 ? 'var(--success)' : (mkTotal ? 'var(--danger)' : 'var(--text-primary)');
 
-    if (modelAcc.calibration && modelAcc.calibration.length) {
-      makeChart('chart-cal-model', calChartCfg(modelAcc.calibration));
-    } else {
-      document.getElementById('chart-cal-model').parentElement.innerHTML = '<div class="empty">No settled predictions</div>';
-    }
+    var pTotal = perf.total_bets || 0;
+    document.getElementById('p-total').textContent = pTotal;
+    document.getElementById('p-wins').textContent = perf.wins != null ? perf.wins : '—';
+    document.getElementById('p-losses').textContent = perf.losses != null ? perf.losses : '—';
+    var pAccEl = document.getElementById('p-acc');
+    pAccEl.textContent = pTotal ? fmtPct(perf.accuracy) : '—';
+    pAccEl.style.color = perf.accuracy >= 0.5 ? 'var(--success)' : (pTotal ? 'var(--danger)' : 'var(--text-primary)');
 
-    document.getElementById('p-total').textContent = perf.total_bets;
-    document.getElementById('p-wins').textContent = perf.wins;
-    document.getElementById('p-losses').textContent = perf.losses;
-    document.getElementById('p-acc').textContent = perf.total_bets ? fmtPct(perf.accuracy) : '—';
-    var roi = perf.roi_pct;
-    var roiEl = document.getElementById('p-roi');
-    roiEl.textContent = perf.total_bets ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
-    roiEl.style.color = roi >= 0 ? 'var(--success)' : 'var(--danger)';
+    var pRoiEl = document.getElementById('p-roi');
+    var pRoiText = perf.roi_pct != null ? Number(perf.roi_pct).toFixed(1) + '%' : '—';
+    pRoiEl.textContent = pRoiText;
+    reflectValue('p-roi', pRoiText);
+    if (perf.roi_pct > 0) pRoiEl.style.color = 'var(--success)';
+    else if (perf.roi_pct < 0) pRoiEl.style.color = 'var(--danger)';
 
-    if (perf.calibration && perf.calibration.length) {
-      makeChart('chart-cal-perf', calChartCfg(perf.calibration));
-    } else {
-      document.getElementById('chart-cal-perf').parentElement.innerHTML = '<div class="empty">No settled bets</div>';
-    }
-  } catch (e) {
-    console.error('load error:', e);
+    makeChart('chart-cal-model', calChartCfg(modelAcc.calibration || []));
+    makeChart('chart-cal-perf', calChartCfg(perf.calibration || []));
+  } catch (err) {
+    console.error(err);
   }
 }
 
