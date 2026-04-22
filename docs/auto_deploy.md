@@ -118,12 +118,12 @@ cat > /etc/sudoers.d/mlb-deploy << 'EOF'
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl start mlb-dashboard
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop mlb-dashboard
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mlb-dashboard
-mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl status mlb-dashboard
+mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl status mlb-dashboard *
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active mlb-dashboard
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl start mlb-pipeline
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop mlb-pipeline
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mlb-pipeline
-mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl status mlb-pipeline
+mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl status mlb-pipeline *
 mlb ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active mlb-pipeline
 mlb ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u mlb-dashboard *
 mlb ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u mlb-pipeline *

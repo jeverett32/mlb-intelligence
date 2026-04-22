@@ -40,8 +40,8 @@ jobs:
           git show origin/main:scripts/deploy.sh > /tmp/deploy.sh
           chmod +x /tmp/deploy.sh
 
-          # Run the deployment
-          /tmp/deploy.sh deploy
+          # /tmp may be mounted noexec on the homelab, so invoke through bash.
+          bash /tmp/deploy.sh deploy
 
           # Cleanup
           rm -f /tmp/deploy.sh
