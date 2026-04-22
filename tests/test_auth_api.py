@@ -1,4 +1,5 @@
 import pytest
+import pandas as pd
 
 
 def test_pending_user_cannot_login(monkeypatch, app_module, client):
@@ -115,6 +116,93 @@ def test_root_returns_private_dashboard_for_approved_user(monkeypatch, app_modul
     assert r.status_code == 200
     assert "MLB Betting Dashboard" in r.text
     assert "MLB Betting Intelligence" not in r.text
+
+
+def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):
+    now_utc = pd.Timestamp.now(tz="UTC")
+    today_started = now_utc - pd.Timedelta(hours=2)
+    tomorrow_game = now_utc + pd.Timedelta(hours=6)
+
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_setting",
+        lambda email, key, default="": "UTC" if key == "dashboard_timezone" else default,
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_games_df",
+        lambda season=2026, upcoming_only=True: pd.DataFrame(
+            [
+                {
+                    "game_pk": "started-today",
+                    "game_date": today_started.date().isoformat(),
+                    "game_time_utc": today_started.isoformat(),
+                    "home_team": "COL",
+                    "away_team": "LAD",
+                    "home_implied_prob": 0.46,
+                    "away_implied_prob": 0.54,
+                    "close_home_ml": 118,
+                    "close_away_ml": -128,
+                    "home_win": None,
+                },
+                {
+                    "game_pk": "tomorrow",
+                    "game_date": tomorrow_game.date().isoformat(),
+                    "game_time_utc": tomorrow_game.isoformat(),
+                    "home_team": "SEA",
+                    "away_team": "TEX",
+                    "home_implied_prob": 0.51,
+                    "away_implied_prob": 0.49,
+                    "close_home_ml": -104,
+                    "close_away_ml": 102,
+                    "home_win": None,
+                },
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_all_bets",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "game_pk": "started-today",
+                    "predicted_prob": 0.49,
+                    "edge": 0.03,
+                    "bet_side": "none",
+                    "bet_frac": 0.0,
+                    "market_implied_prob": 0.46,
+                    "bet_dollars": None,
+                    "result": None,
+                    "kalshi_order_id": None,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_orders",
+        lambda email: pd.DataFrame(),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/upcoming")
+    assert r.status_code == 200
+    body = r.json()
+    game_pks = {g["game_pk"] for g in body["games"]}
+    assert "started-today" in game_pks
+    started = next(g for g in body["games"] if g["game_pk"] == "started-today")
+    assert started["predicted_prob"] == 0.49
+    assert started["bet_side"] == "none"
 
 
 @pytest.mark.parametrize(
