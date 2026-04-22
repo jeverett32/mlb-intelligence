@@ -396,7 +396,7 @@ def test_public_page_has_clear_link_to_landing(client):
     """Public page should have clear navigation back to landing page."""
     r = client.get("/public")
     assert r.status_code == 200
-    assert 'href="/">Home</a>' in r.text or 'href="/">Back to Home</a>' in r.text
+    assert 'class="brand" href="/"' in r.text
 
 
 def test_public_page_does_not_mislabel_root_for_approved_users(monkeypatch, app_module, client):
