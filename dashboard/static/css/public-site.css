@@ -645,14 +645,14 @@ body.landing-page {
   letter-spacing: -0.08em;
   text-wrap: balance;
   max-width: 8.8ch;
-  margin-bottom: 50px;
+  margin-bottom: 64px;
 }
 .ps-hero-copy {
   font-size: 1.08rem;
   line-height: 1.72;
   max-width: 58ch;
   color: var(--text-secondary);
-  margin-top: 6px;
+  margin: 0 0 24px;
 }
 .hero-badges {
   display: flex;
@@ -1572,7 +1572,7 @@ body.auth-body {
     font-size: clamp(2.05rem, 10.5vw, 3.1rem);
     line-height: 1.13;
     max-width: none;
-    margin-bottom: 28px;
+    margin-bottom: 40px;
   }
   .analytics-hero-copy h1,
   .contact-hero h1 {
