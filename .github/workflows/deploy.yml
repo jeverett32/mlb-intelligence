@@ -1,0 +1,104 @@
+name: Deploy to Homelab
+
+# Only trigger on pushes to main branch (not PRs)
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: homelab-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Use self-hosted runner with homelab label
+    runs-on: [self-hosted, homelab]
+
+    # Timeout to prevent hung deployments
+    timeout-minutes: 15
+
+    steps:
+      # Checkout is not needed since we're running on the homelab
+      # and the deploy script handles git operations
+
+      - name: Pre-deployment health check
+        run: |
+          echo "=== Pre-deployment health check ==="
+          curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/health || {
+            echo "ERROR: Dashboard is not responding to health checks before deployment"
+            exit 1
+          }
+          echo "✓ Dashboard is healthy before deployment"
+
+      - name: Run deployment script
+        run: |
+          echo "=== Starting deployment ==="
+          cd /opt/mlb/pipeline
+
+          # Ensure we have the latest deployment script
+          git fetch origin
+          git show origin/main:scripts/deploy.sh > /tmp/deploy.sh
+          chmod +x /tmp/deploy.sh
+
+          # Run the deployment
+          /tmp/deploy.sh deploy
+
+          # Cleanup
+          rm -f /tmp/deploy.sh
+
+        # Set a longer timeout for the deployment step
+        timeout-minutes: 10
+
+      - name: Post-deployment verification
+        run: |
+          echo "=== Post-deployment verification ==="
+
+          # Wait for services to fully start
+          sleep 10
+
+          # Test health endpoint
+          curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/health || {
+            echo "ERROR: Health check failed after deployment"
+            exit 1
+          }
+          echo "✓ Health check passed"
+
+          # Test that dashboard loads
+          curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/ > /dev/null || {
+            echo "ERROR: Dashboard root page not loading"
+            exit 1
+          }
+          echo "✓ Dashboard root page loads"
+
+          # Check service status
+          echo "=== Service Status ==="
+          sudo /usr/bin/systemctl is-active mlb-dashboard || {
+            echo "ERROR: mlb-dashboard service is not active"
+            exit 1
+          }
+          echo "✓ mlb-dashboard service is active"
+
+          sudo /usr/bin/systemctl is-active mlb-pipeline || {
+            echo "WARNING: mlb-pipeline service is not active (this may be expected if pipeline files didn't change)"
+            # Don't fail the deployment for this, as it might be intentional
+          }
+
+          echo "=== Deployment completed successfully ==="
+
+      # If deployment fails, try to get some diagnostic info
+      - name: Collect failure diagnostics
+        if: failure()
+        run: |
+          echo "=== Deployment failed - collecting diagnostics ==="
+          echo "Services status:"
+          sudo /usr/bin/systemctl status mlb-dashboard --no-pager -l || true
+          sudo /usr/bin/systemctl status mlb-pipeline --no-pager -l || true
+
+          echo "Recent logs:"
+          sudo /usr/bin/journalctl -u mlb-dashboard --no-pager -l --since="5 minutes ago" || true
+          sudo /usr/bin/journalctl -u mlb-pipeline --no-pager -l --since="5 minutes ago" || true
+
+          echo "Disk space:"
+          df -h /opt || true
+
+          echo "=== End diagnostics ==="
