@@ -16,6 +16,7 @@ PIPELINE_FILES_CHANGED_PATTERNS="run_pipeline.py|fetch/|model/|bet/|db.py|kalshi
 LOCK_FILE="/tmp/mlb-deploy.lock"
 BACKUP_PATH_FILE="/tmp/mlb_deploy_backup_path"
 SYSTEMCTL_BIN="$(command -v systemctl)"
+UV_CACHE_DIR_DEFAULT="${REPO_DIR}/.cache/uv"
 
 # Colors for output
 RED='\033[0;31m'
@@ -185,6 +186,8 @@ deploy() {
     flock -n 9 || error_exit "Another deployment is already running"
 
     cd "$REPO_DIR"
+    export UV_CACHE_DIR="${UV_CACHE_DIR:-$UV_CACHE_DIR_DEFAULT}"
+    mkdir -p "$UV_CACHE_DIR"
 
     # Verify we're on the main branch
     local current_branch=$(git branch --show-current)
