@@ -417,7 +417,7 @@
     }
     .hero-metric {
       border: 1px solid var(--border);
-      background: rgba(255,255,255,0.45);
+      background: var(--bg-elevated);
       border-radius: 16px;
       padding: 14px;
     }
@@ -1443,7 +1443,12 @@ function openAdmin() {
 
 function getActionableGames() {
   const games = state.upcoming?.games || [];
-  return games.filter(g => (g.bet_side === 'home' || g.bet_side === 'away') && g.result == null);
+  const nowMs = Date.now();
+  return games.filter(g =>
+    (g.bet_side === 'home' || g.bet_side === 'away') &&
+    g.result == null &&
+    (!g.game_time_utc || new Date(g.game_time_utc).getTime() > nowMs)
+  );
 }
 function getPassGames() {
   const games = state.upcoming?.games || [];
