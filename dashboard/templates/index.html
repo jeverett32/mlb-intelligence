@@ -741,10 +741,6 @@
     <div class="balance-chip">
       <span class="balance-label">Balance:</span> <strong id="hdr-balance">$0.00</strong>
     </div>
-    <div class="header-meta">
-      <span class="meta-chip" id="hdr-timezone-chip">Timezone <strong id="hdr-timezone">America/Denver</strong></span>
-      <span class="meta-chip off" id="hdr-live-chip">Live <strong id="hdr-live">OFF</strong></span>
-    </div>
     <button class="settings-button" type="button" aria-label="Settings" onclick="openSettings()">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="3.25"></circle>
@@ -1717,7 +1713,6 @@ function renderSettings() {
   const tz = currentTimezone();
   document.getElementById('theme-select').value = localStorage.getItem('theme') || 'auto';
   document.getElementById('timezone-select').value = tz;
-  document.getElementById('hdr-timezone').textContent = tz;
   document.getElementById('overview-timezone').textContent = tz;
 
   const personalOn = state.settings.live_betting === true;
@@ -1726,10 +1721,6 @@ function renderSettings() {
   document.getElementById('live-toggle').checked = personalOn;
   document.getElementById('toggle-status').textContent = personalOn ? 'ON' : 'OFF';
   document.getElementById('toggle-status').classList.toggle('live', personalOn);
-  document.getElementById('hdr-live').textContent = effectiveOn ? 'ON' : 'OFF';
-  const chip = document.getElementById('hdr-live-chip');
-  chip.classList.toggle('live', effectiveOn);
-  chip.classList.toggle('off', !effectiveOn);
   document.getElementById('overview-live').textContent = effectiveOn ? 'ON' : 'OFF';
   document.getElementById('overview-live').style.color = effectiveOn ? 'var(--success)' : 'var(--danger)';
   document.getElementById('s-live').textContent = effectiveOn ? 'ON' : 'OFF';
