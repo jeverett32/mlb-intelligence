@@ -1311,7 +1311,7 @@ def list_approved_users_with_accounts() -> list[dict]:
                 """
                 SELECT u.email, u.is_admin, u.approval_status,
                        a.key_id, a.key_path, a.kalshi_env, a.is_active
-                FROM users u
+                FROM app_users u
                 JOIN kalshi_accounts a ON a.email = u.email
                 WHERE u.approval_status = 'approved'
                   AND a.is_active = TRUE
