@@ -52,9 +52,13 @@ jobs:
 
           tmp_script="$(mktemp "${RUNNER_TEMP}/deploy.XXXXXX.sh")"
 
-          # Ensure we have the latest deployment script
-          git fetch origin
-          git show origin/main:scripts/deploy.sh > "$tmp_script"
+          # Fetch the deployment script directly from GitHub so permission
+          # drift in the on-box repo does not block the repair path.
+          curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/scripts/deploy.sh?ref=${GITHUB_SHA}" \
+            -o "$tmp_script"
           chmod +x "$tmp_script"
 
           # Invoke through bash so noexec temp mounts do not matter.

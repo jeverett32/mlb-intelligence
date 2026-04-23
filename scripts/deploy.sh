@@ -86,6 +86,24 @@ run_systemctl() {
     sudo "$SYSTEMCTL_BIN" "$@"
 }
 
+repair_git_permissions() {
+    local git_dir="${REPO_DIR}/.git"
+    local objects_dir="${git_dir}/objects"
+
+    [[ -d "$git_dir" ]] || error_exit "Git directory not found at $git_dir"
+    [[ -d "$objects_dir" ]] || error_exit "Git objects directory not found at $objects_dir"
+
+    if touch "${objects_dir}/.permtest" 2>/dev/null; then
+        rm -f "${objects_dir}/.permtest"
+    else
+        log WARN "Direct write to ${objects_dir} failed; repairing ownership"
+        sudo chown -R "$(id -un):$(id -gn)" "$git_dir" || error_exit "Failed to repair git ownership"
+    fi
+
+    sudo find "$git_dir" -type d -exec chmod u+rwx {} + || error_exit "Failed to repair git directory permissions"
+    sudo find "$git_dir" -type f -exec chmod u+rw {} + || error_exit "Failed to repair git file permissions"
+}
+
 # Create backup of current state
 create_backup() {
     local backup_timestamp=$(date '+%Y%m%d_%H%M%S')
@@ -180,6 +198,7 @@ deploy() {
 
     # Check prerequisites
     check_user
+    repair_git_permissions
     check_repo_state
     mkdir -p "$(dirname "$LOCK_FILE")"
     exec 9>"$LOCK_FILE"
