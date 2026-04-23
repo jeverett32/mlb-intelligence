@@ -189,7 +189,7 @@ def _execute_bet_row(
 
     if bet_dollars < 0.01:
         print("  Bet rounds to $0.00 — skipping.")
-        return {"game_pk": str(game_pk), "status": "skipped_too_small"}
+        return {"game_pk": str(row.get("game_pk")), "status": "skipped_too_small"}
 
     live_price_cents = max(1, min(99, math.ceil(live_price * 100)))
     limit_price_cents = max(1, min(99, live_price_cents + ORDER_SLIPPAGE_CENTS))
@@ -200,7 +200,7 @@ def _execute_bet_row(
             f"  Kelly bet ${bet_dollars:.2f} is below 1-contract cost "
             f"(${cost_per_contract:.2f}) — skipping to respect sizing."
         )
-        return {"game_pk": str(game_pk), "status": "skipped_below_contract"}
+        return {"game_pk": str(row.get("game_pk")), "status": "skipped_below_contract"}
 
     print(f"  Side:            {side} ({price_field}={limit_price_cents}c IOC)")
     max_cost = round(n_contracts * cost_per_contract, 2)
@@ -263,17 +263,10 @@ def _execute_bet_row(
 
     if fill_count <= 0 or actual_cost <= 0:
         print("  Order was accepted but not filled. Not recording it as a placed bet.")
-        return {"game_pk": str(game_pk), "status": "unfilled", "order_id": order_id}
+        return {"game_pk": str(row.get("game_pk")), "status": "unfilled", "order_id": order_id}
 
-    DB.update_bet_order(
-        game_pk,
-        order_id,
-        round(actual_cost, 2),
-        max(1, int(round(fill_count))),
-    )
-    print("  Filled order recorded in bets table.")
     return {
-        "game_pk":   str(game_pk),
+        "game_pk":   str(row.get("game_pk")),
         "status":    "filled",
         "order_id":  order_id,
         "fill_cost": round(actual_cost, 2),
@@ -311,7 +304,7 @@ def place_bet(game_pk: str) -> dict:
             result["fill_cost"],
             result["contracts"],
         )
-        print("  Filled order recorded in bets table.")
+        print("  Filled order recorded in bets table (legacy).")
     return result
 
 
@@ -347,6 +340,13 @@ def place_user_bet(email: str, game_pk: str) -> dict:
         balance_cents=balance_cents,
         dry_run=dry_run,
     )
+    if result.get("status") == "filled":
+        DB.update_bet_order(
+            game_pk,
+            result["order_id"],
+            result["fill_cost"],
+            result["contracts"],
+        )
     DB.upsert_user_order(
         email,
         game_pk,
