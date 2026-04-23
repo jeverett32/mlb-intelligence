@@ -804,7 +804,7 @@
     <div class="balance-chip">
       <span class="balance-label">Balance:</span> <strong id="hdr-balance">$0.00</strong>
     </div>
-    <button class="settings-button" type="button" aria-label="Settings" onclick="openSettings()">
+    <button class="settings-button" type="button" aria-label="Settings" onclick="window.location.href='/settings'">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="3.25"></circle>
         <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.7-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.7 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .7.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.7Z"></path>
@@ -1061,137 +1061,6 @@
     </div>
   </div>
 
-  <div id="page-settings" class="page">
-    <div class="settings-page">
-      <div class="settings-page-title">
-        <h1>Settings</h1>
-        <p>Manage appearance, timezone, live betting, and your Kalshi connection.</p>
-      </div>
-
-      <div class="settings-layout">
-        <nav class="settings-sidenav" aria-label="Settings sections">
-          <button class="active" onclick="showSettingsTab('general', this)">General</button>
-          <button onclick="showSettingsTab('betting', this)">Betting</button>
-          <button onclick="showSettingsTab('kalshi', this)">Kalshi</button>
-        </nav>
-
-        <div class="settings-content">
-
-          <!-- General tab -->
-          <div class="settings-tab-pane active" id="settings-tab-general">
-            <section class="settings-section">
-              <div class="settings-section-title">Appearance</div>
-              <div class="settings-row">
-                <label class="settings-label" for="theme-select">Theme</label>
-                <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
-                  <option value="auto">Auto</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section-title">Timezone</div>
-              <p>Set the IANA timezone used across the dashboard. This removes ambiguity around game start times and open positions.</p>
-              <div class="settings-row">
-                <label class="settings-label" for="timezone-select">Timezone</label>
-                <select class="settings-input" id="timezone-select" aria-label="Timezone">
-                  <option value="America/New_York">Eastern Time (New York)</option>
-                  <option value="America/Chicago">Central Time (Chicago)</option>
-                  <option value="America/Denver">Mountain Time (Denver)</option>
-                  <option value="America/Phoenix">Arizona Time (Phoenix)</option>
-                  <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
-                  <option value="America/Anchorage">Alaska Time (Anchorage)</option>
-                  <option value="Pacific/Honolulu">Hawaii Time (Honolulu)</option>
-                  <option value="UTC">UTC</option>
-                  <option value="Europe/London">United Kingdom (London)</option>
-                </select>
-                <div class="settings-actions">
-                  <button class="settings-action" type="button" onclick="saveTimezone()">Save Timezone</button>
-                  <span class="settings-hint">Stored as an IANA timezone string.</span>
-                </div>
-                <div class="settings-feedback" id="timezone-feedback"></div>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section-title">Session</div>
-              <p>Sign out and return to the public site.</p>
-              <form method="post" action="/logout">
-                <button class="settings-action" type="submit">Logout</button>
-              </form>
-            </section>
-          </div>
-
-          <!-- Betting tab -->
-          <div class="settings-tab-pane" id="settings-tab-betting">
-            <section class="settings-section">
-              <div class="settings-section-title">Live Betting</div>
-              <p>Control live wagering for your own account. Real orders only go out when both your personal toggle and the admin global toggle are on.</p>
-              <div class="toggle-wrap">
-                <span class="toggle-label">My Live Bets</span>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="live-toggle" onchange="toggleLive()">
-                  <span class="toggle-slider"></span>
-                </label>
-                <span class="toggle-status" id="toggle-status">OFF</span>
-              </div>
-              <div class="settings-feedback" id="live-feedback"></div>
-            </section>
-
-            <section class="settings-section" id="global-live-section">
-              <div class="settings-section-title">Global Master Switch</div>
-              <p>Admin-only master switch. Turning this off disables live execution for every user, including admins.</p>
-              <div class="toggle-wrap">
-                <span class="toggle-label">Global Master Switch</span>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="global-live-toggle" onchange="toggleGlobalLive()">
-                  <span class="toggle-slider"></span>
-                </label>
-                <span class="toggle-status" id="global-toggle-status">OFF</span>
-              </div>
-              <div class="settings-feedback" id="global-live-feedback"></div>
-            </section>
-          </div>
-
-          <!-- Kalshi tab -->
-          <div class="settings-tab-pane" id="settings-tab-kalshi">
-            <section class="settings-section">
-              <div class="settings-section-title">Kalshi Account</div>
-              <p>Connect your own Kalshi credentials. This account is used only for your balance refreshes and order execution.</p>
-              <div class="settings-row">
-                <label class="settings-label" for="kalshi-label">Label</label>
-                <input class="settings-input" id="kalshi-label" type="text" placeholder="Primary account">
-              </div>
-              <div class="settings-row">
-                <label class="settings-label" for="kalshi-key-id">Key ID</label>
-                <input class="settings-input" id="kalshi-key-id" type="text" placeholder="Kalshi access key ID">
-              </div>
-              <div class="settings-row">
-                <label class="settings-label" for="kalshi-env">Environment</label>
-                <select class="settings-input" id="kalshi-env">
-                  <option value="prod">prod</option>
-                  <option value="demo">demo</option>
-                </select>
-              </div>
-              <div class="settings-row">
-                <label class="settings-label" for="kalshi-private-key">Private Key PEM</label>
-                <textarea class="settings-input" id="kalshi-private-key" rows="8" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
-              </div>
-              <div class="settings-actions">
-                <button class="settings-action" type="button" onclick="connectKalshi()">Connect &amp; Test</button>
-                <button class="settings-action" type="button" onclick="disconnectKalshi()">Disconnect</button>
-                <span class="settings-hint" id="kalshi-status-copy">No Kalshi account connected.</span>
-              </div>
-              <div class="settings-feedback" id="kalshi-feedback"></div>
-            </section>
-          </div>
-
-        </div><!-- /settings-content -->
-      </div><!-- /settings-layout -->
-    </div><!-- /settings-page -->
-  </div>
 
 </main>
 

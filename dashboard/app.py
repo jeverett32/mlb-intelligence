@@ -303,6 +303,11 @@ def index(request: Request):
     return _render_template("index.html")
 
 
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, user: dict = Depends(require_approved_user)):
+    return HTMLResponse(_render_template("settings.html"))
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, user: dict = Depends(require_admin)):
     return HTMLResponse(_render_template("admin.html"))
