@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLB Admin</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <style>
+    :root, :root[data-theme="light"] {
+      --bg-primary: #FAF9F7;
+      --bg-card: #FFFFFF;
+      --bg-elevated: #F5F3EF;
+      --text-primary: #1A1814;
+      --text-secondary: #6B6560;
+      --text-muted: #9C9690;
+      --accent: #B8860B;
+      --accent-light: #E8DFD0;
+      --success: #2D6A4F;
+      --success-light: #D4EDDA;
+      --danger: #9B2335;
+      --danger-light: #FADBD8;
+      --border: #E8E4DE;
+      --shadow-sm: 0 1px 3px rgba(26,24,20,0.04);
+      --shadow-md: 0 4px 12px rgba(26,24,20,0.06);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      color-scheme: light;
+    }
+    :root[data-theme="dark"] {
+      --bg-primary: #12171C;
+      --bg-card: #1A2128;
+      --bg-elevated: #232D36;
+      --text-primary: #F4EFE7;
+      --text-secondary: #C3B9AC;
+      --text-muted: #918779;
+      --accent: #E0A446;
+      --accent-light: #4A3821;
+      --success: #7FD0A8;
+      --success-light: #1F3A31;
+      --danger: #F0A1AB;
+      --danger-light: #45252D;
+      --border: #313C45;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --bg-primary: #12171C;
+        --bg-card: #1A2128;
+        --bg-elevated: #232D36;
+        --text-primary: #F4EFE7;
+        --text-secondary: #C3B9AC;
+        --text-muted: #918779;
+        --accent: #E0A446;
+        --accent-light: #4A3821;
+        --success: #7FD0A8;
+        --success-light: #1F3A31;
+        --danger: #F0A1AB;
+        --danger-light: #45252D;
+        --border: #313C45;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
+        color-scheme: dark;
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .admin-header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+    .admin-header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .admin-header-left h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      transition: color 0.15s ease, border-color 0.15s ease;
+    }
+    .back-link:hover { color: var(--text-primary); border-color: var(--accent-light); }
+
+    .admin-tabs {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      gap: 0;
+    }
+    .admin-tabs button {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-secondary);
+      padding: 14px 20px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      transition: color 0.2s ease, border-color 0.2s ease;
+      white-space: nowrap;
+    }
+    .admin-tabs button:hover { color: var(--text-primary); }
+    .admin-tabs button.active {
+      color: var(--text-primary);
+      font-weight: 600;
+      border-bottom-color: var(--accent);
+    }
+
+    main { padding: 28px 32px; max-width: 1440px; margin: 0 auto; }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 24px;
+    }
+    .panel-header {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    thead th {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-weight: 600;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-primary);
+      white-space: nowrap;
+      vertical-align: top;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--bg-elevated); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .badge.green { background: var(--success-light); color: var(--success); }
+    .badge.red { background: var(--danger-light); color: var(--danger); }
+    .badge.gray { background: var(--bg-elevated); color: var(--text-secondary); border: 1px solid var(--border); }
+    .badge.gold { background: var(--accent-light); color: var(--accent); }
+
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      margin-right: 4px;
+    }
+    .action-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+    .action-btn.danger:hover { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s ease;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn.secondary {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn.secondary:hover { color: var(--text-primary); border-color: var(--accent-light); filter: none; }
+
+    .db-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+      flex-wrap: wrap;
+    }
+    .db-controls label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .db-controls select {
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .row-count {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-left: auto;
+    }
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .pagination button {
+      padding: 6px 14px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .pagination span { font-size: 0.8rem; color: var(--text-muted); }
+
+    .empty {
+      padding: 40px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .errors-pre {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      padding: 16px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 200px;
+      border: none;
+    }
+    .errors-empty {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    @media (max-width: 768px) {
+      .admin-header { padding: 0 16px; }
+      .admin-tabs { padding: 0 16px; }
+      main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="admin-header">
+  <div class="admin-header-left">
+    <h1>MLB Admin</h1>
+  </div>
+  <a class="back-link" href="/">&#8592; Dashboard</a>
+</header>
+
+<div class="admin-tabs">
+  <button class="active" onclick="showTab('access', this)">Access Requests</button>
+  <button onclick="showTab('database', this)">Database</button>
+  <button onclick="showTab('errors', this)">Errors</button>
+</div>
+
+<main>
+
+  <!-- Access Requests tab -->
+  <div class="tab-pane active" id="tab-access">
+    <div class="panel">
+      <div class="panel-header">
+        <span>Users</span>
+        <div class="db-controls" style="padding:0;border:none;background:none;margin:0;">
+          <label for="user-filter">Filter</label>
+          <select id="user-filter" onchange="loadUsers()">
+            <option value="pending">pending</option>
+            <option value="approved">approved</option>
+            <option value="rejected">rejected</option>
+            <option value="disabled">disabled</option>
+            <option value="all">all</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap" id="users-body">
+        <div class="empty">Loading users...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database tab -->
+  <div class="tab-pane" id="tab-database">
+    <div class="panel">
+      <div class="panel-header">Database Browser</div>
+      <div class="db-controls">
+        <label for="db-table-select">Table</label>
+        <select id="db-table-select" onchange="loadDbTable()">
+          <option value="games">games</option>
+          <option value="bets">bets</option>
+          <option value="balance">balance</option>
+          <option value="settings">settings</option>
+          <option value="app_users">app_users</option>
+          <option value="app_sessions">app_sessions</option>
+          <option value="user_settings">user_settings</option>
+          <option value="kalshi_accounts">kalshi_accounts</option>
+          <option value="user_balance">user_balance</option>
+          <option value="user_orders">user_orders</option>
+        </select>
+        <span class="row-count" id="db-row-count"></span>
+      </div>
+      <div class="table-wrap" id="db-body">
+        <div class="empty">Select a table above</div>
+      </div>
+      <div class="pagination">
+        <button id="db-prev" onclick="dbPage(-1)" disabled>&#8592; Prev</button>
+        <span id="db-page-info">Page 1</span>
+        <button id="db-next" onclick="dbPage(1)" disabled>Next &#8594;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Errors tab -->
+  <div class="tab-pane" id="tab-errors">
+    <div class="panel">
+      <div class="panel-header">
+        <span>Service Logs — Errors &amp; Warnings</span>
+        <button class="btn secondary" onclick="loadErrors()">Refresh</button>
+      </div>
+      <pre class="errors-pre" id="errors-pre"><span class="errors-empty">Loading...</span></pre>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function initTheme() {
+  const saved = localStorage.getItem('theme') || 'auto';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+
+let dbOffset = 0;
+const DB_LIMIT = 50;
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.admin-tabs button').forEach(b => b.classList.remove('active'));
+  const pane = document.getElementById('tab-' + name);
+  if (pane) pane.classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (name === 'errors') loadErrors();
+  if (name === 'database') loadDbTable();
+}
+
+function badge(text, cls) {
+  return `<span class="badge${cls ? ' ' + cls : ''}">${text}</span>`;
+}
+function statusBadge(s) {
+  if (s === 'approved') return badge('approved', 'green');
+  if (s === 'pending') return badge('pending', 'gold');
+  if (s === 'rejected') return badge('rejected', 'red');
+  if (s === 'disabled') return badge('disabled', 'gray');
+  return badge(s, 'gray');
+}
+
+async function loadUsers() {
+  const filter = document.getElementById('user-filter').value;
+  const el = document.getElementById('users-body');
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const resp = await fetch(`/api/admin/users?status=${encodeURIComponent(filter)}`);
+    if (!resp.ok) { el.innerHTML = '<div class="empty">Unable to load users (admin access required)</div>'; return; }
+    const data = await resp.json();
+    const users = data.users || [];
+    if (!users.length) { el.innerHTML = '<div class="empty">No users in this state</div>'; return; }
+    el.innerHTML = `<table>
+      <thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Role</th><th>Created</th><th>Last Login</th><th>Actions</th></tr></thead>
+      <tbody>${users.map(u => `
+        <tr>
+          <td>${u.email}</td>
+          <td>${u.full_name || '—'}</td>
+          <td>${statusBadge(u.approval_status)}</td>
+          <td>${u.is_admin ? badge('admin', 'gold') : badge('user', 'gray')}</td>
+          <td>${String(u.created_at || '').slice(0, 19).replace('T', ' ') || '—'}</td>
+          <td>${String(u.last_login_at || '').slice(0, 19).replace('T', ' ') || '—'}</td>
+          <td>
+            <button class="action-btn" onclick="setUserStatus('${u.email}', 'approved')">Approve</button>
+            <button class="action-btn danger" onclick="setUserStatus('${u.email}', 'rejected')">Reject</button>
+            <button class="action-btn danger" onclick="setUserStatus('${u.email}', 'disabled')">Disable</button>
+            <button class="action-btn" onclick="setUserAdmin('${u.email}', ${u.is_admin ? 'false' : 'true'})">${u.is_admin ? 'Revoke Admin' : 'Grant Admin'}</button>
+          </td>
+        </tr>
+      `).join('')}</tbody>
+    </table>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+async function setUserStatus(email, status) {
+  const resp = await fetch(`/api/admin/users/${encodeURIComponent(email)}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+  if (!resp.ok) { alert('Failed to update user status'); return; }
+  await loadUsers();
+}
+
+async function setUserAdmin(email, is_admin) {
+  const resp = await fetch(`/api/admin/users/${encodeURIComponent(email)}/admin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_admin })
+  });
+  if (!resp.ok) { alert('Failed to update admin role'); return; }
+  await loadUsers();
+}
+
+async function loadDbTable() {
+  const table = document.getElementById('db-table-select').value;
+  const el = document.getElementById('db-body');
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const resp = await fetch(`/api/db/${table}?limit=${DB_LIMIT}&offset=${dbOffset}`);
+    if (!resp.ok) { el.innerHTML = '<div class="empty">Admin access required or table not found</div>'; return; }
+    const data = await resp.json();
+    if (!data.rows || !data.rows.length) { el.innerHTML = '<div class="empty">No rows</div>'; return; }
+    const cols = data.columns || Object.keys(data.rows[0]);
+    document.getElementById('db-row-count').textContent = `${data.total} rows`;
+    el.innerHTML = `<table>
+      <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>${data.rows.map(row => `<tr>${cols.map(c => `<td>${row[c] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+    const page = Math.floor(dbOffset / DB_LIMIT) + 1;
+    const totalPages = Math.max(1, Math.ceil(data.total / DB_LIMIT));
+    document.getElementById('db-page-info').textContent = `Page ${page} of ${totalPages}`;
+    document.getElementById('db-prev').disabled = dbOffset === 0;
+    document.getElementById('db-next').disabled = dbOffset + DB_LIMIT >= data.total;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+async function dbPage(dir) {
+  dbOffset = Math.max(0, dbOffset + dir * DB_LIMIT);
+  await loadDbTable();
+}
+
+async function loadErrors() {
+  const pre = document.getElementById('errors-pre');
+  pre.innerHTML = '<span class="errors-empty">Loading...</span>';
+  try {
+    const resp = await fetch('/api/admin/errors');
+    if (!resp.ok) { pre.innerHTML = '<span class="errors-empty">Unable to fetch error logs</span>'; return; }
+    const data = await resp.json();
+    const lines = data.lines || [];
+    if (!lines.length) {
+      pre.innerHTML = '<span class="errors-empty">No errors or warnings found in recent logs.</span>';
+    } else {
+      pre.textContent = lines.join('\n');
+    }
+  } catch (e) {
+    pre.innerHTML = `<span class="errors-empty">Error: ${e.message}</span>`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadUsers();
+});
+</script>
+</body>
+</html>

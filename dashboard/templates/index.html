@@ -364,8 +364,7 @@
       cursor: not-allowed;
       transform: none;
     }
-    #bets-page-info,
-    #admin-page-info {
+    #bets-page-info {
       font-size: 0.8rem;
       color: var(--text-muted);
     }
@@ -532,38 +531,102 @@
     }
 
     .settings-page {
-      max-width: 760px;
+      max-width: 900px;
       margin: 0 auto;
-      display: grid;
-      gap: 24px;
     }
-    .settings-page h1 {
+    .settings-page-title {
+      margin-bottom: 24px;
+    }
+    .settings-page-title h1 {
       font-family: 'Playfair Display', serif;
       font-size: 2rem;
       font-weight: 600;
       letter-spacing: -0.03em;
       color: var(--text-primary);
     }
-    .settings-page p {
+    .settings-page-title p {
       color: var(--text-secondary);
       font-size: 0.92rem;
       line-height: 1.6;
+      margin-top: 4px;
     }
-    .settings-section {
+    .settings-layout {
+      display: flex;
+      gap: 0;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
-      padding: 22px;
       box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      min-height: 480px;
+    }
+    .settings-sidenav {
+      width: 180px;
+      flex: 0 0 180px;
+      border-right: 1px solid var(--border);
+      background: var(--bg-elevated);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .settings-sidenav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .settings-sidenav button:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+    .settings-sidenav button.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border);
+    }
+    .settings-content {
+      flex: 1;
+      padding: 28px;
+      overflow-y: auto;
+    }
+    .settings-tab-pane { display: none; }
+    .settings-tab-pane.active { display: block; }
+    .settings-section {
       display: grid;
       gap: 14px;
+      margin-bottom: 24px;
     }
+    .settings-section:last-child { margin-bottom: 0; }
     .settings-section-title {
       font-size: 0.74rem;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--text-muted);
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-section p {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+    @media (max-width: 640px) {
+      .settings-layout { flex-direction: column; }
+      .settings-sidenav { width: 100%; flex: none; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; overflow-x: auto; }
+      .settings-sidenav button { white-space: nowrap; }
+      .settings-content { padding: 18px; }
     }
     .settings-row {
       display: grid;
@@ -1000,183 +1063,142 @@
 
   <div id="page-settings" class="page">
     <div class="settings-page">
-      <div>
+      <div class="settings-page-title">
         <h1>Settings</h1>
-        <p>Adjust appearance, choose how times are displayed, and control live wagering from one place. The Admin page is nested here so the main navigation stays focused on operating the strategy.</p>
+        <p>Manage appearance, timezone, live betting, and your Kalshi connection.</p>
       </div>
 
-      <section class="settings-section">
-        <div class="settings-section-title">Appearance</div>
-        <div class="settings-row">
-          <label class="settings-label" for="theme-select">Theme</label>
-          <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
-            <option value="auto">Auto</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-      </section>
+      <div class="settings-layout">
+        <nav class="settings-sidenav" aria-label="Settings sections">
+          <button class="active" onclick="showSettingsTab('general', this)">General</button>
+          <button onclick="showSettingsTab('betting', this)">Betting</button>
+          <button onclick="showSettingsTab('kalshi', this)">Kalshi</button>
+        </nav>
 
-      <section class="settings-section">
-        <div class="settings-section-title">Timezone</div>
-        <p>Set the IANA timezone used across the dashboard. This removes ambiguity around game start times and open positions.</p>
-        <div class="settings-row">
-          <label class="settings-label" for="timezone-select">Timezone</label>
-          <select class="settings-input" id="timezone-select" aria-label="Timezone">
-            <option value="America/New_York">Eastern Time (New York)</option>
-            <option value="America/Chicago">Central Time (Chicago)</option>
-            <option value="America/Denver">Mountain Time (Denver)</option>
-            <option value="America/Phoenix">Arizona Time (Phoenix)</option>
-            <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
-            <option value="America/Anchorage">Alaska Time (Anchorage)</option>
-            <option value="Pacific/Honolulu">Hawaii Time (Honolulu)</option>
-            <option value="UTC">UTC</option>
-            <option value="Europe/London">United Kingdom (London)</option>
-          </select>
-          <div class="settings-actions">
-            <button class="settings-action" type="button" onclick="saveTimezone()">Save Timezone</button>
-            <span class="settings-hint">Stored in the `settings` table as an IANA timezone string.</span>
+        <div class="settings-content">
+
+          <!-- General tab -->
+          <div class="settings-tab-pane active" id="settings-tab-general">
+            <section class="settings-section">
+              <div class="settings-section-title">Appearance</div>
+              <div class="settings-row">
+                <label class="settings-label" for="theme-select">Theme</label>
+                <select class="theme-select" id="theme-select" aria-label="Theme" onchange="setTheme(this.value)">
+                  <option value="auto">Auto</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section-title">Timezone</div>
+              <p>Set the IANA timezone used across the dashboard. This removes ambiguity around game start times and open positions.</p>
+              <div class="settings-row">
+                <label class="settings-label" for="timezone-select">Timezone</label>
+                <select class="settings-input" id="timezone-select" aria-label="Timezone">
+                  <option value="America/New_York">Eastern Time (New York)</option>
+                  <option value="America/Chicago">Central Time (Chicago)</option>
+                  <option value="America/Denver">Mountain Time (Denver)</option>
+                  <option value="America/Phoenix">Arizona Time (Phoenix)</option>
+                  <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
+                  <option value="America/Anchorage">Alaska Time (Anchorage)</option>
+                  <option value="Pacific/Honolulu">Hawaii Time (Honolulu)</option>
+                  <option value="UTC">UTC</option>
+                  <option value="Europe/London">United Kingdom (London)</option>
+                </select>
+                <div class="settings-actions">
+                  <button class="settings-action" type="button" onclick="saveTimezone()">Save Timezone</button>
+                  <span class="settings-hint">Stored as an IANA timezone string.</span>
+                </div>
+                <div class="settings-feedback" id="timezone-feedback"></div>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section-title">Session</div>
+              <p>Sign out and return to the public site.</p>
+              <form method="post" action="/logout">
+                <button class="settings-action" type="submit">Logout</button>
+              </form>
+            </section>
           </div>
-          <div class="settings-feedback" id="timezone-feedback"></div>
-        </div>
-      </section>
 
-      <section class="settings-section">
-        <div class="settings-section-title">Live Betting</div>
-        <p>Control live wagering for your own account. Real orders only go out when both your personal toggle and the admin global toggle are on.</p>
-        <div class="toggle-wrap">
-          <span class="toggle-label">My Live Bets</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="live-toggle" onchange="toggleLive()">
-            <span class="toggle-slider"></span>
-          </label>
-          <span class="toggle-status" id="toggle-status">OFF</span>
-        </div>
-        <div class="settings-feedback" id="live-feedback"></div>
-      </section>
+          <!-- Betting tab -->
+          <div class="settings-tab-pane" id="settings-tab-betting">
+            <section class="settings-section">
+              <div class="settings-section-title">Live Betting</div>
+              <p>Control live wagering for your own account. Real orders only go out when both your personal toggle and the admin global toggle are on.</p>
+              <div class="toggle-wrap">
+                <span class="toggle-label">My Live Bets</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="live-toggle" onchange="toggleLive()">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-status" id="toggle-status">OFF</span>
+              </div>
+              <div class="settings-feedback" id="live-feedback"></div>
+            </section>
 
-      <section class="settings-section">
-        <div class="settings-section-title">Kalshi Account</div>
-        <p>Connect your own Kalshi credentials. This account is used only for your balance refreshes and order execution.</p>
-        <div class="settings-row">
-          <label class="settings-label" for="kalshi-label">Label</label>
-          <input class="settings-input" id="kalshi-label" type="text" placeholder="Primary account">
-        </div>
-        <div class="settings-row">
-          <label class="settings-label" for="kalshi-key-id">Key ID</label>
-          <input class="settings-input" id="kalshi-key-id" type="text" placeholder="Kalshi access key ID">
-        </div>
-        <div class="settings-row">
-          <label class="settings-label" for="kalshi-env">Environment</label>
-          <select class="settings-input" id="kalshi-env">
-            <option value="prod">prod</option>
-            <option value="demo">demo</option>
-          </select>
-        </div>
-        <div class="settings-row">
-          <label class="settings-label" for="kalshi-private-key">Private Key PEM</label>
-          <textarea class="settings-input" id="kalshi-private-key" rows="8" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
-        </div>
-        <div class="settings-actions">
-          <button class="settings-action" type="button" onclick="connectKalshi()">Connect & Test</button>
-          <button class="settings-action" type="button" onclick="disconnectKalshi()">Disconnect</button>
-          <span class="settings-hint" id="kalshi-status-copy">No Kalshi account connected.</span>
-        </div>
-        <div class="settings-feedback" id="kalshi-feedback"></div>
-      </section>
+            <section class="settings-section" id="global-live-section">
+              <div class="settings-section-title">Global Master Switch</div>
+              <p>Admin-only master switch. Turning this off disables live execution for every user, including admins.</p>
+              <div class="toggle-wrap">
+                <span class="toggle-label">Global Master Switch</span>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="global-live-toggle" onchange="toggleGlobalLive()">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-status" id="global-toggle-status">OFF</span>
+              </div>
+              <div class="settings-feedback" id="global-live-feedback"></div>
+            </section>
+          </div>
 
-      <section class="settings-section" id="global-live-section">
-        <div class="settings-section-title">Global Live Betting</div>
-        <p>Admin-only master switch. Turning this off disables live execution for every user, including admins.</p>
-        <div class="toggle-wrap">
-          <span class="toggle-label">Global Master Switch</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="global-live-toggle" onchange="toggleGlobalLive()">
-            <span class="toggle-slider"></span>
-          </label>
-          <span class="toggle-status" id="global-toggle-status">OFF</span>
-        </div>
-        <div class="settings-feedback" id="global-live-feedback"></div>
-      </section>
+          <!-- Kalshi tab -->
+          <div class="settings-tab-pane" id="settings-tab-kalshi">
+            <section class="settings-section">
+              <div class="settings-section-title">Kalshi Account</div>
+              <p>Connect your own Kalshi credentials. This account is used only for your balance refreshes and order execution.</p>
+              <div class="settings-row">
+                <label class="settings-label" for="kalshi-label">Label</label>
+                <input class="settings-input" id="kalshi-label" type="text" placeholder="Primary account">
+              </div>
+              <div class="settings-row">
+                <label class="settings-label" for="kalshi-key-id">Key ID</label>
+                <input class="settings-input" id="kalshi-key-id" type="text" placeholder="Kalshi access key ID">
+              </div>
+              <div class="settings-row">
+                <label class="settings-label" for="kalshi-env">Environment</label>
+                <select class="settings-input" id="kalshi-env">
+                  <option value="prod">prod</option>
+                  <option value="demo">demo</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <label class="settings-label" for="kalshi-private-key">Private Key PEM</label>
+                <textarea class="settings-input" id="kalshi-private-key" rows="8" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+              </div>
+              <div class="settings-actions">
+                <button class="settings-action" type="button" onclick="connectKalshi()">Connect &amp; Test</button>
+                <button class="settings-action" type="button" onclick="disconnectKalshi()">Disconnect</button>
+                <span class="settings-hint" id="kalshi-status-copy">No Kalshi account connected.</span>
+              </div>
+              <div class="settings-feedback" id="kalshi-feedback"></div>
+            </section>
+          </div>
 
-      <section class="settings-section" id="admin-settings-section">
-        <div class="settings-section-title">Admin</div>
-        <p>Open the admin page for raw database inspection and internal troubleshooting.</p>
-        <div class="settings-actions">
-          <button class="action-button" type="button" onclick="openAdmin()">Open Admin</button>
-        </div>
-      </section>
-
-      <section class="settings-section">
-        <div class="settings-section-title">Session</div>
-        <p>Sign out and return to the public site.</p>
-        <form method="post" action="/logout">
-          <button class="settings-action" type="submit">Logout</button>
-        </form>
-      </section>
-    </div>
+        </div><!-- /settings-content -->
+      </div><!-- /settings-layout -->
+    </div><!-- /settings-page -->
   </div>
 
-  <div id="page-admin" class="page">
-    <div class="page-title">
-      <div>
-        <h1>Admin</h1>
-        <p>This page holds internal inspection tools that do not belong in primary product navigation. Use it to inspect raw tables and verify low-level state.</p>
-      </div>
-      <div class="settings-actions">
-        <button class="action-button" type="button" onclick="openSettings()">Back to Settings</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-header">User Approvals</div>
-      <div class="db-controls">
-        <label for="admin-user-filter">Filter</label>
-        <select id="admin-user-filter" onchange="loadAdminUsers()">
-          <option value="pending">pending</option>
-          <option value="approved">approved</option>
-          <option value="rejected">rejected</option>
-          <option value="disabled">disabled</option>
-          <option value="all">all</option>
-        </select>
-      </div>
-      <div class="table-wrap" id="admin-users-body"></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-header">Database Browser</div>
-      <div class="db-controls">
-        <label for="db-table-select">Table</label>
-        <select id="db-table-select" onchange="loadDbTable()">
-          <option value="games">games</option>
-          <option value="bets">bets</option>
-          <option value="balance">balance</option>
-          <option value="settings">settings</option>
-          <option value="app_users">app_users</option>
-          <option value="app_sessions">app_sessions</option>
-          <option value="user_settings">user_settings</option>
-          <option value="kalshi_accounts">kalshi_accounts</option>
-          <option value="user_balance">user_balance</option>
-          <option value="user_orders">user_orders</option>
-        </select>
-        <span class="row-count" id="db-row-count"></span>
-      </div>
-      <div class="table-wrap" id="db-body"></div>
-      <div class="pagination">
-        <button id="db-prev" onclick="dbPage(-1)">← Prev</button>
-        <span id="admin-page-info">Page 1</span>
-        <button id="db-next" onclick="dbPage(1)">Next →</button>
-      </div>
-    </div>
-  </div>
 </main>
 
 <script>
 let betsOffset = 0;
 let BETS_LIMIT = 25;
 let betsTotal = 0;
-let dbOffset = 0;
-let DB_LIMIT = 50;
 let charts = {};
 
 const state = {
@@ -1404,11 +1426,12 @@ function showPage(page, btn) {
 function openSettings() {
   showPage('settings', null);
 }
-function openAdmin() {
-  if (!state.currentUser?.is_admin) return;
-  showPage('admin', null);
-  loadAdminUsers();
-  loadDbTable();
+function showSettingsTab(tab, btn) {
+  document.querySelectorAll('.settings-tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.settings-sidenav button').forEach(b => b.classList.remove('active'));
+  const pane = document.getElementById('settings-tab-' + tab);
+  if (pane) pane.classList.add('active');
+  if (btn) btn.classList.add('active');
 }
 
 function getActionableGames() {
@@ -1733,9 +1756,7 @@ function renderSettings() {
   document.getElementById('live-feedback').style.color = 'var(--text-secondary)';
 
   const globalSection = document.getElementById('global-live-section');
-  const adminSettingsSection = document.getElementById('admin-settings-section');
   if (globalSection) globalSection.style.display = isAdmin ? '' : 'none';
-  if (adminSettingsSection) adminSettingsSection.style.display = isAdmin ? '' : 'none';
   if (isAdmin) {
     document.getElementById('global-live-toggle').checked = globalOn;
     document.getElementById('global-toggle-status').textContent = globalOn ? 'ON' : 'OFF';
@@ -1786,36 +1807,6 @@ async function loadAll() {
   renderAll();
 }
 
-async function loadDbTable() {
-  const table = document.getElementById('db-table-select').value;
-  const el = document.getElementById('db-body');
-  const resp = await fetch(`/api/db/${table}?limit=${DB_LIMIT}&offset=${dbOffset}`);
-  if (!resp.ok) {
-    el.innerHTML = '<div class="empty">Admin access required</div>';
-    return;
-  }
-  const data = await resp.json();
-  if (!data.rows || !data.rows.length) {
-    el.innerHTML = '<div class="empty">No data</div>';
-    return;
-  }
-  const cols = data.columns || Object.keys(data.rows[0]);
-  document.getElementById('db-row-count').textContent = `${data.total} rows`;
-  el.innerHTML = `<table>
-    <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-    <tbody>${data.rows.map(row => `<tr>${cols.map(c => `<td>${row[c] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
-  </table>`;
-  const page = Math.floor(dbOffset / DB_LIMIT) + 1;
-  const totalPages = Math.max(1, Math.ceil(data.total / DB_LIMIT));
-  document.getElementById('admin-page-info').textContent = `Page ${page} of ${totalPages}`;
-  document.getElementById('db-prev').disabled = dbOffset === 0;
-  document.getElementById('db-next').disabled = dbOffset + DB_LIMIT >= data.total;
-}
-async function dbPage(dir) {
-  dbOffset = Math.max(0, dbOffset + dir * DB_LIMIT);
-  await loadDbTable();
-}
-
 async function toggleLive() {
   const on = document.getElementById('live-toggle').checked;
   const resp = await fetch('/api/settings/live_betting', {
@@ -1840,41 +1831,6 @@ async function toggleGlobalLive() {
   state.settings.global_live_betting = on;
   state.settings.effective_live_betting = on && state.settings.live_betting;
   renderSettings();
-}
-
-async function loadAdminUsers() {
-  if (!state.currentUser?.is_admin) return;
-  const filter = document.getElementById('admin-user-filter').value;
-  const resp = await fetch(`/api/admin/users?status=${encodeURIComponent(filter)}`);
-  const el = document.getElementById('admin-users-body');
-  if (!resp.ok) {
-    el.innerHTML = '<div class="empty">Unable to load users</div>';
-    return;
-  }
-  const data = await resp.json();
-  const users = data.users || [];
-  if (!users.length) {
-    el.innerHTML = '<div class="empty">No users in this state</div>';
-    return;
-  }
-  el.innerHTML = `<table>
-    <thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Role</th><th>Created</th><th>Action</th></tr></thead>
-    <tbody>${users.map(u => `
-      <tr>
-        <td>${u.email}</td>
-        <td>${u.full_name || '—'}</td>
-        <td>${u.approval_status}</td>
-        <td>${u.is_admin ? 'admin' : 'user'}</td>
-        <td>${String(u.created_at || '').slice(0, 19).replace('T', ' ')}</td>
-        <td>
-          <button onclick="setUserStatus('${u.email}', 'approved')">Approve</button>
-          <button onclick="setUserStatus('${u.email}', 'rejected')">Reject</button>
-          <button onclick="setUserStatus('${u.email}', 'disabled')">Disable</button>
-          <button onclick="setUserAdmin('${u.email}', ${u.is_admin ? 'false' : 'true'})">${u.is_admin ? 'Revoke Admin' : 'Grant Admin'}</button>
-        </td>
-      </tr>
-    `).join('')}</tbody>
-  </table>`;
 }
 
 async function connectKalshi() {
@@ -1925,26 +1881,6 @@ async function disconnectKalshi() {
   renderSettings();
 }
 
-async function setUserStatus(email, status) {
-  const resp = await fetch(`/api/admin/users/${encodeURIComponent(email)}/status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status })
-  });
-  if (!resp.ok) throw new Error('Failed to update user status');
-  await loadAdminUsers();
-}
-
-async function setUserAdmin(email, is_admin) {
-  const resp = await fetch(`/api/admin/users/${encodeURIComponent(email)}/admin`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ is_admin })
-  });
-  if (!resp.ok) throw new Error('Failed to update admin role');
-  await loadAdminUsers();
-}
-
 async function saveTimezone() {
   const input = document.getElementById('timezone-select');
   const feedback = document.getElementById('timezone-feedback');
@@ -1981,15 +1917,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadAll();
 
     const savedPage = localStorage.getItem('dashboard_page');
-    if (savedPage === 'settings' || (savedPage === 'admin' && state.currentUser?.is_admin)) {
-      showPage(savedPage, null);
+    if (savedPage === 'settings') {
+      showPage('settings', null);
     } else {
       const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
       showPage(savedBtn ? savedPage : 'overview', savedBtn || document.querySelector('button[data-page="overview"]'));
-    }
-    if (state.currentUser?.is_admin && document.getElementById('page-admin').classList.contains('active')) {
-      await loadAdminUsers();
-      await loadDbTable();
     }
   } catch (e) {
     console.error('Init error:', e);
