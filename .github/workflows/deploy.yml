@@ -33,19 +33,26 @@ jobs:
       - name: Run deployment script
         run: |
           echo "=== Starting deployment ==="
-          cd /opt/mlb/pipeline
-          tmp_script="$(mktemp "${RUNNER_TEMP}/deploy.XXXXXX.sh")"
 
-          # Ensure we have the latest deployment script
-          git fetch origin
-          git show origin/main:scripts/deploy.sh > "$tmp_script"
-          chmod +x "$tmp_script"
+          # Ensure the on-box repo is writable (self-hosted runner can drift permissions)
+          sudo chown -R mlb:mlb /opt/mlb/pipeline/.git || true
+          sudo chmod -R u+rwX /opt/mlb/pipeline/.git || true
 
-          # Invoke through bash so noexec temp mounts do not matter.
-          bash "$tmp_script" deploy
+          # Run git + deploy as the mlb user (deploy.sh enforces this)
+          sudo -u mlb -H bash -lc '
+            set -euo pipefail
+            cd /opt/mlb/pipeline
+            tmp_script="$(mktemp /tmp/deploy.XXXXXX.sh)"
 
-          # Cleanup
-          rm -f "$tmp_script"
+            git fetch origin
+            git show origin/main:scripts/deploy.sh > "$tmp_script"
+            chmod +x "$tmp_script"
+
+            # Invoke through bash so noexec temp mounts do not matter.
+            bash "$tmp_script" deploy
+
+            rm -f "$tmp_script"
+          '
 
         # Set a longer timeout for the deployment step
         timeout-minutes: 10
