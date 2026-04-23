@@ -888,7 +888,7 @@
     <div class="page-title">
       <div>
         <h1>Today</h1>
-        <p>Use this page to decide what to do next: review the action queue, confirm open exposure, and scan the pass list. All game times render in your selected timezone.</p>
+        <p>Use this page to decide what to do next: review the action queue, confirm open exposure, and scan the full day's slate. All game times render in your selected timezone.</p>
       </div>
       <div class="aside" id="today-timezone-label">Timezone: America/Denver</div>
     </div>
@@ -904,15 +904,9 @@
       </section>
     </div>
 
-    <div class="panel-row">
-      <section class="panel">
-        <div class="panel-header">No-Bet Games</div>
-        <div class="table-wrap" id="today-pass-body"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-header">Upcoming Games</div>
-        <div class="table-wrap" id="today-slate-body"></div>
-      </section>
+    <div class="panel">
+      <div class="panel-header">Upcoming Games</div>
+      <div class="table-wrap" id="today-slate-body"></div>
     </div>
   </div>
 
@@ -1666,7 +1660,6 @@ function renderToday() {
 
   renderActionQueue('today-action-body', actionable, 'No actionable bets in the next 48 hours');
   renderOpenBets('today-open-body', openBets, 'No open positions');
-  renderPassGames('today-pass-body', passGames, 'Every upcoming game currently has an actionable signal');
   renderUpcomingSlate('today-slate-body', upcomingGames, 'No upcoming games in the next 48 hours');
 }
 
