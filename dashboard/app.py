@@ -7,6 +7,7 @@ Run from project root: uv run uvicorn dashboard.app:app --host 0.0.0.0 --port 80
 
 import math
 import os
+import subprocess
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -300,6 +301,11 @@ def index(request: Request):
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
         return _render_template("landing.html")
     return _render_template("index.html")
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request, user: dict = Depends(require_admin)):
+    return HTMLResponse(_render_template("admin.html"))
 
 
 @app.get("/public", response_class=HTMLResponse)
@@ -962,6 +968,24 @@ def browse_table(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/errors")
+def get_admin_errors(user: dict = Depends(require_admin)):
+    lines = []
+    keywords = ["ERROR", "WARNING", "error", "warning", "Traceback", "Exception"]
+    for service in ["mlb-pipeline.service", "mlb-dashboard.service"]:
+        try:
+            result = subprocess.run(
+                ["journalctl", "-u", service, "-n", "500", "--no-pager", "--output=short"],
+                capture_output=True, text=True, timeout=10
+            )
+            for line in result.stdout.splitlines():
+                if any(k in line for k in keywords):
+                    lines.append(f"[{service}] {line}")
+        except Exception:
+            pass
+    return {"lines": lines}
 
 
 @app.get("/api/admin/users")
