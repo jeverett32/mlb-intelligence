@@ -1292,16 +1292,6 @@ function showPage(page, btn) {
   if (btn) btn.classList.add('active');
   localStorage.setItem('dashboard_page', page);
 }
-function openSettings() {
-  showPage('settings', null);
-}
-function showSettingsTab(tab, btn) {
-  document.querySelectorAll('.settings-tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.settings-sidenav button').forEach(b => b.classList.remove('active'));
-  const pane = document.getElementById('settings-tab-' + tab);
-  if (pane) pane.classList.add('active');
-  if (btn) btn.classList.add('active');
-}
 
 function getActionableGames() {
   const games = state.upcoming?.games || [];
@@ -1600,51 +1590,19 @@ function renderPerformance() {
   );
 }
 
-function renderSettings() {
-  const isAdmin = !!state.currentUser?.is_admin;
-  const tz = currentTimezone();
-  document.getElementById('theme-select').value = localStorage.getItem('theme') || 'auto';
-  document.getElementById('timezone-select').value = tz;
-  document.getElementById('overview-timezone').textContent = tz;
-
-  const personalOn = state.settings.live_betting === true;
-  const globalOn = state.settings.global_live_betting !== false;
+function renderLiveStatus() {
   const effectiveOn = state.settings.effective_live_betting === true;
-  document.getElementById('live-toggle').checked = personalOn;
-  document.getElementById('toggle-status').textContent = personalOn ? 'ON' : 'OFF';
-  document.getElementById('toggle-status').classList.toggle('live', personalOn);
   document.getElementById('overview-live').textContent = effectiveOn ? 'ON' : 'OFF';
   document.getElementById('overview-live').style.color = effectiveOn ? 'var(--success)' : 'var(--danger)';
   document.getElementById('s-live').textContent = effectiveOn ? 'ON' : 'OFF';
   document.getElementById('s-live').style.color = effectiveOn ? 'var(--success)' : 'var(--danger)';
   document.getElementById('overview-live-copy').textContent = effectiveOn ? 'Live execution is armed for this account.' : 'Live execution is blocked by your account setting or the global master switch.';
   document.getElementById('s-live-copy').textContent = effectiveOn ? 'Your account can place live orders.' : 'Your account is in dry-run mode.';
-  document.getElementById('live-feedback').textContent = isAdmin
-    ? `My toggle: ${personalOn ? 'ON' : 'OFF'} • Global toggle: ${globalOn ? 'ON' : 'OFF'}`
-    : `Your account toggle is ${personalOn ? 'ON' : 'OFF'}.`;
-  document.getElementById('live-feedback').style.color = 'var(--text-secondary)';
-
-  const globalSection = document.getElementById('global-live-section');
-  if (globalSection) globalSection.style.display = isAdmin ? '' : 'none';
-  if (isAdmin) {
-    document.getElementById('global-live-toggle').checked = globalOn;
-    document.getElementById('global-toggle-status').textContent = globalOn ? 'ON' : 'OFF';
-    document.getElementById('global-toggle-status').classList.toggle('live', globalOn);
-  }
-
-  const account = state.account || { connected: false };
-  document.getElementById('kalshi-status-copy').textContent = account.connected
-    ? `Connected: ${account.label || 'Primary account'} (${account.kalshi_env})`
-    : 'No Kalshi account connected.';
-  document.getElementById('kalshi-feedback').textContent = account.last_error || '';
-  document.getElementById('kalshi-feedback').style.color = account.last_error ? 'var(--danger)' : 'var(--text-secondary)';
-  document.getElementById('kalshi-label').value = account.connected ? (account.label || '') : '';
-  document.getElementById('kalshi-key-id').value = account.connected ? (account.key_id || '') : '';
-  document.getElementById('kalshi-env').value = account.connected ? (account.kalshi_env || 'prod') : 'prod';
+  document.getElementById('overview-timezone').textContent = currentTimezone();
 }
 
 function renderAll() {
-  renderSettings();
+  renderLiveStatus();
   renderOverview();
   renderToday();
   renderBets();
@@ -1676,108 +1634,6 @@ async function loadAll() {
   renderAll();
 }
 
-async function toggleLive() {
-  const on = document.getElementById('live-toggle').checked;
-  const resp = await fetch('/api/settings/live_betting', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value: on ? 'true' : 'false' })
-  });
-  if (!resp.ok) throw new Error('Failed to update personal live betting');
-  state.settings.live_betting = on;
-  state.settings.effective_live_betting = (state.settings.global_live_betting !== false) && on;
-  renderSettings();
-}
-
-async function toggleGlobalLive() {
-  const on = document.getElementById('global-live-toggle').checked;
-  const resp = await fetch('/api/admin/settings/global_live_betting', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value: on ? 'true' : 'false' })
-  });
-  if (!resp.ok) throw new Error('Failed to update global live betting');
-  state.settings.global_live_betting = on;
-  state.settings.effective_live_betting = on && state.settings.live_betting;
-  renderSettings();
-}
-
-async function connectKalshi() {
-  const feedback = document.getElementById('kalshi-feedback');
-  feedback.textContent = '';
-  const payload = {
-    label: document.getElementById('kalshi-label').value.trim() || 'Primary account',
-    key_id: document.getElementById('kalshi-key-id').value.trim(),
-    kalshi_env: document.getElementById('kalshi-env').value,
-    private_key_pem: document.getElementById('kalshi-private-key').value,
-  };
-  const resp = await fetch('/api/account/kalshi', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const body = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    feedback.textContent = body.detail || 'Unable to connect account';
-    feedback.style.color = 'var(--danger)';
-    return;
-  }
-  document.getElementById('kalshi-private-key').value = '';
-  state.account = {
-    connected: true,
-    label: body.label,
-    key_id: body.key_id,
-    kalshi_env: body.kalshi_env,
-    last_error: '',
-  };
-  feedback.textContent = `Connected successfully. Balance fetched: ${body.balance_cents} cents.`;
-  feedback.style.color = 'var(--success)';
-  renderSettings();
-}
-
-async function disconnectKalshi() {
-  const feedback = document.getElementById('kalshi-feedback');
-  const resp = await fetch('/api/account/kalshi', { method: 'DELETE' });
-  if (!resp.ok) {
-    feedback.textContent = 'Unable to disconnect account';
-    feedback.style.color = 'var(--danger)';
-    return;
-  }
-  state.account = { connected: false };
-  document.getElementById('kalshi-private-key').value = '';
-  feedback.textContent = 'Kalshi account disconnected.';
-  feedback.style.color = 'var(--success)';
-  renderSettings();
-}
-
-async function saveTimezone() {
-  const input = document.getElementById('timezone-select');
-  const feedback = document.getElementById('timezone-feedback');
-  const value = input.value.trim();
-  feedback.textContent = '';
-  if (!value) {
-    feedback.textContent = 'Enter a timezone like America/Denver.';
-    feedback.style.color = 'var(--danger)';
-    return;
-  }
-  const resp = await fetch('/api/settings/dashboard_timezone', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value })
-  });
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ detail: 'Invalid timezone' }));
-    feedback.textContent = err.detail || 'Invalid timezone';
-    feedback.style.color = 'var(--danger)';
-    return;
-  }
-  state.settings.dashboard_timezone = value;
-  clearCharts();
-  renderAll();
-  feedback.textContent = `Saved timezone: ${value}`;
-  feedback.style.color = 'var(--success)';
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     const savedTheme = localStorage.getItem('theme') || 'auto';
@@ -1786,12 +1642,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadAll();
 
     const savedPage = localStorage.getItem('dashboard_page');
-    if (savedPage === 'settings') {
-      showPage('settings', null);
-    } else {
-      const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
-      showPage(savedBtn ? savedPage : 'overview', savedBtn || document.querySelector('button[data-page="overview"]'));
-    }
+    const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
+    showPage(savedBtn ? savedPage : 'overview', savedBtn || document.querySelector('button[data-page="overview"]'));
   } catch (e) {
     console.error('Init error:', e);
     document.body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger);">Error loading dashboard. Check console for details.</div>';
