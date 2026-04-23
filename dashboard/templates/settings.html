@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — MLB Betting</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <style>
+    :root, :root[data-theme="light"] {
+      --bg-primary: #FAF9F7;
+      --bg-card: #FFFFFF;
+      --bg-elevated: #F5F3EF;
+      --text-primary: #1A1814;
+      --text-secondary: #6B6560;
+      --text-muted: #9C9690;
+      --accent: #B8860B;
+      --accent-light: #E8DFD0;
+      --success: #2D6A4F;
+      --success-light: #D4EDDA;
+      --danger: #9B2335;
+      --danger-light: #FADBD8;
+      --border: #E8E4DE;
+      --shadow-sm: 0 1px 3px rgba(26,24,20,0.04);
+      --shadow-md: 0 4px 12px rgba(26,24,20,0.06);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      color-scheme: light;
+    }
+    :root[data-theme="dark"] {
+      --bg-primary: #12171C;
+      --bg-card: #1A2128;
+      --bg-elevated: #232D36;
+      --text-primary: #F4EFE7;
+      --text-secondary: #C3B9AC;
+      --text-muted: #918779;
+      --accent: #E0A446;
+      --accent-light: #4A3821;
+      --success: #7FD0A8;
+      --success-light: #1F3A31;
+      --danger: #F0A1AB;
+      --danger-light: #45252D;
+      --border: #313C45;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] {
+        --bg-primary: #12171C;
+        --bg-card: #1A2128;
+        --bg-elevated: #232D36;
+        --text-primary: #F4EFE7;
+        --text-secondary: #C3B9AC;
+        --text-muted: #918779;
+        --accent: #E0A446;
+        --accent-light: #4A3821;
+        --success: #7FD0A8;
+        --success-light: #1F3A31;
+        --danger: #F0A1AB;
+        --danger-light: #45252D;
+        --border: #313C45;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
+        color-scheme: dark;
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .page-header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+    .page-header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .back-link:hover { color: var(--text-primary); border-color: var(--accent-light); }
+
+    .settings-wrap {
+      max-width: 860px;
+      margin: 36px auto;
+      padding: 0 24px;
+    }
+
+    .settings-layout {
+      display: flex;
+      gap: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      min-height: 480px;
+    }
+    .settings-sidenav {
+      width: 180px;
+      flex: 0 0 180px;
+      border-right: 1px solid var(--border);
+      background: var(--bg-elevated);
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .settings-sidenav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .settings-sidenav button:hover { background: var(--bg-card); color: var(--text-primary); }
+    .settings-sidenav button.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border);
+    }
+    .settings-content { flex: 1; padding: 28px; overflow-y: auto; }
+    .settings-tab-pane { display: none; }
+    .settings-tab-pane.active { display: block; }
+
+    .settings-section { margin-bottom: 28px; }
+    .settings-section:last-child { margin-bottom: 0; }
+    .settings-section-title {
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .settings-section p {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    .settings-row { margin-bottom: 12px; }
+    .settings-label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .settings-input, .theme-select {
+      width: 100%;
+      max-width: 320px;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      font: inherit;
+      font-size: 0.88rem;
+    }
+    .settings-input:focus, .theme-select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    textarea.settings-input { max-width: 100%; resize: vertical; }
+    .settings-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .settings-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s;
+    }
+    .settings-action:hover { filter: brightness(1.08); }
+    .settings-hint {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+    .settings-feedback {
+      font-size: 0.82rem;
+      margin-top: 8px;
+      min-height: 18px;
+      color: var(--text-secondary);
+    }
+
+    /* Toggle */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+    }
+    .toggle-label { font-size: 0.88rem; color: var(--text-secondary); }
+    .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: var(--border);
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      height: 16px; width: 16px;
+      left: 3px; bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--success); }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .toggle-status { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); }
+    .toggle-status.live { color: var(--success); }
+
+    /* Admin redirect row */
+    .admin-redirect-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .admin-redirect-row:last-child { border-bottom: none; }
+    .admin-redirect-label { font-size: 0.88rem; color: var(--text-primary); font-weight: 500; }
+    .admin-redirect-copy { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+    .admin-redirect-btn {
+      padding: 7px 14px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font: inherit;
+      font-size: 0.82rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .admin-redirect-btn:hover { color: var(--text-primary); border-color: var(--accent-light); }
+
+    @media (max-width: 640px) {
+      .settings-layout { flex-direction: column; }
+      .settings-sidenav { width: 100%; flex: none; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; overflow-x: auto; }
+      .settings-sidenav button { white-space: nowrap; }
+      .settings-content { padding: 18px; }
+      .settings-wrap { padding: 0 14px; margin: 18px auto; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>Settings</h1>
+  <a class="back-link" href="/">← Back to Dashboard</a>
+</header>
+
+<div class="settings-wrap">
+  <div class="settings-layout">
+    <nav class="settings-sidenav" aria-label="Settings sections">
+      <button class="active" onclick="showTab('general', this)">General</button>
+      <button onclick="showTab('betting', this)">Betting</button>
+      <button onclick="showTab('kalshi', this)">Kalshi</button>
+      <button id="admin-tab-btn" onclick="showTab('admin', this)" style="display:none">Admin</button>
+    </nav>
+
+    <div class="settings-content">
+
+      <!-- General -->
+      <div class="settings-tab-pane active" id="tab-general">
+        <section class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+          <div class="settings-row">
+            <label class="settings-label" for="theme-select">Theme</label>
+            <select class="theme-select" id="theme-select" onchange="setTheme(this.value)">
+              <option value="auto">Auto</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-title">Timezone</div>
+          <p>IANA timezone used across the dashboard for game times and open positions.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="timezone-select">Timezone</label>
+            <select class="settings-input" id="timezone-select">
+              <option value="America/New_York">Eastern Time (New York)</option>
+              <option value="America/Chicago">Central Time (Chicago)</option>
+              <option value="America/Denver">Mountain Time (Denver)</option>
+              <option value="America/Phoenix">Arizona Time (Phoenix)</option>
+              <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
+              <option value="America/Anchorage">Alaska Time (Anchorage)</option>
+              <option value="Pacific/Honolulu">Hawaii Time (Honolulu)</option>
+              <option value="UTC">UTC</option>
+              <option value="Europe/London">United Kingdom (London)</option>
+            </select>
+          </div>
+          <div class="settings-actions">
+            <button class="settings-action" type="button" onclick="saveTimezone()">Save Timezone</button>
+          </div>
+          <div class="settings-feedback" id="timezone-feedback"></div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-title">Session</div>
+          <p>Sign out and return to the public site.</p>
+          <form method="post" action="/logout">
+            <button class="settings-action" type="submit">Logout</button>
+          </form>
+        </section>
+      </div>
+
+      <!-- Betting -->
+      <div class="settings-tab-pane" id="tab-betting">
+        <section class="settings-section">
+          <div class="settings-section-title">Live Betting</div>
+          <p>Real orders only go out when both your personal toggle and the admin global toggle are on.</p>
+          <div class="toggle-wrap">
+            <span class="toggle-label">My Live Bets</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="live-toggle" onchange="toggleLive()">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-status" id="toggle-status">OFF</span>
+          </div>
+          <div class="settings-feedback" id="live-feedback"></div>
+        </section>
+
+        <section class="settings-section" id="global-live-section" style="display:none">
+          <div class="settings-section-title">Global Master Switch</div>
+          <p>Admin-only. Turning this off disables live execution for every user.</p>
+          <div class="toggle-wrap">
+            <span class="toggle-label">Global Master Switch</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="global-live-toggle" onchange="toggleGlobalLive()">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-status" id="global-toggle-status">OFF</span>
+          </div>
+          <div class="settings-feedback" id="global-live-feedback"></div>
+        </section>
+      </div>
+
+      <!-- Kalshi -->
+      <div class="settings-tab-pane" id="tab-kalshi">
+        <section class="settings-section">
+          <div class="settings-section-title">Kalshi Account</div>
+          <p>Connect your Kalshi credentials. Used only for your balance refreshes and order execution.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="kalshi-label">Label</label>
+            <input class="settings-input" id="kalshi-label" type="text" placeholder="Primary account">
+          </div>
+          <div class="settings-row">
+            <label class="settings-label" for="kalshi-key-id">Key ID</label>
+            <input class="settings-input" id="kalshi-key-id" type="text" placeholder="Kalshi access key ID">
+          </div>
+          <div class="settings-row">
+            <label class="settings-label" for="kalshi-env">Environment</label>
+            <select class="settings-input" id="kalshi-env">
+              <option value="prod">prod</option>
+              <option value="demo">demo</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label" for="kalshi-private-key">Private Key PEM</label>
+            <textarea class="settings-input" id="kalshi-private-key" rows="8" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+          </div>
+          <div class="settings-actions">
+            <button class="settings-action" type="button" onclick="connectKalshi()">Connect &amp; Test</button>
+            <button class="settings-action" type="button" onclick="disconnectKalshi()" style="background:var(--danger)">Disconnect</button>
+          </div>
+          <div class="settings-feedback" id="kalshi-feedback"></div>
+          <div class="settings-hint" id="kalshi-status-copy" style="margin-top:8px">No Kalshi account connected.</div>
+        </section>
+      </div>
+
+      <!-- Admin -->
+      <div class="settings-tab-pane" id="tab-admin">
+        <section class="settings-section">
+          <div class="settings-section-title">Admin Tools</div>
+          <p>Open the admin panel for user access management, database inspection, and backend error logs.</p>
+          <div class="admin-redirect-row">
+            <div>
+              <div class="admin-redirect-label">Admin Panel</div>
+              <div class="admin-redirect-copy">Access requests, database browser, and error logs.</div>
+            </div>
+            <a class="admin-redirect-btn" href="/admin">Open Admin →</a>
+          </div>
+        </section>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t || 'auto');
+  }
+  function setTheme(t) {
+    localStorage.setItem('theme', t);
+    applyTheme(t);
+  }
+  applyTheme(localStorage.getItem('theme') || 'auto');
+
+  function showTab(name, btn) {
+    document.querySelectorAll('.settings-tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.settings-sidenav button').forEach(b => b.classList.remove('active'));
+    const pane = document.getElementById('tab-' + name);
+    if (pane) pane.classList.add('active');
+    if (btn) btn.classList.add('active');
+  }
+
+  async function api(method, path, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    return r.ok ? r.json() : Promise.reject(await r.json());
+  }
+
+  function feedback(id, msg, ok) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = ok ? 'var(--success)' : 'var(--danger)';
+  }
+
+  async function saveTimezone() {
+    const tz = document.getElementById('timezone-select').value;
+    try {
+      await api('POST', '/api/settings/dashboard_timezone', { value: tz });
+      feedback('timezone-feedback', 'Saved.', true);
+    } catch { feedback('timezone-feedback', 'Save failed.', false); }
+  }
+
+  async function toggleLive() {
+    const on = document.getElementById('live-toggle').checked;
+    try {
+      await api('POST', '/api/settings/live_betting', { value: String(on) });
+      document.getElementById('toggle-status').textContent = on ? 'ON' : 'OFF';
+      document.getElementById('toggle-status').classList.toggle('live', on);
+      feedback('live-feedback', on ? 'Live betting enabled.' : 'Live betting disabled.', on);
+    } catch { feedback('live-feedback', 'Update failed.', false); }
+  }
+
+  async function toggleGlobalLive() {
+    const on = document.getElementById('global-live-toggle').checked;
+    try {
+      await api('POST', '/api/admin/settings/global_live_betting', { value: String(on) });
+      document.getElementById('global-toggle-status').textContent = on ? 'ON' : 'OFF';
+      document.getElementById('global-toggle-status').classList.toggle('live', on);
+      feedback('global-live-feedback', on ? 'Global live enabled.' : 'Global live disabled.', on);
+    } catch { feedback('global-live-feedback', 'Update failed.', false); }
+  }
+
+  async function connectKalshi() {
+    const body = {
+      key_id: document.getElementById('kalshi-key-id').value.trim(),
+      key_path: '',
+      kalshi_env: document.getElementById('kalshi-env').value,
+      label: document.getElementById('kalshi-label').value.trim() || 'Primary account',
+      private_key_pem: document.getElementById('kalshi-private-key').value.trim(),
+    };
+    try {
+      const r = await api('POST', '/api/account/kalshi', body);
+      document.getElementById('kalshi-status-copy').textContent = r.connected
+        ? `Connected: ${r.label || 'Primary account'} (${r.kalshi_env})`
+        : 'Connection failed — check credentials.';
+      feedback('kalshi-feedback', r.connected ? 'Connected successfully.' : 'Connection test failed.', r.connected);
+    } catch (e) {
+      feedback('kalshi-feedback', e?.detail || 'Connection failed.', false);
+    }
+  }
+
+  async function disconnectKalshi() {
+    try {
+      await api('DELETE', '/api/account/kalshi');
+      document.getElementById('kalshi-status-copy').textContent = 'No Kalshi account connected.';
+      feedback('kalshi-feedback', 'Disconnected.', true);
+    } catch { feedback('kalshi-feedback', 'Disconnect failed.', false); }
+  }
+
+  async function loadSettings() {
+    try {
+      const [settings, me, account] = await Promise.all([
+        api('GET', '/api/settings'),
+        api('GET', '/api/me'),
+        api('GET', '/api/account/kalshi'),
+      ]);
+
+      // Theme
+      const theme = localStorage.getItem('theme') || 'auto';
+      document.getElementById('theme-select').value = theme;
+
+      // Timezone
+      const tz = settings.dashboard_timezone || 'America/Denver';
+      document.getElementById('timezone-select').value = tz;
+
+      // Live betting
+      const personalOn = settings.live_betting === true;
+      document.getElementById('live-toggle').checked = personalOn;
+      document.getElementById('toggle-status').textContent = personalOn ? 'ON' : 'OFF';
+      document.getElementById('toggle-status').classList.toggle('live', personalOn);
+
+      // Admin-only
+      if (me.is_admin) {
+        document.getElementById('global-live-section').style.display = '';
+        document.getElementById('admin-tab-btn').style.display = '';
+        const globalOn = settings.global_live_betting !== false;
+        document.getElementById('global-live-toggle').checked = globalOn;
+        document.getElementById('global-toggle-status').textContent = globalOn ? 'ON' : 'OFF';
+        document.getElementById('global-toggle-status').classList.toggle('live', globalOn);
+      }
+
+      // Kalshi account
+      if (account && account.connected) {
+        document.getElementById('kalshi-status-copy').textContent =
+          `Connected: ${account.label || 'Primary account'} (${account.kalshi_env})`;
+        document.getElementById('kalshi-key-id').value = account.key_id || '';
+        document.getElementById('kalshi-env').value = account.kalshi_env || 'prod';
+        document.getElementById('kalshi-label').value = account.label || '';
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+  }
+
+  loadSettings();
+</script>
+</body>
+</html>
