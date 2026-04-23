@@ -1590,7 +1590,9 @@ function renderOverview() {
   const openBets = getOpenBetRows();
   const actionable = getActionableGames();
   const upcomingGames = state.upcoming?.games || [];
-  const nextGame = upcomingGames[0];
+  const nowMs = Date.now();
+  const nextGame = upcomingGames.find(g => g.game_time_utc && new Date(g.game_time_utc).getTime() > nowMs)
+    ?? upcomingGames[0];
   const balance = Number(bal.current_dollars || 0);
   const openExposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
   const delta = ((modelAcc.accuracy || 0) - (modelAcc.market_accuracy || 0)) * 100;
