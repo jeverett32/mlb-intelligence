@@ -774,10 +774,6 @@
               <div class="hero-metric-value" id="hero-next-game">—</div>
             </div>
             <div class="hero-metric">
-              <div class="hero-metric-label">Action Queue</div>
-              <div class="hero-metric-value" id="hero-actionable">—</div>
-            </div>
-            <div class="hero-metric">
               <div class="hero-metric-label">Open Exposure</div>
               <div class="hero-metric-value" id="hero-open-exposure">—</div>
             </div>
@@ -824,11 +820,6 @@
         <div class="metric-card-copy">Current unresolved wagers with dollars committed.</div>
       </div>
       <div class="metric-card">
-        <div class="metric-card-label">Actionable Signals</div>
-        <div class="metric-card-value" id="s-actionable">—</div>
-        <div class="metric-card-copy">Upcoming edges with a side selected by the model.</div>
-      </div>
-      <div class="metric-card">
         <div class="metric-card-label">Season ROI</div>
         <div class="metric-card-value" id="s-roi">—</div>
         <div class="metric-card-copy">Realized return on settled bets.</div>
@@ -840,15 +831,9 @@
       </div>
     </div>
 
-    <div class="panel-row">
-      <section class="panel">
-        <div class="panel-header">Today’s Action Queue</div>
-        <div class="table-wrap" id="overview-action-body"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-header">Open Positions</div>
-        <div class="table-wrap" id="overview-open-body"></div>
-      </section>
+    <div class="panel">
+      <div class="panel-header">Open Positions</div>
+      <div class="table-wrap" id="overview-open-body"></div>
     </div>
 
     <div class="panel-row">
@@ -893,15 +878,9 @@
       <div class="aside" id="today-timezone-label">Timezone: America/Denver</div>
     </div>
 
-    <div class="panel-row">
-      <section class="panel">
-        <div class="panel-header">Actionable Bets</div>
-        <div class="table-wrap" id="today-action-body"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-header">Open Positions</div>
-        <div class="table-wrap" id="today-open-body"></div>
-      </section>
+    <div class="panel">
+      <div class="panel-header">Open Positions</div>
+      <div class="table-wrap" id="today-open-body"></div>
     </div>
 
     <div class="panel">
@@ -1582,7 +1561,6 @@ function renderOverview() {
   const perf = state.performance || {};
   const modelAcc = state.modelAccuracy || {};
   const openBets = getOpenBetRows();
-  const actionable = getActionableGames();
   const upcomingGames = state.upcoming?.games || [];
   const nowMs = Date.now();
   const nextGame = upcomingGames.find(g => g.game_time_utc && new Date(g.game_time_utc).getTime() > nowMs)
@@ -1594,7 +1572,6 @@ function renderOverview() {
   document.getElementById('hdr-balance').textContent = fmt$(balance);
   document.getElementById('s-balance').textContent = fmt$(balance);
   document.getElementById('s-open-bets').textContent = String(openBets.length);
-  document.getElementById('s-actionable').textContent = String(actionable.length);
 
   const roi = perf.roi_pct;
   const roiEl = document.getElementById('s-roi');
@@ -1606,25 +1583,22 @@ function renderOverview() {
   deltaEl.style.color = delta >= 0 ? 'var(--success)' : 'var(--danger)';
 
   document.getElementById('hero-next-game').textContent = nextGame ? `${nextGame.away_team} @ ${nextGame.home_team}` : 'No games queued';
-  document.getElementById('hero-actionable').textContent = actionable.length ? `${actionable.length} ready` : 'No edges';
   document.getElementById('hero-open-exposure').textContent = openBets.length ? fmt$(openExposure) : '$0.00';
 
   const heroTitle = document.getElementById('overview-hero-title');
   const heroCopy = document.getElementById('overview-hero-copy');
-  if (actionable.length) {
-    heroTitle.textContent = `${actionable.length} actionable ${actionable.length === 1 ? 'signal is' : 'signals are'} on deck.`;
-    heroCopy.textContent = nextGame
-      ? `Next up: ${nextGame.away_team} at ${nextGame.home_team} at ${formatLocalDateTime(nextGame.game_time_utc)}. Review side, edge, and stake before the game starts.`
-      : 'Upcoming games with an edge are ready for review.';
-  } else if (openBets.length) {
+  if (openBets.length) {
     heroTitle.textContent = `${openBets.length} open ${openBets.length === 1 ? 'position remains' : 'positions remain'} on the books.`;
-    heroCopy.textContent = 'No fresh edges are queued right now, so the main task is monitoring current exposure and waiting for outcomes.';
+    heroCopy.textContent = nextGame
+      ? `Next up: ${nextGame.away_team} at ${nextGame.home_team} at ${formatLocalDateTime(nextGame.game_time_utc)}.`
+      : 'Monitor current exposure and wait for outcomes.';
   } else {
-    heroTitle.textContent = 'No active signals right now.';
-    heroCopy.textContent = 'The dashboard is clear: no open wagers and no current action queue. Use Today to monitor the next slate.';
+    heroTitle.textContent = 'No open positions right now.';
+    heroCopy.textContent = nextGame
+      ? `Next up: ${nextGame.away_team} at ${nextGame.home_team} at ${formatLocalDateTime(nextGame.game_time_utc)}.`
+      : 'Use Today to monitor the next slate.';
   }
 
-  renderActionQueue('overview-action-body', actionable.slice(0, 6), 'No actionable bets in the next 48 hours');
   renderOpenBets('overview-open-body', openBets.slice(0, 6), 'No open positions');
 
   if (bal.history && bal.history.length > 1) {
@@ -1653,12 +1627,9 @@ function renderOverview() {
 
 function renderToday() {
   const upcomingGames = state.upcoming?.games || [];
-  const actionable = getActionableGames();
   const openBets = getOpenBetRows();
-  const passGames = getPassGames();
   document.getElementById('today-timezone-label').textContent = `Timezone: ${currentTimezone()}`;
 
-  renderActionQueue('today-action-body', actionable, 'No actionable bets in the next 48 hours');
   renderOpenBets('today-open-body', openBets, 'No open positions');
   renderUpcomingSlate('today-slate-body', upcomingGames, 'No upcoming games in the next 48 hours');
 }
