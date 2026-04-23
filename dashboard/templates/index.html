@@ -1443,12 +1443,7 @@ function openAdmin() {
 
 function getActionableGames() {
   const games = state.upcoming?.games || [];
-  const nowMs = Date.now();
-  return games.filter(g =>
-    (g.bet_side === 'home' || g.bet_side === 'away') &&
-    g.result == null &&
-    (!g.game_time_utc || new Date(g.game_time_utc).getTime() > nowMs)
-  );
+  return games.filter(g => (g.bet_side === 'home' || g.bet_side === 'away') && g.result == null);
 }
 function getPassGames() {
   const games = state.upcoming?.games || [];
