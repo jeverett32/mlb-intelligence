@@ -55,9 +55,7 @@ jobs:
           # Fetch the deployment script directly from GitHub so permission
           # drift in the on-box repo does not block the repair path.
           curl -fsSL \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github.raw" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/scripts/deploy.sh?ref=${GITHUB_SHA}" \
+            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/scripts/deploy.sh" \
             -o "$tmp_script"
           chmod +x "$tmp_script"
 
