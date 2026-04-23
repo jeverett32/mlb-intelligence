@@ -40,7 +40,15 @@ jobs:
           ls -ld .git .git/objects .git/objects/pack 2>/dev/null || true
 
           # Try to repair simple permission drift without sudo (sudo may be locked down on the runner)
-          chmod -R u+rwX .git/objects 2>/dev/null || true
+          chmod -R u+rwX .git || true
+
+          echo "Git dir write tests:" 
+          for p in .git .git/objects .git/objects/pack .git/refs .git/logs; do
+            if [ -d "$p" ]; then
+              echo "- $p" 
+              touch "$p/.writetest" && rm -f "$p/.writetest"
+            fi
+          done
 
           tmp_script="$(mktemp "${RUNNER_TEMP}/deploy.XXXXXX.sh")"
 
