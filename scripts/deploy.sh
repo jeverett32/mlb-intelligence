@@ -156,9 +156,14 @@ sync_repo_from_archive() {
 }
 
 deploy_from_archive() {
+    local backup_ready="${1:-false}"
+
     log WARN "Git metadata not writable. Using archive-based deploy path."
 
-    create_backup
+    if [[ "$backup_ready" != "true" ]]; then
+        create_backup
+    fi
+
     sync_repo_from_archive
 
     log INFO "Syncing dependencies with uv"
@@ -307,7 +312,11 @@ deploy() {
 
     # Fetch and fast-forward to the requested commit
     log INFO "Fetching latest changes from origin"
-    git fetch origin || error_exit "Failed to fetch from origin"
+    if ! git fetch origin; then
+        log WARN "Git fetch failed. Switching to archive deploy."
+        deploy_from_archive true
+        return 0
+    fi
 
     # Check if there are any updates
     local latest_commit=$(git rev-parse origin/main)
