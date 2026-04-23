@@ -198,21 +198,19 @@ html, body {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0;
+  gap: 14px;
   padding: 0;
   border-block: 1px solid var(--border);
 }
 .trust-metrics .metric-card {
   background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.12));
   border: 1px solid rgba(255,255,255,0.32);
-  border-inline-end: 1px solid var(--border);
   border-radius: 18px;
   text-align: left;
   padding: 22px 24px;
   backdrop-filter: blur(12px);
   box-shadow: var(--shadow-sm);
 }
-.trust-metrics .metric-card:last-child { border-inline-end: 1px solid rgba(255,255,255,0.32); }
 .trust-metrics .metric-label {
   color: var(--text-secondary);
   font-size: 0.7rem;
@@ -1757,12 +1755,6 @@ body.auth-body {
     height: 300px;
     inset: 86px auto auto calc(50% - 100px);
   }
-  .trust-metrics .metric-card:nth-child(2n) {
-    border-inline-end: 1px solid rgba(255,255,255,0.32);
-  }
-  .trust-metrics .metric-card:nth-child(-n+2) {
-    border-bottom: 0;
-  }
   .process-step {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -1920,14 +1912,6 @@ body.auth-body {
   background: rgba(26, 33, 40, 0.82);
 }
 
-:root[data-theme="dark"] .trust-metrics .metric-card {
-  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-:root[data-theme="dark"] .trust-metrics .metric-card:last-child {
-  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
-}
-
 @media (prefers-color-scheme: dark) {
   :root[data-theme="auto"] .brand,
   :root[data-theme="auto"] .hero-badges span,
@@ -1952,11 +1936,6 @@ body.auth-body {
   :root[data-theme="auto"] .hero-badges span,
   :root[data-theme="auto"] .hero-marquee-track span {
     background: rgba(26, 33, 40, 0.82);
-  }
-
-  :root[data-theme="auto"] .trust-metrics .metric-card,
-  :root[data-theme="auto"] .trust-metrics .metric-card:last-child {
-    border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
   }
 }
 
@@ -2140,7 +2119,7 @@ body.auth-body {
   }
   .metrics-grid {
     grid-template-columns: 1fr;
-    gap: 0;
+    gap: 12px;
   }
   .process-grid {
     grid-template-columns: 1fr;
