@@ -17,6 +17,7 @@ LOCK_FILE="/tmp/mlb-deploy.lock"
 BACKUP_PATH_FILE="/tmp/mlb_deploy_backup_path"
 SYSTEMCTL_BIN="$(command -v systemctl)"
 UV_CACHE_DIR_DEFAULT="${REPO_DIR}/.cache/uv"
+DEFAULT_REPO_SLUG="jeverett32/mlb-pipeline"
 
 # Colors for output
 RED='\033[0;31m'
@@ -90,18 +91,96 @@ repair_git_permissions() {
     local git_dir="${REPO_DIR}/.git"
     local objects_dir="${git_dir}/objects"
 
-    [[ -d "$git_dir" ]] || error_exit "Git directory not found at $git_dir"
-    [[ -d "$objects_dir" ]] || error_exit "Git objects directory not found at $objects_dir"
+    [[ -d "$git_dir" ]] || return 1
+    [[ -d "$objects_dir" ]] || return 1
 
     if touch "${objects_dir}/.permtest" 2>/dev/null; then
         rm -f "${objects_dir}/.permtest"
-    else
-        log WARN "Direct write to ${objects_dir} failed; repairing ownership"
-        sudo chown -R "$(id -un):$(id -gn)" "$git_dir" || error_exit "Failed to repair git ownership"
+        return 0
     fi
 
-    sudo find "$git_dir" -type d -exec chmod u+rwx {} + || error_exit "Failed to repair git directory permissions"
-    sudo find "$git_dir" -type f -exec chmod u+rw {} + || error_exit "Failed to repair git file permissions"
+    log WARN "Direct write to ${objects_dir} failed; falling back to archive deploy"
+    return 1
+}
+
+get_repo_slug() {
+    local remote_url
+    remote_url="$(git -C "$REPO_DIR" config --get remote.origin.url 2>/dev/null || true)"
+
+    case "$remote_url" in
+        git@github.com:*)
+            remote_url="${remote_url#git@github.com:}"
+            remote_url="${remote_url%.git}"
+            ;;
+        https://github.com/*)
+            remote_url="${remote_url#https://github.com/}"
+            remote_url="${remote_url%.git}"
+            ;;
+        *)
+            remote_url="$DEFAULT_REPO_SLUG"
+            ;;
+    esac
+
+    printf '%s\n' "$remote_url"
+}
+
+sync_repo_from_archive() {
+    local repo_slug archive_url tmp_dir extracted_dir
+
+    repo_slug="$(get_repo_slug)"
+    archive_url="https://codeload.github.com/${repo_slug}/tar.gz/refs/heads/main"
+    tmp_dir="$(mktemp -d)"
+
+    trap 'rm -rf "$tmp_dir"; cleanup' EXIT
+
+    log INFO "Downloading archive from ${archive_url}"
+    curl -fsSL "$archive_url" | tar -xzf - -C "$tmp_dir" || error_exit "Failed to download repository archive"
+
+    extracted_dir="$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+    [[ -n "$extracted_dir" ]] || error_exit "Failed to locate extracted archive contents"
+
+    log INFO "Syncing archive contents into ${REPO_DIR}"
+    rsync -a --delete \
+        --exclude '.env' \
+        --exclude 'kalshi-key.pem' \
+        --exclude '.venv/' \
+        --exclude '.cache/' \
+        --exclude 'data/' \
+        --exclude '.git/' \
+        --exclude '.pytest_cache/' \
+        --exclude '__pycache__/' \
+        "${extracted_dir}/" "${REPO_DIR}/" || error_exit "Failed to sync archive contents"
+
+    rm -rf "$tmp_dir"
+    trap cleanup EXIT
+}
+
+deploy_from_archive() {
+    log WARN "Git metadata not writable. Using archive-based deploy path."
+
+    create_backup
+    sync_repo_from_archive
+
+    log INFO "Syncing dependencies with uv"
+    uv sync --quiet || error_exit "Dependency sync failed"
+
+    log INFO "Stopping services for restart"
+    run_systemctl stop mlb-dashboard || log WARN "Failed to stop mlb-dashboard"
+    run_systemctl stop mlb-pipeline || log WARN "Failed to stop mlb-pipeline"
+
+    log INFO "Starting mlb-dashboard service"
+    run_systemctl start mlb-dashboard || error_exit "Failed to start mlb-dashboard"
+
+    log INFO "Starting mlb-pipeline service"
+    run_systemctl start mlb-pipeline || error_exit "Failed to start mlb-pipeline"
+
+    sleep 5
+
+    if ! health_check; then
+        error_exit "Archive deployment failed health check"
+    fi
+
+    log INFO "Archive deployment completed successfully"
 }
 
 # Create backup of current state
@@ -198,8 +277,6 @@ deploy() {
 
     # Check prerequisites
     check_user
-    repair_git_permissions
-    check_repo_state
     mkdir -p "$(dirname "$LOCK_FILE")"
     exec 9>"$LOCK_FILE"
     flock -n 9 || error_exit "Another deployment is already running"
@@ -207,6 +284,13 @@ deploy() {
     cd "$REPO_DIR"
     export UV_CACHE_DIR="${UV_CACHE_DIR:-$UV_CACHE_DIR_DEFAULT}"
     mkdir -p "$UV_CACHE_DIR"
+
+    if ! repair_git_permissions; then
+        deploy_from_archive
+        return 0
+    fi
+
+    check_repo_state
 
     # Verify we're on the main branch
     local current_branch=$(git branch --show-current)
