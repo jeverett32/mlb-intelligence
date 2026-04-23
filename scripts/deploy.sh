@@ -75,12 +75,16 @@ check_user() {
 
 check_repo_state() {
     if ! git -C "$REPO_DIR" diff --quiet || ! git -C "$REPO_DIR" diff --cached --quiet; then
-        error_exit "Repository has local tracked changes. Refusing to deploy over a dirty worktree."
+        log WARN "Repository has local tracked changes."
+        return 1
     fi
 
     if [[ -n "$(git -C "$REPO_DIR" ls-files --others --exclude-standard)" ]]; then
-        error_exit "Repository has untracked files. Refusing to deploy over a dirty worktree."
+        log WARN "Repository has untracked files."
+        return 1
     fi
+
+    return 0
 }
 
 run_systemctl() {
@@ -295,7 +299,11 @@ deploy() {
         return 0
     fi
 
-    check_repo_state
+    if ! check_repo_state; then
+        log WARN "Repository dirty. Switching to archive deploy."
+        deploy_from_archive
+        return 0
+    fi
 
     # Verify we're on the main branch
     local current_branch=$(git branch --show-current)
