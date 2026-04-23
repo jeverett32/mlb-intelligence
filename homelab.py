@@ -121,6 +121,14 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _first_env(*names: str, default: str | None = None) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return default
+
+
 def _print_result(result: CommandResult) -> int:
     if result.stdout:
         print(result.stdout, end="")
@@ -135,34 +143,34 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--host",
-        default=os.getenv("HOMELAB_HOST", "10.1.23.162"),
-        help="Proxmox host IP or DNS name.",
+        default=_first_env("HOMELAB_PROXMOX_HOST", "HOMELAB_HOST", default="10.1.23.162"),
+        help="Proxmox host IP/DNS (pct available). Env: HOMELAB_PROXMOX_HOST (preferred), HOMELAB_HOST (legacy).",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("HOMELAB_PORT", "22")),
-        help="SSH port for Proxmox host.",
+        default=int(_first_env("HOMELAB_PROXMOX_PORT", "HOMELAB_PORT", default="22") or "22"),
+        help="SSH port for Proxmox host. Env: HOMELAB_PROXMOX_PORT (preferred), HOMELAB_PORT (legacy).",
     )
     parser.add_argument(
         "--user",
-        default=os.getenv("HOMELAB_USER", "root"),
-        help="SSH username.",
+        default=_first_env("HOMELAB_PROXMOX_USER", "HOMELAB_USER", default="root"),
+        help="SSH username for Proxmox host. Env: HOMELAB_PROXMOX_USER (preferred), HOMELAB_USER (legacy).",
     )
     parser.add_argument(
         "--password",
-        default=os.getenv("HOMELAB_PASSWORD"),
-        help="SSH password (or set HOMELAB_PASSWORD).",
+        default=_first_env("HOMELAB_PROXMOX_PASSWORD", "HOMELAB_PASSWORD"),
+        help="SSH password for Proxmox host. Env: HOMELAB_PROXMOX_PASSWORD (preferred), HOMELAB_PASSWORD (legacy).",
     )
     parser.add_argument(
         "--ssh-key",
-        default=os.getenv("HOMELAB_SSH_KEY_PATH"),
-        help="Path to SSH private key.",
+        default=_first_env("HOMELAB_PROXMOX_SSH_KEY_PATH", "HOMELAB_SSH_KEY_PATH"),
+        help="Path to SSH private key for Proxmox host. Env: HOMELAB_PROXMOX_SSH_KEY_PATH (preferred), HOMELAB_SSH_KEY_PATH (legacy).",
     )
     parser.add_argument(
         "--ssh-key-passphrase",
-        default=os.getenv("HOMELAB_SSH_KEY_PASSPHRASE"),
-        help="Private key passphrase.",
+        default=_first_env("HOMELAB_PROXMOX_SSH_KEY_PASSPHRASE", "HOMELAB_SSH_KEY_PASSPHRASE"),
+        help="Private key passphrase for Proxmox host. Env: HOMELAB_PROXMOX_SSH_KEY_PASSPHRASE (preferred), HOMELAB_SSH_KEY_PASSPHRASE (legacy).",
     )
     parser.add_argument(
         "--timeout",
@@ -179,6 +187,11 @@ def _build_parser() -> argparse.ArgumentParser:
     app = subparsers.add_parser("app", help="Run command in app container")
     app.add_argument("cmd", help="Command to run")
     app.add_argument(
+        "--direct",
+        action="store_true",
+        help="SSH directly to app host (no pct). Env: HOMELAB_APP_SSH_HOST (+ optional HOMELAB_APP_SSH_*).",
+    )
+    app.add_argument(
         "--ctid",
         type=int,
         default=int(os.getenv("HOMELAB_APP_CTID", str(DEFAULT_APP_CTID))),
@@ -189,9 +202,20 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use lxc-attach instead of pct exec.",
     )
+    app.add_argument("--app-ssh-host", default=os.getenv("HOMELAB_APP_SSH_HOST"), help="Direct app SSH host (overrides HOMELAB_APP_SSH_HOST).")
+    app.add_argument("--app-ssh-port", type=int, default=int(os.getenv("HOMELAB_APP_SSH_PORT", "22")), help="Direct app SSH port (default 22).")
+    app.add_argument("--app-ssh-user", default=os.getenv("HOMELAB_APP_SSH_USER", "root"), help="Direct app SSH user (default root).")
+    app.add_argument("--app-ssh-password", default=os.getenv("HOMELAB_APP_SSH_PASSWORD"), help="Direct app SSH password.")
+    app.add_argument("--app-ssh-key", default=os.getenv("HOMELAB_APP_SSH_KEY_PATH"), help="Direct app SSH key path.")
+    app.add_argument("--app-ssh-key-passphrase", default=os.getenv("HOMELAB_APP_SSH_KEY_PASSPHRASE"), help="Direct app SSH key passphrase.")
 
     db = subparsers.add_parser("db", help="Run command in db container")
     db.add_argument("cmd", help="Command to run")
+    db.add_argument(
+        "--direct",
+        action="store_true",
+        help="SSH directly to db host (no pct). Env: HOMELAB_DB_SSH_HOST (+ optional HOMELAB_DB_SSH_*).",
+    )
     db.add_argument(
         "--ctid",
         type=int,
@@ -203,6 +227,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use lxc-attach instead of pct exec.",
     )
+    db.add_argument("--db-ssh-host", default=os.getenv("HOMELAB_DB_SSH_HOST"), help="Direct db SSH host (overrides HOMELAB_DB_SSH_HOST).")
+    db.add_argument("--db-ssh-port", type=int, default=int(os.getenv("HOMELAB_DB_SSH_PORT", "22")), help="Direct db SSH port (default 22).")
+    db.add_argument("--db-ssh-user", default=os.getenv("HOMELAB_DB_SSH_USER", "root"), help="Direct db SSH user (default root).")
+    db.add_argument("--db-ssh-password", default=os.getenv("HOMELAB_DB_SSH_PASSWORD"), help="Direct db SSH password.")
+    db.add_argument("--db-ssh-key", default=os.getenv("HOMELAB_DB_SSH_KEY_PATH"), help="Direct db SSH key path.")
+    db.add_argument("--db-ssh-key-passphrase", default=os.getenv("HOMELAB_DB_SSH_KEY_PASSPHRASE"), help="Direct db SSH key passphrase.")
 
     push = subparsers.add_parser(
         "push", help="Upload local file to LXC using SFTP + pct push"
@@ -237,12 +267,40 @@ def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
 
+    if args.target == "app" and args.direct:
+        direct_host = args.app_ssh_host or _required_env("HOMELAB_APP_SSH_HOST")
+        direct_user = args.app_ssh_user or os.getenv("HOMELAB_APP_SSH_USER") or "root"
+        with HomelabClient(
+            host=direct_host,
+            username=direct_user,
+            port=args.app_ssh_port,
+            password=args.app_ssh_password,
+            key_path=args.app_ssh_key,
+            key_passphrase=args.app_ssh_key_passphrase,
+        ) as direct:
+            wrapped = f"bash -lc {shlex.quote(args.cmd)}"
+            return _print_result(direct.run(wrapped, timeout=args.timeout))
+
+    if args.target == "db" and args.direct:
+        direct_host = args.db_ssh_host or _required_env("HOMELAB_DB_SSH_HOST")
+        direct_user = args.db_ssh_user or os.getenv("HOMELAB_DB_SSH_USER") or "root"
+        with HomelabClient(
+            host=direct_host,
+            username=direct_user,
+            port=args.db_ssh_port,
+            password=args.db_ssh_password,
+            key_path=args.db_ssh_key,
+            key_passphrase=args.db_ssh_key_passphrase,
+        ) as direct:
+            wrapped = f"bash -lc {shlex.quote(args.cmd)}"
+            return _print_result(direct.run(wrapped, timeout=args.timeout))
+
     host = args.host
     user = args.user
     if not host:
-        host = _required_env("HOMELAB_HOST")
+        host = _required_env("HOMELAB_PROXMOX_HOST")
     if not user:
-        user = _required_env("HOMELAB_USER")
+        user = _required_env("HOMELAB_PROXMOX_USER")
 
     with HomelabClient(
         host=host,
