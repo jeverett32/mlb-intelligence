@@ -33,26 +33,27 @@ jobs:
       - name: Run deployment script
         run: |
           echo "=== Starting deployment ==="
+          cd /opt/mlb/pipeline
 
-          # Ensure the on-box repo is writable (self-hosted runner can drift permissions)
-          sudo chown -R mlb:mlb /opt/mlb/pipeline/.git || true
-          sudo chmod -R u+rwX /opt/mlb/pipeline/.git || true
+          echo "Deploy user: $(whoami)" 
+          id || true
+          ls -ld .git .git/objects .git/objects/pack 2>/dev/null || true
 
-          # Run git + deploy as the mlb user (deploy.sh enforces this)
-          sudo -u mlb -H bash -lc '
-            set -euo pipefail
-            cd /opt/mlb/pipeline
-            tmp_script="$(mktemp /tmp/deploy.XXXXXX.sh)"
+          # Try to repair simple permission drift without sudo (sudo may be locked down on the runner)
+          chmod -R u+rwX .git/objects 2>/dev/null || true
 
-            git fetch origin
-            git show origin/main:scripts/deploy.sh > "$tmp_script"
-            chmod +x "$tmp_script"
+          tmp_script="$(mktemp "${RUNNER_TEMP}/deploy.XXXXXX.sh")"
 
-            # Invoke through bash so noexec temp mounts do not matter.
-            bash "$tmp_script" deploy
+          # Ensure we have the latest deployment script
+          git fetch origin
+          git show origin/main:scripts/deploy.sh > "$tmp_script"
+          chmod +x "$tmp_script"
 
-            rm -f "$tmp_script"
-          '
+          # Invoke through bash so noexec temp mounts do not matter.
+          bash "$tmp_script" deploy
+
+          # Cleanup
+          rm -f "$tmp_script"
 
         # Set a longer timeout for the deployment step
         timeout-minutes: 10
@@ -108,5 +109,8 @@ jobs:
 
           echo "Disk space:"
           df -h /opt || true
+
+          echo "Repo permissions:"
+          ls -ld /opt/mlb/pipeline /opt/mlb/pipeline/.git /opt/mlb/pipeline/.git/objects /opt/mlb/pipeline/.git/objects/pack 2>/dev/null || true
 
           echo "=== End diagnostics ==="
