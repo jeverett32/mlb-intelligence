@@ -2103,10 +2103,16 @@ body.auth-body {
 .brand {
   display: flex;
   flex-direction: row;
+  align-items: center;
   gap: 10px;
   width: auto;
   height: 48px;
   padding: 0 14px 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .brand span {
