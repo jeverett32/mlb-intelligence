@@ -16,7 +16,7 @@
   <script>
     document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
   </script>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425i">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425j">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <script src="/static/js/public-site.js?v=20260425b" defer></script>
   <style>
@@ -267,14 +267,14 @@
                     <path d="M0,0 L7,3.5 L0,7 Z" class="model-cycle-marker-shape" />
                   </marker>
                 </defs>
-                <!-- 1→2: below top card → above right card -->
-                <path class="model-cycle-link" d="M 126 42 C 146 46 152 56 152 72" marker-end="url(#cycle-arrow-head)" />
-                <!-- 2→3: below right card → above bottom card -->
-                <path class="model-cycle-link" d="M 152 128 C 152 144 146 154 126 158" marker-end="url(#cycle-arrow-head)" />
-                <!-- 3→4: above bottom card → below left card -->
-                <path class="model-cycle-link" d="M 74 158 C 54 154 48 144 48 128" marker-end="url(#cycle-arrow-head)" />
-                <!-- 4→1: above left card → below top card -->
-                <path class="model-cycle-link" d="M 48 72 C 48 56 54 46 74 42" marker-end="url(#cycle-arrow-head)" />
+                <!-- 1→2: right of top card → top of right card -->
+                <path class="model-cycle-link" d="M 136 24 C 154 28 158 50 158 72" marker-end="url(#cycle-arrow-head)" />
+                <!-- 2→3: bottom of right card → right of bottom card -->
+                <path class="model-cycle-link" d="M 158 128 C 158 150 154 172 136 176" marker-end="url(#cycle-arrow-head)" />
+                <!-- 3→4: left of bottom card → bottom of left card -->
+                <path class="model-cycle-link" d="M 64 176 C 46 172 42 150 42 128" marker-end="url(#cycle-arrow-head)" />
+                <!-- 4→1: top of left card → left of top card -->
+                <path class="model-cycle-link" d="M 42 72 C 42 50 46 28 64 24" marker-end="url(#cycle-arrow-head)" />
               </svg>
               <ol class="model-cycle-nodes">
                 <li class="cycle-node cycle-node--top">
