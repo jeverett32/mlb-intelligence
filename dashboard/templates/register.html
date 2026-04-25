@@ -3,11 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Request private dashboard access for MLB Betting Intelligence." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Betting Dashboard — Request Access</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422o">
-  <script src="/static/js/public-site.js?v=20260422o"></script>
+  <script>
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
+  </script>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260422s">
+  <script src="/static/js/public-site.js?v=20260422s" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
     /* register shell is slightly narrower than the login shell */
@@ -35,7 +41,7 @@
       </div>
       <div class="auth-form-body">
         {{ERROR_BANNER}}
-        <form method="post" action="/register">
+        <form method="post" action="/register" data-loading-submit>
           <div class="field">
             <label for="full_name">Name</label>
             <input type="text" id="full_name" name="full_name" autocomplete="name">
@@ -45,11 +51,16 @@
             <input type="email" id="email" name="email" autocomplete="email" required autofocus>
           </div>
           <div class="field">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+            <div class="field-label-row">
+              <label for="password">Password</label>
+            </div>
+            <div class="password-field">
+              <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" data-password-toggle aria-controls="password" aria-label="Show password">Show</button>
+            </div>
           </div>
           <div class="actions">
-            <button type="submit" class="btn-submit">Submit Request</button>
+            <button type="submit" class="btn-submit" data-loading-text="Submitting...">Submit Request</button>
             <a class="btn-secondary" href="/login">Back To Sign In</a>
           </div>
         </form>
