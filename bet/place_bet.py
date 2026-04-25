@@ -36,6 +36,8 @@ MLB_TO_KALSHI = {
     "SDP": "SD",
     "SFG": "SF",
     "ARI": "AZ",
+    "TBR": "TB",
+    "OAK": "ATH",
 }
 
 
@@ -107,7 +109,7 @@ def find_kalshi_market(
     base_url = base_url or get_base_url()
     session = _retry_session()
     markets = []
-    for status in ("open", "active"):
+    for status in ("open",):
         cursor = None
         while True:
             params = {"series_ticker": MLB_SERIES, "status": status, "limit": 200}
