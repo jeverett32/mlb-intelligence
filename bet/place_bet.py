@@ -82,16 +82,10 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str, *, base_u
     # "2026-04-01" → "260401" (YY + MMDD, how Kalshi formats dates in tickers)
     date_compact = game_date.replace("-", "")[2:8]
 
-    # Priority 1: ticker contains both teams AND date
+    # Must match both teams AND date — no fallback to avoid betting wrong game
     for m in markets:
         ticker = m.get("ticker", "").upper()
         if home in ticker and away in ticker and date_compact in ticker:
-            return m["ticker"], m
-
-    # Priority 2: ticker contains both teams (date format may differ)
-    for m in markets:
-        ticker = m.get("ticker", "").upper()
-        if home in ticker and away in ticker:
             return m["ticker"], m
 
     return None, None
