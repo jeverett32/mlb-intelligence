@@ -16,7 +16,7 @@
   <script>
     document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
   </script>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425g">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425h">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <script src="/static/js/public-site.js?v=20260425b" defer></script>
   <style>
@@ -268,13 +268,12 @@
                   </marker>
                 </defs>
                 <!--
-                  Clockwise: middle cards (01,03) use L/R anchors; side cards (02,04) use T/B.
-                  Cubics bow outward so arrowheads land in gaps, not under cards.
+                  Clockwise: mid cards L/R, side cards T/B. Short cubics (CPs near chord) = steeper, tighter run.
                 -->
-                <path class="model-cycle-link" d="M 62 24 C 74 18 82 30 74 38" marker-end="url(#cycle-arrow-head)" />
-                <path class="model-cycle-link" d="M 79 56 C 86 66 74 77 61 74" marker-end="url(#cycle-arrow-head)" />
-                <path class="model-cycle-link" d="M 38 74 C 24 80 18 66 24 55" marker-end="url(#cycle-arrow-head)" />
-                <path class="model-cycle-link" d="M 21 45 C 10 34 24 22 38 24" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 61 24 C 64 22 67 26 70 33" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 78 54 C 79 59 74 66 61 70" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 39 71 C 32 73 29 67 27 58" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 22 44 C 17 39 28 30 37 25" marker-end="url(#cycle-arrow-head)" />
               </svg>
               <ol class="model-cycle-nodes">
                 <li class="cycle-node cycle-node--top">
