@@ -70,10 +70,38 @@ def _kelly_stake(prob: float, decimal_odds: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def find_kalshi_market(home_team: str, away_team: str, game_date: str, *, base_url: str | None = None):
+_MONTH_ABBR = {
+    1: "JAN", 2: "FEB", 3: "MAR", 4: "APR", 5: "MAY", 6: "JUN",
+    7: "JUL", 8: "AUG", 9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC",
+}
+
+
+def _kalshi_date_prefix(game_date: str) -> str:
+    """'2026-04-27' → '26APR27' (Kalshi ticker date format)."""
+    parts = game_date[:10].split("-")
+    yy = parts[0][2:]
+    mon = _MONTH_ABBR[int(parts[1])]
+    dd = parts[2]
+    return f"{yy}{mon}{dd}"
+
+
+def find_kalshi_market(
+    home_team: str,
+    away_team: str,
+    game_date: str,
+    bet_side: str,
+    *,
+    game_time_utc: str | None = None,
+    base_url: str | None = None,
+):
     """
-    Dynamically find the open/active Kalshi market for this game.
-    Paginates through all results to avoid missing markets on busy days.
+    Find the correct Kalshi market for this game and bet side.
+
+    Kalshi MLB tickers: KXMLBGAME-{YY}{MON}{DD}{HHMM_ET}{AWAY}{HOME}-{TEAM}
+    Two markets per game (one per team). We match the event by teams + date,
+    then pick the market for the team we're betting on.
+
+    For doubleheaders, game_time_utc disambiguates (matched to ET HHMM in ticker).
     Returns (ticker, market_dict) or (None, None).
     """
     base_url = base_url or get_base_url()
@@ -95,15 +123,51 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str, *, base_u
 
     home = MLB_TO_KALSHI.get(home_team.upper(), home_team.upper())
     away = MLB_TO_KALSHI.get(away_team.upper(), away_team.upper())
-    # "2026-04-01" → "260401" (YY + MMDD, how Kalshi formats dates in tickers)
-    date_compact = game_date.replace("-", "")[2:8]
+    date_prefix = _kalshi_date_prefix(game_date)
+    bet_team = home if bet_side == "home" else away
 
+    # Parse game time for doubleheader disambiguation (convert UTC → ET HHMM)
+    game_hhmm_et = None
+    if game_time_utc:
+        try:
+            from datetime import datetime, timezone
+            from zoneinfo import ZoneInfo
+            utc_dt = datetime.strptime(game_time_utc[:16], "%Y-%m-%d %H:%M").replace(
+                tzinfo=timezone.utc
+            )
+            et_dt = utc_dt.astimezone(ZoneInfo("America/New_York"))
+            game_hhmm_et = et_dt.strftime("%H%M")
+        except Exception:
+            pass
+
+    # Group by event (same game, different team markets)
+    events: dict[str, list[dict]] = {}
     for m in markets:
+        event = m.get("event_ticker", "").upper()
+        if home in event and away in event and date_prefix in event:
+            events.setdefault(event, []).append(m)
+
+    if not events:
+        return None, None
+
+    # If multiple events match (doubleheader), use game time to disambiguate
+    if len(events) > 1 and game_hhmm_et:
+        for event_key, event_markets in events.items():
+            if game_hhmm_et in event_key:
+                events = {event_key: event_markets}
+                break
+
+    # Take first (or only) matching event
+    event_markets = next(iter(events.values()))
+
+    # Pick the market for the team we're betting on (buy yes = team wins)
+    for m in event_markets:
         ticker = m.get("ticker", "").upper()
-        if home in ticker and away in ticker and date_compact in ticker:
+        if ticker.endswith(f"-{bet_team}"):
             return m["ticker"], m
 
-    return None, None
+    # Fallback: return first market in event (caller handles yes/no logic)
+    return event_markets[0]["ticker"], event_markets[0]
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +204,13 @@ def _execute_bet_row(
     session = _retry_session()
 
     # --- Find market ---
+    game_time_utc = str(row.get("game_time_utc") or "")
     print(f"\n  Searching Kalshi market: {away_team} @ {home_team} on {game_date}...")
-    ticker, _ = find_kalshi_market(home_team, away_team, game_date, base_url=base_url)
+    ticker, _ = find_kalshi_market(
+        home_team, away_team, game_date, bet_side,
+        game_time_utc=game_time_utc or None,
+        base_url=base_url,
+    )
 
     if ticker is None:
         raise PlaceBetError(
@@ -156,15 +225,14 @@ def _execute_bet_row(
     if mkt_status not in ("open", "active"):
         raise PlaceBetError(f"Market {ticker} is '{mkt_status}' — cannot place order.")
 
+    # Each Kalshi MLB market is team-specific: yes = that team wins.
+    # find_kalshi_market already picked the market for our bet_side team.
+    side = "yes"
+    price_field = "yes_price"
+    live_price = _to_float(market.get("yes_ask_dollars")) or _to_float(market.get("yes_bid_dollars"))
     if bet_side == "home":
-        side = "yes"
-        price_field = "yes_price"
-        live_price = _to_float(market.get("yes_ask_dollars")) or _to_float(market.get("yes_bid_dollars"))
         model_prob = predicted_prob
     elif bet_side == "away":
-        side = "no"
-        price_field = "no_price"
-        live_price = _to_float(market.get("no_ask_dollars")) or _to_float(market.get("no_bid_dollars"))
         model_prob = 1.0 - predicted_prob
     else:
         raise PlaceBetError(f"Invalid bet_side {bet_side!r}; expected 'home' or 'away'.")

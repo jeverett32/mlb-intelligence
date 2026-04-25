@@ -74,32 +74,25 @@ resp.raise_for_status()
 markets = resp.json()["markets"]
 ```
 
-Match the market to the target game by team names and date. The ticker format is:
+Match the market to the target game by team names, date, and bet side. Each game has
+two markets (one per team). The event ticker format is:
 ```
-KXMLBGAME-{YY}{MON}{DD}{HHMM}{AWAYTEAM}{HOMETEAM}
+KXMLBGAME-{YY}{MON}{DD}{HHMM_ET}{AWAYTEAM}{HOMETEAM}
 ```
-Example: `KXMLBGAME-26APR011815BOSNYY`
-
-Match heuristic — compare `rules_primary` or `event_ticker` against the home/away team and game date:
-
-```python
-game_date  = str(game_row["game_date"])          # "2026-04-01"
-home_team  = str(game_row["home_team"]).upper()  # "NYY"
-away_team  = str(game_row["away_team"]).upper()  # "BOS"
-
-ticker = None
-for m in markets:
-    t = m.get("ticker", "")
-    if home_team in t.upper() and away_team in t.upper() and game_date.replace("-", "")[2:8] in t:
-        ticker = t
-        break
-
-if ticker is None:
-    print("ERROR: Could not find Kalshi market for this game. No bet placed.")
-    exit()
-
-print(f"Found market: {ticker}")
+Individual market tickers add a team suffix:
 ```
+KXMLBGAME-{YY}{MON}{DD}{HHMM_ET}{AWAYTEAM}{HOMETEAM}-{TEAM}
+```
+Example event: `KXMLBGAME-26APR271907BOSTOR`
+Example markets: `KXMLBGAME-26APR271907BOSTOR-BOS` (yes = BOS wins)
+                  `KXMLBGAME-26APR271907BOSTOR-TOR` (yes = TOR wins)
+
+Date format uses 3-letter month abbreviation (APR, not 04).
+Time is Eastern Time (ET), not UTC.
+For doubleheaders, the HHMM component disambiguates games.
+
+The `find_kalshi_market()` function handles all of this automatically,
+including pagination and doubleheader disambiguation via `game_time_utc`.
 
 Verify the market is still open and the price is close to the expected value before placing:
 

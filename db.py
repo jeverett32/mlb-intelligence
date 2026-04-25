@@ -538,7 +538,13 @@ def get_bet(game_pk) -> dict | None:
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM bets WHERE game_pk = %s", (int(game_pk),))
+            cur.execute(
+                """SELECT b.*, g.game_time_utc
+                   FROM bets b
+                   LEFT JOIN games g ON b.game_pk = g.game_pk
+                   WHERE b.game_pk = %s""",
+                (int(game_pk),),
+            )
             row = cur.fetchone()
             return dict(row) if row else None
     finally:
