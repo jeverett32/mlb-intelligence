@@ -276,13 +276,7 @@ def _execute_bet_row(
     live_price_cents = max(1, min(99, int(round(live_price * 100))))
     limit_price_cents = max(1, min(99, live_price_cents + ORDER_SLIPPAGE_CENTS))
     cost_per_contract = limit_price_cents / 100.0
-    n_contracts = int(bet_dollars / cost_per_contract)
-    if n_contracts < 1:
-        print(
-            f"  Kelly bet ${bet_dollars:.2f} is below 1-contract cost "
-            f"(${cost_per_contract:.2f}) — skipping to respect sizing."
-        )
-        return {"game_pk": str(row.get("game_pk")), "status": "skipped_below_contract"}
+    n_contracts = max(1, int(bet_dollars / cost_per_contract))
 
     print(f"  Side:            {side} ({price_field}={limit_price_cents}c IOC)")
     max_cost = round(n_contracts * cost_per_contract, 2)
