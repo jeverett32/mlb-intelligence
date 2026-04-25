@@ -252,28 +252,29 @@
               role="img"
               aria-label="Continuous loop: data sources feed feature engineering and ML models; predictions and outcomes flow back into refreshed data and features."
             >
-              <svg class="model-cycle-links" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <svg class="model-cycle-links" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
                 <defs>
                   <marker
                     id="cycle-arrow-head"
                     viewBox="0 0 7 7"
-                    refX="6.2"
+                    refX="6"
                     refY="3.5"
-                    markerWidth="6"
-                    markerHeight="6"
+                    markerWidth="8"
+                    markerHeight="8"
                     orient="auto"
                     markerUnits="userSpaceOnUse"
                   >
                     <path d="M0,0 L7,3.5 L0,7 Z" class="model-cycle-marker-shape" />
                   </marker>
                 </defs>
-                <!--
-                  Clockwise: mid cards L/R, side cards T/B. Short cubics (CPs near chord) = steeper, tighter run.
-                -->
-                <path class="model-cycle-link" d="M 61 24 C 64 22 67 26 70 33" marker-end="url(#cycle-arrow-head)" />
-                <path class="model-cycle-link" d="M 78 54 C 79 59 74 66 61 70" marker-end="url(#cycle-arrow-head)" />
-                <path class="model-cycle-link" d="M 39 71 C 32 73 29 67 27 58" marker-end="url(#cycle-arrow-head)" />
-                <path class="model-cycle-link" d="M 22 44 C 17 39 28 30 37 25" marker-end="url(#cycle-arrow-head)" />
+                <!-- 1→2: bottom-right of top card → top of right card -->
+                <path class="model-cycle-link" d="M 126 24 C 148 28 152 50 152 72" marker-end="url(#cycle-arrow-head)" />
+                <!-- 2→3: bottom of right card → bottom-right of bottom card -->
+                <path class="model-cycle-link" d="M 152 128 C 152 150 148 172 126 176" marker-end="url(#cycle-arrow-head)" />
+                <!-- 3→4: bottom-left of bottom card → bottom of left card -->
+                <path class="model-cycle-link" d="M 74 176 C 52 172 48 150 48 128" marker-end="url(#cycle-arrow-head)" />
+                <!-- 4→1: top of left card → bottom-left of top card -->
+                <path class="model-cycle-link" d="M 48 72 C 48 50 52 28 74 24" marker-end="url(#cycle-arrow-head)" />
               </svg>
               <ol class="model-cycle-nodes">
                 <li class="cycle-node cycle-node--top">

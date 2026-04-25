@@ -23,6 +23,10 @@ print(df.tail(5))
 - `kalshi-key.pem` — never read or output contents.
 - Use `.env.example` for variable names.
 
+## Deploy
+
+Push to GitHub → GitHub Actions runner deploys to app LXC automatically. No manual SSH needed for deploys.
+
 ## Key entry points
 
 | File | Purpose |
