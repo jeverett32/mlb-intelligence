@@ -233,6 +233,73 @@ def test_public_summary_empty_state(monkeypatch, app_module, client):
     }
 
 
+def test_public_receipts_empty_state(monkeypatch, app_module, client):
+    monkeypatch.setattr(app_module.DB, "get_all_bets", lambda: app_module.pd.DataFrame())
+
+    r = client.get("/api/public/receipts")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {
+        "last_updated_utc",
+        "settled_bets",
+        "first_bet_date",
+        "last_bet_date",
+        "recent_bets",
+        "roi_series",
+    }
+    assert body["settled_bets"] == 0
+    assert body["recent_bets"] == []
+    assert body["roi_series"] == []
+
+
+def test_public_receipts_returns_recent_bets_and_roi(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_all_bets",
+        lambda: app_module.pd.DataFrame(
+            [
+                {
+                    "game_pk": 1,
+                    "game_date": "2026-04-20",
+                    "away_team": "NYM",
+                    "home_team": "ATL",
+                    "result": True,
+                    "bet_side": "home",
+                    "predicted_prob": 0.64,
+                    "market_implied_prob": 0.58,
+                    "edge": 0.06,
+                    "bet_dollars": 10.0,
+                    "n_contracts": 18,
+                },
+                {
+                    "game_pk": 2,
+                    "game_date": "2026-04-21",
+                    "away_team": "BOS",
+                    "home_team": "NYY",
+                    "result": True,
+                    "bet_side": "away",
+                    "predicted_prob": 0.42,
+                    "market_implied_prob": 0.5,
+                    "edge": 0.08,
+                    "bet_dollars": 12.0,
+                    "profit_loss": -12.0,
+                },
+            ]
+        ),
+    )
+
+    r = client.get("/api/public/receipts")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["settled_bets"] == 2
+    assert body["first_bet_date"] == "2026-04-20"
+    assert body["last_bet_date"] == "2026-04-21"
+    assert body["recent_bets"][0]["matchup"] == "BOS @ NYY"
+    assert body["recent_bets"][0]["result"] == "L"
+    assert body["recent_bets"][0]["model_prob"] == 0.58
+    assert body["roi_series"][-1]["cumulative_profit_loss"] == -4.0
+
+
 def test_private_api_requires_auth(client):
     r = client.get("/api/balance")
     assert r.status_code in (401, 403)
@@ -382,7 +449,7 @@ def test_landing_maintains_existing_structure(client):
     assert 'class="nav-links"' in r.text
     # Existing hero
     assert 'class="ps-hero"' in r.text
-    assert "Track the model. Understand the edge. See the results in public." in r.text
+    assert "Public MLB model results, updated daily." in r.text
     # Existing CTA links
     assert 'href="/public"' in r.text
     assert 'href="/login"' in r.text

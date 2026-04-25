@@ -13,6 +13,10 @@ document.addEventListener('DOMContentLoaded', function () {
   initRevealAnimations();
   initTiltPanels();
   initNavToggle();
+  initPasswordToggle();
+  initCopyButtons();
+  initSubmitLoading();
+  initRememberEmail();
 
   // Load live metrics for landing page
   loadLiveMetrics();
@@ -139,6 +143,10 @@ function loadLiveMetrics() {
         updateMetric('model_accuracy', (data.model_accuracy.accuracy * 100).toFixed(1) + '%');
       }
 
+      updateHeroMetric('total_bets', data.performance.total_bets);
+      updateHeroMetric('roi_pct', (data.performance.roi_pct >= 0 ? '+' : '') + data.performance.roi_pct.toFixed(1) + '%');
+      updateHeroMetric('freshness', 'Live as of page load');
+
       // Update performance summary section
       if (performanceSection) {
         updatePerformanceMetric('perf', 'accuracy', (data.performance.accuracy * 100).toFixed(1) + '%');
@@ -163,4 +171,62 @@ function updateMetric(key, value) {
 function updatePerformanceMetric(prefix, key, value) {
   var element = document.querySelector('[data-' + prefix + '="' + key + '"]');
   if (element) element.textContent = value;
+}
+
+function updateHeroMetric(key, value) {
+  var element = document.querySelector('[data-hero="' + key + '"]');
+  if (element) element.textContent = value;
+}
+
+function initPasswordToggle() {
+  document.querySelectorAll('[data-password-toggle]').forEach(function(button) {
+    var input = document.getElementById(button.getAttribute('aria-controls'));
+    if (!input) return;
+    button.addEventListener('click', function() {
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      button.textContent = show ? 'Hide' : 'Show';
+      button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
+  });
+}
+
+function initCopyButtons() {
+  document.querySelectorAll('[data-copy]').forEach(function(button) {
+    button.addEventListener('click', function() {
+      var value = button.getAttribute('data-copy');
+      if (!navigator.clipboard || !value) return;
+      navigator.clipboard.writeText(value).then(function() {
+        var original = button.textContent;
+        button.textContent = 'Copied';
+        window.setTimeout(function() { button.textContent = original; }, 1400);
+      });
+    });
+  });
+}
+
+function initSubmitLoading() {
+  document.querySelectorAll('form[data-loading-submit]').forEach(function(form) {
+    form.addEventListener('submit', function() {
+      var button = form.querySelector('button[type="submit"]');
+      if (!button) return;
+      button.disabled = true;
+      button.textContent = button.getAttribute('data-loading-text') || 'Working...';
+    });
+  });
+}
+
+function initRememberEmail() {
+  var input = document.querySelector('[data-remember-email-input]');
+  var checkbox = document.querySelector('[data-remember-email]');
+  if (!input || !checkbox) return;
+  var saved = localStorage.getItem('mlbRememberedEmail') || '';
+  if (saved) {
+    input.value = saved;
+    checkbox.checked = true;
+  }
+  input.form.addEventListener('submit', function() {
+    if (checkbox.checked && input.value) localStorage.setItem('mlbRememberedEmail', input.value);
+    else localStorage.removeItem('mlbRememberedEmail');
+  });
 }

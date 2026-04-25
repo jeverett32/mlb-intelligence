@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="MLB betting model — public analytics, calibration, ROI, and market comparison." />
+  <meta property="og:title" content="MLB Model Public Performance" />
+  <meta property="og:description" content="Public MLB betting model analytics: ROI, calibration, market comparison, and recent settled bets." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
   <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Model Performance</title>
@@ -22,6 +26,7 @@
     <header class="topbar">
       <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
         <img src="/static/favicon.svg" alt="" />
+        <span>MLB Betting Intelligence</span>
       </a>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="nav-toggle-icon"></span>
@@ -76,6 +81,27 @@
         </article>
       </section>
 
+      <section class="analytics-context" data-reveal aria-label="Data freshness">
+        <div>
+          <span>Data fetched UTC</span>
+          <strong id="data-updated">—</strong>
+        </div>
+        <div>
+          <span>Sample window</span>
+          <strong id="data-window">—</strong>
+        </div>
+        <div>
+          <span>Settled bets</span>
+          <strong id="data-settled">—</strong>
+        </div>
+        <div>
+          <span>Includes</span>
+          <strong>Settled model wagers</strong>
+        </div>
+      </section>
+
+      <div class="analytics-alert" id="analytics-alert" role="status" aria-live="polite" hidden></div>
+
       <section class="analytics-section" data-reveal>
         <div class="analytics-section-header">
           <div>
@@ -89,6 +115,25 @@
           <div class="analytics-stat-item"><span>Incorrect</span><strong id="m-incorrect">—</strong></div>
           <div class="analytics-stat-item"><span>Accuracy</span><strong data-reflect="m-acc">—</strong></div>
         </div>
+      </section>
+
+      <section class="analytics-section" data-reveal>
+        <div class="analytics-section-header">
+          <div>
+            <span class="eyebrow">Receipts</span>
+            <h2>ROI over time</h2>
+          </div>
+        </div>
+        <article class="analytics-panel analytics-panel-wide">
+          <div class="analytics-panel-header">
+            <span>Cumulative return</span>
+            <strong>Running P/L and ROI across settled wagers</strong>
+          </div>
+          <div class="analytics-panel-body">
+            <div class="chart-wrap chart-wrap-large"><canvas id="chart-roi"></canvas></div>
+            <p class="chart-caption">Positive slope means realized profit is growing faster than stake deployed.</p>
+          </div>
+        </article>
       </section>
 
       <section class="analytics-section" data-reveal>
@@ -122,7 +167,7 @@
         </div>
       </section>
 
-      <section class="analytics-chart-row" data-reveal>
+      <section id="calibration" class="analytics-chart-row" data-reveal>
         <article class="analytics-panel">
           <div class="analytics-panel-header">
             <span>Model Calibration</span>
@@ -130,6 +175,7 @@
           </div>
           <div class="analytics-panel-body">
             <div class="chart-wrap"><canvas id="chart-cal-model"></canvas></div>
+            <p class="chart-caption">Diagonal line marks perfect calibration: predicted probability equals actual win rate.</p>
           </div>
         </article>
         <article class="analytics-panel">
@@ -139,10 +185,48 @@
           </div>
           <div class="analytics-panel-body">
             <div class="chart-wrap"><canvas id="chart-cal-perf"></canvas></div>
+            <p class="chart-caption">Buckets above the line beat predicted confidence; buckets below trail it.</p>
           </div>
         </article>
       </section>
+
+      <section class="analytics-section" data-reveal>
+        <div class="analytics-section-header">
+          <div>
+            <span class="eyebrow">Recent Settled Bets</span>
+            <h2>The receipts</h2>
+          </div>
+        </div>
+        <div class="analytics-table-wrap">
+          <table class="analytics-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Matchup</th>
+                <th>Side</th>
+                <th>Result</th>
+                <th>Model</th>
+                <th>Market</th>
+                <th>Edge</th>
+                <th>Stake</th>
+                <th>P/L</th>
+              </tr>
+            </thead>
+            <tbody id="recent-bets-body">
+              <tr><td colspan="9">Loading settled bets...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
+    <footer class="public-footer">
+      <span>Performance shown from public endpoints.</span>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/contact">Contact</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </footer>
   </div>
 
 <script>
@@ -158,6 +242,24 @@ function cssVar(name) {
 var charts = {};
 
 function fmtPct(v) { return v != null ? (Number(v) * 100).toFixed(1) + '%' : '—'; }
+function fmtPctWhole(v) { return v != null ? (Number(v) * 100).toFixed(1) + '%' : '—'; }
+function fmtMoney(v) {
+  if (v == null) return '—';
+  var n = Number(v);
+  return (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2);
+}
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+  });
+}
+function setStatus(message, isError) {
+  var el = document.getElementById('analytics-alert');
+  if (!el) return;
+  el.hidden = !message;
+  el.textContent = message || '';
+  el.classList.toggle('is-error', !!isError);
+}
 
 function reflectValue(sourceId, value) {
   document.querySelectorAll('[data-reflect="' + sourceId + '"]').forEach(function(el) {
@@ -175,6 +277,15 @@ function calChartCfg(data) {
     type: 'scatter',
     data: {
       datasets: [{
+        label: 'Perfect calibration',
+        type: 'line',
+        data: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+        borderColor: tick,
+        borderDash: [6, 6],
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: false,
+      }, {
         label: 'Calibration',
         data: points,
         backgroundColor: accent,
@@ -185,7 +296,7 @@ function calChartCfg(data) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: { display: true, labels: { color: axisTitle, boxWidth: 12 } },
         tooltip: {
           callbacks: {
             label: function(d) {
@@ -212,20 +323,114 @@ function calChartCfg(data) {
   };
 }
 
+function roiChartCfg(data) {
+  var accent = cssVar('--accent') || '#B8860B';
+  var success = cssVar('--success') || '#2D6A4F';
+  var grid = cssVar('--grid-color') || '#E8E4DE';
+  var tick = cssVar('--tick-color') || '#9C9690';
+  var axisTitle = cssVar('--axis-title-color') || '#6B6560';
+  var labels = data.map(function(d) { return d.game_date; });
+  return {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Cumulative P/L',
+        data: data.map(function(d) { return d.cumulative_profit_loss; }),
+        borderColor: accent,
+        backgroundColor: accent,
+        tension: 0.25,
+        yAxisID: 'y',
+        pointRadius: 0,
+      }, {
+        label: 'ROI %',
+        data: data.map(function(d) { return d.roi_pct; }),
+        borderColor: success,
+        backgroundColor: success,
+        tension: 0.25,
+        yAxisID: 'y1',
+        pointRadius: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: axisTitle, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: function(d) {
+              return d.dataset.label + ': ' + (d.dataset.yAxisID === 'y' ? fmtMoney(d.parsed.y) : d.parsed.y.toFixed(1) + '%');
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 6 } },
+        y: {
+          title: { display: true, text: 'Cumulative P/L', color: axisTitle, font: { size: 11 } },
+          grid: { color: grid },
+          ticks: { color: tick, callback: function(v) { return '$' + v; } }
+        },
+        y1: {
+          position: 'right',
+          title: { display: true, text: 'ROI %', color: axisTitle, font: { size: 11 } },
+          grid: { drawOnChartArea: false },
+          ticks: { color: tick, callback: function(v) { return v + '%'; } }
+        }
+      }
+    }
+  };
+}
+
 function makeChart(id, cfg) {
   var c = document.getElementById(id);
+  if (!c || typeof Chart === 'undefined') return;
   if (charts[id]) charts[id].destroy();
   charts[id] = new Chart(c, cfg);
 }
 
+function updateReceipts(receipts) {
+  document.getElementById('data-updated').textContent = receipts.last_updated_utc ? receipts.last_updated_utc.replace('T', ' ').replace('+00:00', '') : '—';
+  document.getElementById('data-settled').textContent = receipts.settled_bets || 0;
+  document.getElementById('data-window').textContent = receipts.first_bet_date && receipts.last_bet_date ? receipts.first_bet_date + ' to ' + receipts.last_bet_date : 'No settled bets yet';
+
+  makeChart('chart-roi', roiChartCfg(receipts.roi_series || []));
+
+  var body = document.getElementById('recent-bets-body');
+  var bets = receipts.recent_bets || [];
+  if (!bets.length) {
+    body.innerHTML = '<tr><td colspan="9">No settled public bets yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = bets.map(function(b) {
+    var pnlClass = b.profit_loss > 0 ? 'positive' : (b.profit_loss < 0 ? 'negative' : '');
+    return '<tr>' +
+      '<td>' + esc(b.game_date) + '</td>' +
+      '<td>' + esc(b.matchup) + '</td>' +
+      '<td>' + esc(b.side) + '</td>' +
+      '<td><span class="result-pill ' + (b.result === 'W' ? 'win' : 'loss') + '">' + b.result + '</span></td>' +
+      '<td>' + fmtPctWhole(b.model_prob) + '</td>' +
+      '<td>' + fmtPctWhole(b.market_prob) + '</td>' +
+      '<td>' + (b.edge != null ? (Number(b.edge) * 100).toFixed(1) + ' pts' : '—') + '</td>' +
+      '<td>' + fmtMoney(b.stake) + '</td>' +
+      '<td class="' + pnlClass + '">' + fmtMoney(b.profit_loss) + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
 async function load() {
+  setStatus('Loading public analytics...', false);
   try {
     var results = await Promise.all([
-      fetch('/api/public/performance').then(function(r) { return r.json(); }),
-      fetch('/api/public/model-accuracy').then(function(r) { return r.json(); }),
+      fetch('/api/public/performance').then(function(r) { if (!r.ok) throw new Error('performance failed'); return r.json(); }),
+      fetch('/api/public/model-accuracy').then(function(r) { if (!r.ok) throw new Error('model accuracy failed'); return r.json(); }),
+      fetch('/api/public/receipts').then(function(r) { if (!r.ok) throw new Error('receipts failed'); return r.json(); }),
     ]);
     var perf = results[0];
     var modelAcc = results[1];
+    var receipts = results[2];
 
     var mTotal = modelAcc.total || 0;
     document.getElementById('m-total').textContent = mTotal;
@@ -264,8 +469,11 @@ async function load() {
 
     makeChart('chart-cal-model', calChartCfg(modelAcc.calibration || []));
     makeChart('chart-cal-perf', calChartCfg(perf.calibration || []));
+    updateReceipts(receipts);
+    setStatus('', false);
   } catch (err) {
     console.error(err);
+    setStatus('Could not load public analytics. Refresh and try again.', true);
   }
 }
 
