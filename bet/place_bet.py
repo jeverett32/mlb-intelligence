@@ -68,13 +68,15 @@ def find_kalshi_market(home_team: str, away_team: str, game_date: str, *, base_u
     Returns (ticker, market_dict) or (None, None).
     """
     base_url = base_url or get_base_url()
-    resp = requests.get(
-        base_url + "/markets",
-        params={"series_ticker": MLB_SERIES, "status": "open", "limit": 200},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    markets = resp.json().get("markets", [])
+    markets = []
+    for status in ("open", "active"):
+        resp = requests.get(
+            base_url + "/markets",
+            params={"series_ticker": MLB_SERIES, "status": status, "limit": 200},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        markets.extend(resp.json().get("markets", []))
 
     home = MLB_TO_KALSHI.get(home_team.upper(), home_team.upper())
     away = MLB_TO_KALSHI.get(away_team.upper(), away_team.upper())
@@ -331,14 +333,17 @@ def place_user_bet(email: str, game_pk: str) -> dict:
         email=email,
     )
     dry_run = not (DB.is_global_live_betting() and DB.is_user_live_betting(email))
-    result = _execute_bet_row(
-        row,
-        key_id=account["key_id"],
-        key_path=account["key_path"],
-        kalshi_env=account["kalshi_env"],
-        balance_cents=balance_cents,
-        dry_run=dry_run,
-    )
+    try:
+        result = _execute_bet_row(
+            row,
+            key_id=account["key_id"],
+            key_path=account["key_path"],
+            kalshi_env=account["kalshi_env"],
+            balance_cents=balance_cents,
+            dry_run=dry_run,
+        )
+    except PlaceBetError as exc:
+        result = {"game_pk": str(game_pk), "status": "error", "error": str(exc)}
     DB.upsert_user_order(
         email,
         game_pk,
