@@ -314,6 +314,10 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     if row is None:
         raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
 
+    existing_order = DB.get_user_order(email, game_pk)
+    if existing_order is not None:
+        return {"game_pk": str(game_pk), "email": email, "status": "skipped_already_bet"}
+
     original_bet_frac = float(row.get("bet_frac") or 0)
     bet_side = str(row.get("bet_side") or "none").strip().lower()
     if original_bet_frac <= 0 or bet_side == "none":
