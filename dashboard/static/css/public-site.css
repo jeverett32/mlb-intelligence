@@ -1837,7 +1837,6 @@ body.auth-body {
   }
   .contact-grid,
   .contact-form-panel,
-  .proof-strip,
   .analytics-context,
   .analytics-overview-grid,
   .analytics-stat-grid,
@@ -1867,7 +1866,6 @@ body.auth-body {
     padding: 28px 24px;
   }
   .auth-hero h1 { max-width: 12ch; }
-  .proof-strip a,
   .analytics-context div {
     border-right: 0;
   }
@@ -2233,32 +2231,46 @@ body.auth-body {
 }
 
 .proof-strip a {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  column-gap: 10px;
+  min-width: 0;
   min-height: 58px;
   color: var(--text-primary);
   text-decoration: none;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.25;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-card);
   box-shadow: var(--shadow-sm);
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  overflow-wrap: break-word;
 }
 
 .proof-strip a::after {
   content: ">";
   color: var(--accent);
-  flex: 0 0 auto;
+  grid-column: 2;
 }
 
 .proof-strip a:hover {
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+@media (max-width: 920px) {
+  .proof-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .proof-strip {
+    grid-template-columns: 1fr;
+  }
 }
 
 .public-footer {
