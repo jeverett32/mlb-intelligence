@@ -362,6 +362,11 @@ def settle_completed_games():
             a_score = ls.get("away", {}).get("runs")
             if h_score is None or a_score is None:
                 continue
+            if h_score == a_score:
+                print(
+                    f"    Tie {a_score}-{h_score} for {away_team} @ {home_team} — skipping settlement."
+                )
+                continue
             home_win = bool(h_score > a_score)
             finals.append({
                 "game_pk":    game_pk,

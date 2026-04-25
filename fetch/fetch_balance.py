@@ -29,11 +29,20 @@ def fetch_balance_for_account(
         headers = auth_headers(key_id, private_key, "GET", path)
 
         resp = requests.get(base_url + "/portfolio/balance", headers=headers, timeout=10)
+        # 4xx (auth, bad key, account issue) — fail closed; do not size with stale balance.
+        if 400 <= resp.status_code < 500:
+            raise RuntimeError(
+                f"Kalshi balance fetch returned {resp.status_code} for {email or 'legacy account'}: "
+                f"{resp.text[:200]}. Refusing to fall back to stale balance."
+            )
         resp.raise_for_status()
 
         balance_cents = int(resp.json()["balance"])
+    except RuntimeError:
+        raise
     except Exception as e:
-        print(f"  WARNING: Kalshi balance fetch failed: {e}")
+        # Transient: timeout, connection error, 5xx, JSON shape change, etc.
+        print(f"  WARNING: Kalshi balance fetch failed (transient): {e}")
         last = DB.get_last_user_balance_cents(email) if email else DB.get_last_balance_cents()
         if last is not None:
             print(f"  Using last known balance: {last} cents")
