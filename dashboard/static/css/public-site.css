@@ -321,11 +321,18 @@ html, body {
 /* ── Methodology section (landing page) ─────────────────────────────────── */
 .methodology-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, min(480px, 1fr));
   gap: 52px;
   align-items: start;
   padding-top: 28px;
   border-top: 1px solid var(--border);
+}
+
+.methodology-visual {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
 }
 .methodology-text .eyebrow {
   color: var(--accent);
@@ -367,19 +374,21 @@ html, body {
 /* Model methodology: cyclical pipeline (SVG ring + corner nodes) */
 .model-cycle {
   position: relative;
-  width: 100%;
-  max-width: 340px;
+  box-sizing: border-box;
+  width: min(100%, 460px);
+  max-width: 100%;
   margin: 0 auto;
   aspect-ratio: 1;
   border-top: 1px solid var(--border);
-  padding-top: 20px;
+  padding: 26px 18px 22px;
 }
 .model-cycle-ring {
   position: absolute;
-  left: 10%;
-  top: calc(10% + 20px);
-  width: 80%;
-  height: 80%;
+  left: 50%;
+  top: 50%;
+  width: 58%;
+  height: 58%;
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 .model-cycle-arc {
@@ -399,7 +408,6 @@ html, body {
   padding: 0;
   position: absolute;
   inset: 0;
-  padding-top: 20px;
 }
 .cycle-node {
   position: absolute;
@@ -408,49 +416,64 @@ html, body {
   padding: 0;
 }
 .cycle-node-card {
-  display: grid;
-  grid-template-columns: 56px 1fr;
-  gap: 12px;
-  align-items: center;
-  max-width: min(220px, 72vw);
-  padding: 10px 12px;
   border-radius: 12px;
   background: var(--bg-card);
   box-shadow: 0 0 0 1px var(--border);
 }
+/* Top / bottom: horizontal chip — keep width modest so side cards can breathe */
+.cycle-node--top .cycle-node-card,
+.cycle-node--bottom .cycle-node-card {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 10px;
+  align-items: center;
+  max-width: min(204px, 46vw);
+  padding: 10px 12px;
+}
+/* Left / right: narrow vertical stack so the horizontal footprint stays small */
+.cycle-node--left .cycle-node-card,
+.cycle-node--right .cycle-node-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(118px, 28vw);
+  max-width: 118px;
+  padding: 12px 8px;
+  text-align: center;
+}
 .cycle-node--top {
-  top: 20px;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
+  z-index: 2;
 }
 .cycle-node--right {
-  right: 0;
-  top: calc(50% + 10px);
+  right: 4px;
+  top: 50%;
   transform: translateY(-50%);
-}
-.cycle-node--right .cycle-node-card {
-  grid-template-columns: 44px 1fr;
-  max-width: min(200px, 58vw);
 }
 .cycle-node--bottom {
-  bottom: 0;
+  bottom: 6px;
   left: 50%;
   transform: translateX(-50%);
+  z-index: 2;
 }
 .cycle-node--left {
-  left: 0;
-  top: calc(50% + 10px);
+  left: 4px;
+  top: 50%;
   transform: translateY(-50%);
 }
-.cycle-node--left .cycle-node-card {
-  grid-template-columns: 44px 1fr;
-  max-width: min(200px, 58vw);
-}
 .cycle-node-card span {
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-primary);
-  line-height: 1.25;
+  line-height: 1.28;
+}
+.cycle-node--top .cycle-node-card span,
+.cycle-node--bottom .cycle-node-card span {
+  font-size: 0.86rem;
 }
 .step-icon {
   width: 56px;
@@ -463,11 +486,17 @@ html, body {
   font-weight: 700;
   color: var(--accent);
 }
-.cycle-node--right .step-icon,
-.cycle-node--left .step-icon {
+.cycle-node--top .step-icon,
+.cycle-node--bottom .step-icon {
   width: 48px;
   height: 48px;
   font-size: 0.88rem;
+}
+.cycle-node--right .step-icon,
+.cycle-node--left .step-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 0.82rem;
 }
 
 /* ── Performance summary section (landing page) ─────────────────────────── */
@@ -2115,14 +2144,12 @@ body.auth-body {
     grid-column: 1;
   }
   .model-cycle {
-    max-width: min(300px, 100%);
-    padding-top: 14px;
+    width: min(100%, 400px);
+    padding: 18px 12px 16px;
   }
   .model-cycle-ring {
-    left: 8%;
-    top: calc(8% + 14px);
-    width: 84%;
-    height: 84%;
+    width: 56%;
+    height: 56%;
   }
   .cycle-node-card {
     padding: 8px 10px;
@@ -2555,7 +2582,7 @@ body.auth-body {
     font-size: 1.8rem;
   }
   .model-cycle {
-    max-width: min(320px, 100%);
+    width: min(100%, min(440px, 94vw));
     margin-inline: auto;
   }
   .performance-grid {
@@ -2623,7 +2650,13 @@ body.auth-body {
     gap: 16px;
   }
   .model-cycle {
-    padding-top: 12px;
+    width: min(100%, 380px);
+    padding: 16px 10px 14px;
+  }
+  .cycle-node--left .cycle-node-card,
+  .cycle-node--right .cycle-node-card {
+    width: min(108px, 30vw);
+    max-width: 108px;
   }
   .about {
     padding: 24px 18px;
