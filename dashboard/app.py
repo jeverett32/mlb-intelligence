@@ -5,6 +5,7 @@ Serves the frontend at / and JSON data at /api/*.
 Run from project root: uv run uvicorn dashboard.app:app --host 0.0.0.0 --port 8080
 """
 
+import html
 import math
 import os
 import subprocess
@@ -192,7 +193,7 @@ def login_page(request: Request, error: str = ""):
     user = _get_current_user(request)
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
         return RedirectResponse("/", status_code=302)
-    error_html = f'<div class="error-banner">{error}</div>' if error else ""
+    error_html = f'<div class="error-banner">{html.escape(error)}</div>' if error else ""
     return _render_template("login.html").replace("{{ERROR_BANNER}}", error_html)
 
 
@@ -201,7 +202,7 @@ def register_page(request: Request, error: str = ""):
     user = _get_current_user(request)
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
         return RedirectResponse("/", status_code=302)
-    error_html = f'<div class="error-banner">{error}</div>' if error else ""
+    error_html = f'<div class="error-banner">{html.escape(error)}</div>' if error else ""
     return _render_template("register.html").replace("{{ERROR_BANNER}}", error_html)
 
 

@@ -99,26 +99,44 @@ def pooled_connection():
     """Checkout a pooled connection; reconnect if the pool returns a dead one."""
     pool = _get_pool()
     conn = pool.getconn()
+    pooled = True
     try:
-        # Cheap liveness probe; on failure, replace with a fresh connection.
+        # Cheap liveness probe; on failure, return dead conn to pool with close=True
+        # and check out a fresh one. ThreadedConnectionPool requires putconn to
+        # receive the same object that was checked out, so we cannot just swap in
+        # a raw psycopg2.connect(...) and putconn() that later.
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
         except Exception:
             try:
-                conn.close()
+                pool.putconn(conn, close=True)
             except Exception:
-                pass
-            conn = psycopg2.connect(**_conn_kwargs())
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            conn = pool.getconn()
         yield conn
-    finally:
+    except Exception:
         try:
-            pool.putconn(conn)
+            pool.putconn(conn, close=True)
         except Exception:
             try:
                 conn.close()
             except Exception:
                 pass
+        pooled = False
+        raise
+    finally:
+        if pooled:
+            try:
+                pool.putconn(conn)
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 
 # ---------------------------------------------------------------------------

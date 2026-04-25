@@ -7,7 +7,6 @@ Run from project root: uv run bet/place_bet.py --game_pk 12345
 """
 
 import argparse
-import math
 import os
 import sys
 import uuid
@@ -145,11 +144,13 @@ def _execute_bet_row(
         price_field = "yes_price"
         live_price = _to_float(market.get("yes_ask_dollars"))
         model_prob = predicted_prob
-    else:
+    elif bet_side == "away":
         side = "no"
         price_field = "no_price"
         live_price = _to_float(market.get("no_ask_dollars"))
         model_prob = 1.0 - predicted_prob
+    else:
+        raise PlaceBetError(f"Invalid bet_side {bet_side!r}; expected 'home' or 'away'.")
 
     if live_price is None or not (0 < live_price < 1):
         raise PlaceBetError(f"Market {ticker} has no live {price_field} available.")
@@ -185,7 +186,7 @@ def _execute_bet_row(
         print("  Bet rounds to $0.00 — skipping.")
         return {"game_pk": str(row.get("game_pk")), "status": "skipped_too_small"}
 
-    live_price_cents = max(1, min(99, math.ceil(live_price * 100)))
+    live_price_cents = max(1, min(99, int(round(live_price * 100))))
     limit_price_cents = max(1, min(99, live_price_cents + ORDER_SLIPPAGE_CENTS))
     cost_per_contract = limit_price_cents / 100.0
     n_contracts = int(bet_dollars / cost_per_contract)
@@ -338,13 +339,6 @@ def place_user_bet(email: str, game_pk: str) -> dict:
         balance_cents=balance_cents,
         dry_run=dry_run,
     )
-    if result.get("status") == "filled":
-        DB.update_bet_order(
-            game_pk,
-            result["order_id"],
-            result["fill_cost"],
-            result["contracts"],
-        )
     DB.upsert_user_order(
         email,
         game_pk,

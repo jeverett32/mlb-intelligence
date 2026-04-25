@@ -107,6 +107,12 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                 print(f"  {away_team} @ {home_team}: no score in linescore, skipping.")
                 continue
 
+            if h_score == a_score:
+                print(
+                    f"  {away_team} @ {home_team}: tie {a_score}-{h_score} — skipping settlement."
+                )
+                continue
+
             home_win = bool(h_score > a_score)
 
             conn2 = DB.get_connection()
