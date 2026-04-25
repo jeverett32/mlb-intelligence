@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Sign in to the private MLB Betting Intelligence dashboard." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Betting Dashboard — Sign In</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -18,6 +21,7 @@
     <header class="topbar">
       <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
         <img src="/static/favicon.svg" alt="" />
+        <span>MLB Betting Intelligence</span>
       </a>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="nav-toggle-icon"></span>
@@ -36,19 +40,9 @@
           <h1>Private MLB betting workspace.</h1>
           <p>Review bankroll, manage live betting, inspect the model's edge, and move between the public proof layer and the private operating console.</p>
         </div>
-        <div class="hero-metrics">
-          <div class="metric-card">
-            <span class="metric-label">Public Page</span>
-            <span class="metric-value">Open</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">Dashboard</span>
-            <span class="metric-value">Private</span>
-          </div>
-          <div class="metric-card">
-            <span class="metric-label">Theme</span>
-            <span class="metric-value">Saved</span>
-          </div>
+        <div class="auth-trust-note">
+          <strong>Approval-based access</strong>
+          <p>Public analytics stay open. Dashboard controls require approved credentials and rate-limited sign-in.</p>
         </div>
         <div class="auth-hero-actions">
           <a class="hero-link primary" href="/public">Public Stats</a>
@@ -63,17 +57,31 @@
         </div>
         <div class="auth-form-body">
           {{ERROR_BANNER}}
-          <form method="post" action="/login">
+          <form method="post" action="/login" data-loading-submit>
             <div class="field">
               <label for="email">Email</label>
-              <input type="email" id="email" name="email" autocomplete="email" required autofocus>
+              <input type="email" id="email" name="email" autocomplete="email" data-remember-email-input required autofocus>
             </div>
             <div class="field">
-              <label for="password">Password</label>
-              <input type="password" id="password" name="password" autocomplete="current-password" required>
+              <div class="field-label-row">
+                <label for="password">Password</label>
+                <a href="/contact">Forgot password?</a>
+              </div>
+              <div class="password-field">
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+                <button type="button" data-password-toggle aria-controls="password" aria-label="Show password">Show</button>
+              </div>
+              <p class="field-help">No self-service reset yet. Use contact for access or password issues.</p>
             </div>
+            <div class="form-note">
+              New here? Request access first. Accounts require approval before first login.
+            </div>
+            <label class="checkbox-row">
+              <input type="checkbox" data-remember-email>
+              <span>Remember email on this device</span>
+            </label>
             <div class="actions">
-              <button type="submit" class="btn-submit">Sign In</button>
+              <button type="submit" class="btn-submit" data-loading-text="Signing in...">Sign In</button>
               <a class="btn-secondary" href="/register">Request Access</a>
             </div>
           </form>

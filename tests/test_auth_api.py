@@ -95,7 +95,7 @@ def test_root_returns_landing_page_for_unauthenticated_user(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "MLB Betting Intelligence" in r.text
-    assert "Track the model. Understand the edge. See the results in public." in r.text
+    assert "Public MLB model results, updated daily." in r.text
     assert "MLB Model Performance" not in r.text
     assert "MLB Betting Dashboard" not in r.text
 
