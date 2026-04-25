@@ -364,23 +364,93 @@ html, body {
   line-height: 1.5;
   font-size: 0.95rem;
 }
-.model-pipeline {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  align-items: stretch;
-  padding: 0;
-  background: transparent;
+/* Model methodology: cyclical pipeline (SVG ring + corner nodes) */
+.model-cycle {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+  aspect-ratio: 1;
   border-top: 1px solid var(--border);
-  border-radius: 0;
+  padding-top: 20px;
 }
-.pipeline-step {
+.model-cycle-ring {
+  position: absolute;
+  left: 10%;
+  top: calc(10% + 20px);
+  width: 80%;
+  height: 80%;
+  pointer-events: none;
+}
+.model-cycle-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+}
+.model-cycle-marker-shape {
+  fill: var(--accent);
+}
+.model-cycle-nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  inset: 0;
+  padding-top: 20px;
+}
+.cycle-node {
+  position: absolute;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+}
+.cycle-node-card {
   display: grid;
   grid-template-columns: 56px 1fr;
-  gap: 14px;
+  gap: 12px;
   align-items: center;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
+  max-width: min(220px, 72vw);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.cycle-node--top {
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.cycle-node--right {
+  right: 0;
+  top: calc(50% + 10px);
+  transform: translateY(-50%);
+}
+.cycle-node--right .cycle-node-card {
+  grid-template-columns: 44px 1fr;
+  max-width: min(200px, 58vw);
+}
+.cycle-node--bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.cycle-node--left {
+  left: 0;
+  top: calc(50% + 10px);
+  transform: translateY(-50%);
+}
+.cycle-node--left .cycle-node-card {
+  grid-template-columns: 44px 1fr;
+  max-width: min(200px, 58vw);
+}
+.cycle-node-card span {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
 }
 .step-icon {
   width: 56px;
@@ -393,18 +463,11 @@ html, body {
   font-weight: 700;
   color: var(--accent);
 }
-.pipeline-step span {
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.3;
-}
-.pipeline-arrow {
-  font-size: 1rem;
-  color: var(--accent);
-  font-weight: 600;
-  text-align: center;
-  padding: 2px 0;
+.cycle-node--right .step-icon,
+.cycle-node--left .step-icon {
+  width: 48px;
+  height: 48px;
+  font-size: 0.88rem;
 }
 
 /* ── Performance summary section (landing page) ─────────────────────────── */
@@ -2051,15 +2114,28 @@ body.auth-body {
   .process-step p {
     grid-column: 1;
   }
-  .model-pipeline {
-    padding: 18px;
+  .model-cycle {
+    max-width: min(300px, 100%);
+    padding-top: 14px;
   }
-  .pipeline-step {
-    grid-template-columns: 44px 1fr;
+  .model-cycle-ring {
+    left: 8%;
+    top: calc(8% + 14px);
+    width: 84%;
+    height: 84%;
+  }
+  .cycle-node-card {
+    padding: 8px 10px;
   }
   .step-icon {
     width: 44px;
     height: 44px;
+    font-size: 0.85rem;
+  }
+  .cycle-node--right .step-icon,
+  .cycle-node--left .step-icon {
+    width: 40px;
+    height: 40px;
   }
   body.auth-body { padding: 12px; }
   .auth-shell {
@@ -2311,7 +2387,8 @@ body.auth-body {
 :root[data-theme="dark"] .analytics-overview-card,
 :root[data-theme="dark"] .analytics-panel,
 :root[data-theme="dark"] .analytics-stat-card,
-:root[data-theme="dark"] .analytics-stat-row {
+:root[data-theme="dark"] .analytics-stat-row,
+:root[data-theme="dark"] .cycle-node-card {
   border-color: rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(35, 45, 54, 0.9), rgba(18, 23, 28, 0.76));
   box-shadow:
@@ -2338,7 +2415,8 @@ body.auth-body {
   :root[data-theme="auto"] .analytics-overview-card,
   :root[data-theme="auto"] .analytics-panel,
   :root[data-theme="auto"] .analytics-stat-card,
-  :root[data-theme="auto"] .analytics-stat-row {
+  :root[data-theme="auto"] .analytics-stat-row,
+  :root[data-theme="auto"] .cycle-node-card {
     border-color: rgba(255, 255, 255, 0.08);
     background: linear-gradient(180deg, rgba(35, 45, 54, 0.9), rgba(18, 23, 28, 0.76));
     box-shadow:
@@ -2476,21 +2554,9 @@ body.auth-body {
   .methodology-text h2 {
     font-size: 1.8rem;
   }
-  .model-pipeline {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  .pipeline-arrow {
-    display: none;
-  }
-  .pipeline-step:not(:last-child)::after {
-    content: "↓";
-    display: block;
-    text-align: center;
-    color: var(--accent);
-    font-weight: 600;
-    font-size: 1rem;
-    padding-top: 14px;
+  .model-cycle {
+    max-width: min(320px, 100%);
+    margin-inline: auto;
   }
   .performance-grid {
     grid-template-columns: 1fr;
@@ -2556,8 +2622,8 @@ body.auth-body {
   .methodology-features {
     gap: 16px;
   }
-  .model-pipeline {
-    padding: 0;
+  .model-cycle {
+    padding-top: 12px;
   }
   .about {
     padding: 24px 18px;
