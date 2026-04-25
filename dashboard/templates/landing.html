@@ -16,7 +16,7 @@
   <script>
     document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
   </script>
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425e">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425f">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <script src="/static/js/public-site.js?v=20260425b" defer></script>
   <style>
@@ -252,41 +252,26 @@
               role="img"
               aria-label="Continuous loop: data sources feed feature engineering and ML models; predictions and outcomes flow back into refreshed data and features."
             >
-              <svg class="model-cycle-ring" viewBox="0 0 240 240" aria-hidden="true">
+              <svg class="model-cycle-links" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
                 <defs>
                   <marker
                     id="cycle-arrow-head"
                     viewBox="0 0 7 7"
                     refX="6.2"
                     refY="3.5"
-                    markerWidth="7"
-                    markerHeight="7"
+                    markerWidth="6"
+                    markerHeight="6"
                     orient="auto"
                     markerUnits="userSpaceOnUse"
                   >
                     <path d="M0,0 L7,3.5 L0,7 Z" class="model-cycle-marker-shape" />
                   </marker>
                 </defs>
-                <path
-                  class="model-cycle-arc"
-                  d="M 120 36 A 84 84 0 0 1 204 120"
-                  marker-end="url(#cycle-arrow-head)"
-                />
-                <path
-                  class="model-cycle-arc"
-                  d="M 204 120 A 84 84 0 0 1 120 204"
-                  marker-end="url(#cycle-arrow-head)"
-                />
-                <path
-                  class="model-cycle-arc"
-                  d="M 120 204 A 84 84 0 0 1 36 120"
-                  marker-end="url(#cycle-arrow-head)"
-                />
-                <path
-                  class="model-cycle-arc"
-                  d="M 36 120 A 84 84 0 0 1 120 36"
-                  marker-end="url(#cycle-arrow-head)"
-                />
+                <!-- Perimeter links only (no inner ring): 01→02→03→04→01 -->
+                <path class="model-cycle-link" d="M 58 26 L 74 40" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 79 56 L 60 72" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 40 72 L 23 56" marker-end="url(#cycle-arrow-head)" />
+                <path class="model-cycle-link" d="M 21 44 L 40 27" marker-end="url(#cycle-arrow-head)" />
               </svg>
               <ol class="model-cycle-nodes">
                 <li class="cycle-node cycle-node--top">
