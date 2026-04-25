@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
@@ -35,6 +37,13 @@ MLB_TO_KALSHI = {
     "SFG": "SF",
     "ARI": "AZ",
 }
+
+
+def _retry_session() -> requests.Session:
+    s = requests.Session()
+    retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+    s.mount("https://", HTTPAdapter(max_retries=retries))
+    return s
 
 
 class PlaceBetError(RuntimeError):
@@ -63,27 +72,32 @@ def _kelly_stake(prob: float, decimal_odds: float) -> float:
 
 def find_kalshi_market(home_team: str, away_team: str, game_date: str, *, base_url: str | None = None):
     """
-    Dynamically find the open Kalshi market for this game.
-    Searches KXMLBGAME series and matches by team abbreviations + date.
+    Dynamically find the open/active Kalshi market for this game.
+    Paginates through all results to avoid missing markets on busy days.
     Returns (ticker, market_dict) or (None, None).
     """
     base_url = base_url or get_base_url()
+    session = _retry_session()
     markets = []
     for status in ("open", "active"):
-        resp = requests.get(
-            base_url + "/markets",
-            params={"series_ticker": MLB_SERIES, "status": status, "limit": 200},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        markets.extend(resp.json().get("markets", []))
+        cursor = None
+        while True:
+            params = {"series_ticker": MLB_SERIES, "status": status, "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            resp = session.get(base_url + "/markets", params=params, timeout=15)
+            resp.raise_for_status()
+            body = resp.json()
+            markets.extend(body.get("markets", []))
+            cursor = body.get("cursor")
+            if not cursor:
+                break
 
     home = MLB_TO_KALSHI.get(home_team.upper(), home_team.upper())
     away = MLB_TO_KALSHI.get(away_team.upper(), away_team.upper())
     # "2026-04-01" → "260401" (YY + MMDD, how Kalshi formats dates in tickers)
     date_compact = game_date.replace("-", "")[2:8]
 
-    # Must match both teams AND date — no fallback to avoid betting wrong game
     for m in markets:
         ticker = m.get("ticker", "").upper()
         if home in ticker and away in ticker and date_compact in ticker:
@@ -123,6 +137,7 @@ def _execute_bet_row(
 
     key_id, private_key = load_credentials(key_id=key_id, key_path=key_path)
     base_url = get_base_url(kalshi_env)
+    session = _retry_session()
 
     # --- Find market ---
     print(f"\n  Searching Kalshi market: {away_team} @ {home_team} on {game_date}...")
@@ -134,7 +149,7 @@ def _execute_bet_row(
         )
     print(f"  Market found:    {ticker}")
 
-    resp = requests.get(base_url + f"/markets/{ticker}", timeout=10)
+    resp = session.get(base_url + f"/markets/{ticker}", timeout=15)
     resp.raise_for_status()
     market = resp.json().get("market", {})
     mkt_status = market.get("status", "unknown")
@@ -144,12 +159,12 @@ def _execute_bet_row(
     if bet_side == "home":
         side = "yes"
         price_field = "yes_price"
-        live_price = _to_float(market.get("yes_ask_dollars"))
+        live_price = _to_float(market.get("yes_ask_dollars")) or _to_float(market.get("yes_bid_dollars"))
         model_prob = predicted_prob
     elif bet_side == "away":
         side = "no"
         price_field = "no_price"
-        live_price = _to_float(market.get("no_ask_dollars"))
+        live_price = _to_float(market.get("no_ask_dollars")) or _to_float(market.get("no_bid_dollars"))
         model_prob = 1.0 - predicted_prob
     else:
         raise PlaceBetError(f"Invalid bet_side {bet_side!r}; expected 'home' or 'away'.")
@@ -237,11 +252,11 @@ def _execute_bet_row(
         price_field: limit_price_cents,
     }
 
-    resp = requests.post(
+    resp = session.post(
         base_url + "/portfolio/orders",
         headers=headers,
         json=order_body,
-        timeout=10,
+        timeout=15,
     )
 
     if resp.status_code == 201:
@@ -319,7 +334,9 @@ def place_user_bet(email: str, game_pk: str) -> dict:
 
     existing_order = DB.get_user_order(email, game_pk)
     if existing_order is not None:
-        return {"game_pk": str(game_pk), "email": email, "status": "skipped_already_bet"}
+        existing_status = existing_order.get("status", "")
+        if existing_status in ("filled", "dry_run"):
+            return {"game_pk": str(game_pk), "email": email, "status": "skipped_already_bet"}
 
     original_bet_frac = float(row.get("bet_frac") or 0)
     bet_side = str(row.get("bet_side") or "none").strip().lower()
