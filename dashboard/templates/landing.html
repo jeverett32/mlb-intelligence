@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Follow a data-driven MLB betting model with public results, performance tracking, and private operator tools." />
+  <meta property="og:title" content="MLB Betting Intelligence" />
+  <meta property="og:description" content="Public MLB model results, updated daily with ROI, calibration, and market comparison." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
   <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Betting Intelligence</title>
@@ -31,6 +35,7 @@
     <header class="topbar">
       <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
         <img src="/static/favicon.svg" alt="" />
+        <span>MLB Betting Intelligence</span>
       </a>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="nav-toggle-icon"></span>
@@ -52,10 +57,14 @@
       <section class="ps-hero" data-reveal>
         <div class="hero-copy hero-copy-stage">
           <span class="eyebrow" style="color: var(--accent)">Model insights</span>
-          <h1>Track the model. Understand the edge. See the results in public.</h1>
+          <h1>Public MLB model results, updated daily.</h1>
           <p class="ps-hero-copy">
-            MLB Betting Intelligence is a public-facing performance and research surface for a model-driven baseball betting workflow. The landing page explains the system. The analytics page shows the proof.
+            MLB Betting Intelligence is a public audit trail for a model-driven baseball betting workflow. Start with live ROI, calibration, market comparison, and recent settled wagers.
           </p>
+          <div class="hero-actions">
+            <a class="btn-primary" href="/public">View Public Analytics</a>
+            <a class="btn-secondary" href="/register">Request Access</a>
+          </div>
           <div class="hero-badges">
             <span>Public proof</span>
             <span>Private operator controls</span>
@@ -65,17 +74,18 @@
         <aside class="hero-demo" aria-label="Overview" data-tilt>
           <div class="hero-demo-grid">
             <article class="demo-panel demo-panel-primary">
-              <div class="demo-kicker">Live operating snapshot</div>
+              <div class="demo-kicker">Live public snapshot</div>
               <div class="demo-scoreline">
                 <div>
-                  <span>Model edge</span>
-                  <strong>+4.7 pts</strong>
+                  <span>ROI</span>
+                  <strong data-hero="roi_pct">—</strong>
                 </div>
                 <div>
-                  <span>Next decision</span>
-                  <strong>STL @ MIA</strong>
+                  <span>Bets tracked</span>
+                  <strong data-hero="total_bets">—</strong>
                 </div>
               </div>
+              <p class="demo-note" data-hero="freshness">Loaded from public endpoints.</p>
               <div class="demo-bars" aria-hidden="true">
                 <span style="--bar: 74%"></span>
                 <span style="--bar: 58%"></span>
@@ -153,6 +163,13 @@
             <span class="metric-value" data-metric="model_accuracy">—</span>
           </div>
         </div>
+      </section>
+
+      <section class="proof-strip" data-reveal>
+        <a href="/public">Recent settled bets</a>
+        <a href="/public#calibration">Calibration charts</a>
+        <a href="/public">Model vs market</a>
+        <a href="/contact">Questions or access</a>
       </section>
 
       <section class="editorial-band" aria-label="What this project is" data-reveal>
@@ -336,6 +353,14 @@
         </div>
       </section>
     </main>
+    <footer class="public-footer">
+      <span>Metrics update from public endpoints.</span>
+      <nav aria-label="Footer">
+        <a href="/public">Analytics</a>
+        <a href="/contact">Contact</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </footer>
   </div>
 </body>
 </html>

@@ -107,6 +107,34 @@ class PublicSummaryResponse(BaseModel):
     model_accuracy: PublicModelAccuracyResponse
 
 
+class PublicRecentBet(BaseModel):
+    game_date: str
+    matchup: str
+    side: str
+    result: str
+    model_prob: float | None
+    market_prob: float | None
+    edge: float | None
+    stake: float
+    profit_loss: float
+
+
+class PublicRoiPoint(BaseModel):
+    game_date: str
+    cumulative_profit_loss: float
+    cumulative_wagered: float
+    roi_pct: float
+
+
+class PublicReceiptsResponse(BaseModel):
+    last_updated_utc: str
+    settled_bets: int
+    first_bet_date: str | None
+    last_bet_date: str | None
+    recent_bets: list[PublicRecentBet]
+    roi_series: list[PublicRoiPoint]
+
+
 def _hash_password(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
@@ -840,6 +868,12 @@ def get_public_summary(request: Request):
     return _build_public_summary()
 
 
+@app.get("/api/public/receipts", response_model=PublicReceiptsResponse)
+@limiter.limit("30/minute")
+def get_public_receipts(request: Request):
+    return _build_public_receipts()
+
+
 @app.get("/api/model-accuracy", response_model=PrivateModelAccuracyResponse)
 def get_model_accuracy(user: dict = Depends(require_approved_user)):
     return _build_private_model_accuracy()
@@ -956,6 +990,126 @@ def _build_public_summary() -> PublicSummaryResponse:
     return PublicSummaryResponse(
         performance=performance,
         model_accuracy=model_accuracy,
+    )
+
+
+def _settled_public_bets() -> pd.DataFrame:
+    bets_df = DB.get_all_bets()
+    if bets_df.empty:
+        return pd.DataFrame()
+
+    required = {"result", "bet_dollars", "bet_side"}
+    if not required.issubset(set(bets_df.columns)):
+        return pd.DataFrame()
+
+    settled = bets_df[
+        bets_df["result"].notna() & bets_df["bet_dollars"].notna()
+    ].copy()
+    settled = settled[pd.to_numeric(settled["bet_dollars"], errors="coerce") > 0]
+    settled = settled[settled["bet_side"].isin(["home", "away"])]
+    if settled.empty:
+        return settled
+
+    result = settled["result"].astype(bool)
+    side = settled["bet_side"]
+    won_mask = ((result & (side == "home")) | (~result & (side == "away"))).to_numpy()
+    settled["_won"] = won_mask
+    settled["_stake"] = pd.to_numeric(settled["bet_dollars"], errors="coerce").fillna(0.0)
+
+    if "profit_loss" in settled.columns:
+        pnl = pd.to_numeric(settled["profit_loss"], errors="coerce")
+    else:
+        pnl = pd.Series(np.nan, index=settled.index)
+
+    missing_pnl = pnl.isna()
+    if missing_pnl.any():
+        mp_source = settled["market_implied_prob"] if "market_implied_prob" in settled.columns else pd.Series(np.nan, index=settled.index)
+        contracts_source = settled["n_contracts"] if "n_contracts" in settled.columns else pd.Series(np.nan, index=settled.index)
+        mp = pd.to_numeric(mp_source, errors="coerce")
+        n_contracts = pd.to_numeric(contracts_source, errors="coerce")
+        stake = settled["_stake"]
+        home_ratio = np.where(mp > 0, 1.0 / mp, 1.0)
+        away_ratio = np.where((mp > 0) & (mp < 1), 1.0 / (1.0 - mp), 1.0)
+        ratio = np.where(side == "home", home_ratio, away_ratio)
+        returned = np.where(n_contracts.notna(), n_contracts, stake * ratio)
+        fallback = np.where(won_mask, returned - stake, -stake)
+        pnl = pnl.mask(missing_pnl, fallback)
+
+    settled["_profit_loss"] = pd.to_numeric(pnl, errors="coerce").fillna(0.0)
+    return settled
+
+
+def _side_probability(row: pd.Series, column: str) -> float | None:
+    if column not in row or pd.isna(row[column]):
+        return None
+    value = float(row[column])
+    if row.get("bet_side") == "away":
+        value = 1.0 - value
+    return round(value, 4)
+
+
+def _build_public_receipts() -> PublicReceiptsResponse:
+    settled = _settled_public_bets()
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    if settled.empty:
+        return PublicReceiptsResponse(
+            last_updated_utc=now_utc,
+            settled_bets=0,
+            first_bet_date=None,
+            last_bet_date=None,
+            recent_bets=[],
+            roi_series=[],
+        )
+
+    settled["_game_date"] = pd.to_datetime(settled.get("game_date"), errors="coerce")
+    first_date = settled["_game_date"].min()
+    last_date = settled["_game_date"].max()
+
+    recent_bets: list[PublicRecentBet] = []
+    recent_source = settled.sort_values(["_game_date", "game_pk"], ascending=[False, False], na_position="last").head(20)
+    for _, row in recent_source.iterrows():
+        away = str(row.get("away_team") or "Away")
+        home = str(row.get("home_team") or "Home")
+        stake = float(row["_stake"])
+        pnl = float(row["_profit_loss"])
+        recent_bets.append(
+            PublicRecentBet(
+                game_date=str(_safe_value(row.get("game_date")) or "")[:10],
+                matchup=f"{away} @ {home}",
+                side=str(row.get("bet_side") or "").upper(),
+                result="W" if bool(row["_won"]) else "L",
+                model_prob=_side_probability(row, "predicted_prob"),
+                market_prob=_side_probability(row, "market_implied_prob"),
+                edge=_safe_value(row.get("edge")),
+                stake=round(stake, 2),
+                profit_loss=round(pnl, 2),
+            )
+        )
+
+    roi_series: list[PublicRoiPoint] = []
+    running = settled.sort_values(["_game_date", "game_pk"], ascending=[True, True], na_position="last")
+    cumulative_pl = 0.0
+    cumulative_wagered = 0.0
+    for _, row in running.iterrows():
+        cumulative_pl += float(row["_profit_loss"])
+        cumulative_wagered += float(row["_stake"])
+        roi_pct = (cumulative_pl / cumulative_wagered * 100.0) if cumulative_wagered else 0.0
+        roi_series.append(
+            PublicRoiPoint(
+                game_date=str(_safe_value(row.get("game_date")) or "")[:10],
+                cumulative_profit_loss=round(cumulative_pl, 2),
+                cumulative_wagered=round(cumulative_wagered, 2),
+                roi_pct=round(roi_pct, 2),
+            )
+        )
+
+    return PublicReceiptsResponse(
+        last_updated_utc=now_utc,
+        settled_bets=len(settled),
+        first_bet_date=str(_safe_value(first_date))[:10] if pd.notna(first_date) else None,
+        last_bet_date=str(_safe_value(last_date))[:10] if pd.notna(last_date) else None,
+        recent_bets=recent_bets,
+        roi_series=roi_series,
     )
 
 
