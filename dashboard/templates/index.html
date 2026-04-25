@@ -1060,14 +1060,18 @@ function currentTimezone() {
 }
 function formatLocalDate(utc) {
   if (!utc) return '—';
+  const d = new Date(utc);
+  if (!isFinite(d)) return '—';
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     timeZone: currentTimezone(),
-  }).format(new Date(utc));
+  }).format(d);
 }
 function formatLocalDateTime(utc) {
   if (!utc) return '—';
+  const d = new Date(utc);
+  if (!isFinite(d)) return '—';
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -1075,16 +1079,18 @@ function formatLocalDateTime(utc) {
     minute: '2-digit',
     hour12: true,
     timeZone: currentTimezone(),
-  }).format(new Date(utc));
+  }).format(d);
 }
 function formatLocalTime(utc) {
   if (!utc) return '—';
+  const d = new Date(utc);
+  if (!isFinite(d)) return '—';
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
     timeZone: currentTimezone(),
-  }).format(new Date(utc));
+  }).format(d);
 }
 function formatGameDate(game) {
   if (game.game_time_utc) return formatLocalDate(game.game_time_utc);
