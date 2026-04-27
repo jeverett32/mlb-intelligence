@@ -58,6 +58,10 @@ REAL_COLS = {
     "away_era", "away_fip", "away_k9", "away_bb9",
 }
 
+ODDS_OPEN_COLS = {"open_home_ml", "open_away_ml"}
+ODDS_CLOSE_COLS = {"close_home_ml", "close_away_ml"}
+ODDS_IMPLIED_PROB_COLS = {"home_implied_prob", "away_implied_prob"}
+
 
 # ---------------------------------------------------------------------------
 # Connection
@@ -179,6 +183,57 @@ def _row_to_db(row: dict) -> dict:
     return direct
 
 
+def _is_real_line_sql(side: str) -> str:
+    return (
+        f"EXCLUDED.close_{side}_ml IS NOT NULL "
+        f"AND EXCLUDED.open_{side}_ml IS NOT NULL "
+        f"AND EXCLUDED.close_{side}_ml != EXCLUDED.open_{side}_ml"
+    )
+
+
+def _upsert_assignment(col: str, cols: set[str]) -> str:
+    """Build a safe ON CONFLICT assignment for one games-table column."""
+    if col == "extra":
+        return "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)"
+    if col in ODDS_OPEN_COLS:
+        side = "home" if col == "open_home_ml" else "away"
+        if f"close_{side}_ml" not in cols:
+            return f"{col} = COALESCE(EXCLUDED.{col}, games.{col})"
+        return (
+            f"{col} = CASE WHEN {_is_real_line_sql(side)} "
+            f"THEN EXCLUDED.{col} "
+            f"ELSE COALESCE(games.{col}, EXCLUDED.{col}) END"
+        )
+    if col in ODDS_CLOSE_COLS:
+        side = "home" if col == "close_home_ml" else "away"
+        if f"open_{side}_ml" not in cols:
+            return f"{col} = COALESCE(EXCLUDED.{col}, games.{col})"
+        return (
+            f"{col} = CASE WHEN {_is_real_line_sql(side)} "
+            f"THEN EXCLUDED.{col} "
+            f"ELSE COALESCE(games.{col}, EXCLUDED.{col}) END"
+        )
+    if col in ODDS_IMPLIED_PROB_COLS:
+        quality_checks = []
+        if {"open_home_ml", "close_home_ml"} <= cols:
+            quality_checks.append(f"({_is_real_line_sql('home')})")
+        if {"open_away_ml", "close_away_ml"} <= cols:
+            quality_checks.append(f"({_is_real_line_sql('away')})")
+        if not quality_checks:
+            return f"{col} = COALESCE(EXCLUDED.{col}, games.{col})"
+        return (
+            f"{col} = CASE WHEN {' OR '.join(quality_checks)} "
+            f"THEN COALESCE(EXCLUDED.{col}, games.{col}) "
+            f"ELSE COALESCE(games.{col}, EXCLUDED.{col}) END"
+        )
+    return col + " = EXCLUDED." + col
+
+
+def _build_upsert_assignments(cols: list[str]) -> list[str]:
+    col_set = set(cols)
+    return [_upsert_assignment(c, col_set) for c in cols if c != "game_pk"]
+
+
 def upsert_games(df: pd.DataFrame):
     """Upsert a DataFrame of game rows into the games table."""
     if df.empty:
@@ -187,16 +242,7 @@ def upsert_games(df: pd.DataFrame):
     cols = list(rows[0].keys())
     values = [[r.get(c) for c in cols] for r in rows]
     col_list = ", ".join(cols)
-    update_parts = []
-    for c in cols:
-        if c == "game_pk":
-            continue
-        if c == "extra":
-            update_parts.append(
-                "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)"
-            )
-        else:
-            update_parts.append(c + " = EXCLUDED." + c)
+    update_parts = _build_upsert_assignments(cols)
     update_list = ", ".join(update_parts)
     sql = (
         "INSERT INTO games (" + col_list + ") VALUES %s "

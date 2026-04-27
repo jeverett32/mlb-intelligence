@@ -1,0 +1,161 @@
+from datetime import date
+
+import pandas as pd
+
+import db
+from scripts.backfill_sbr_odds import build_backfill_updates
+from scripts.reset_2025_live_lines import build_updates as build_live_line_updates
+
+
+def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
+    assignments = db._build_upsert_assignments(
+        [
+            "game_pk",
+            "open_home_ml",
+            "open_away_ml",
+            "close_home_ml",
+            "close_away_ml",
+            "home_implied_prob",
+            "extra",
+        ]
+    )
+
+    assert any(
+        "open_home_ml = CASE WHEN EXCLUDED.close_home_ml IS NOT NULL" in assignment
+        and "EXCLUDED.close_home_ml != EXCLUDED.open_home_ml" in assignment
+        and "ELSE COALESCE(games.open_home_ml, EXCLUDED.open_home_ml)" in assignment
+        for assignment in assignments
+    )
+    assert any(
+        "close_home_ml = CASE WHEN EXCLUDED.close_home_ml IS NOT NULL" in assignment
+        and "EXCLUDED.close_home_ml != EXCLUDED.open_home_ml" in assignment
+        and "ELSE COALESCE(games.close_home_ml, EXCLUDED.close_home_ml)" in assignment
+        for assignment in assignments
+    )
+    assert any(
+        "home_implied_prob = CASE WHEN" in assignment
+        and "COALESCE(games.home_implied_prob, EXCLUDED.home_implied_prob)" in assignment
+        for assignment in assignments
+    )
+    assert "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)" in assignments
+
+
+def test_backfill_updates_only_valid_real_sbr_lines():
+    candidates = [
+        {
+            "game_pk": 1,
+            "game_date": date(2026, 4, 1),
+            "home_team": "NYY",
+            "away_team": "BOS",
+        },
+        {
+            "game_pk": 2,
+            "game_date": date(2026, 4, 1),
+            "home_team": "LAD",
+            "away_team": "SFG",
+        },
+        {
+            "game_pk": 3,
+            "game_date": date(2026, 4, 1),
+            "home_team": "SEA",
+            "away_team": "TEX",
+        },
+    ]
+    sbr_df = pd.DataFrame(
+        [
+            {
+                "game_date": "2026-04-01",
+                "home_team": "NYY",
+                "away_team": "BOS",
+                "open_home_ml": -120,
+                "open_away_ml": 110,
+                "close_home_ml": -135,
+                "close_away_ml": 125,
+                "odds_source": "pinnacle",
+            },
+            {
+                "game_date": "2026-04-01",
+                "home_team": "LAD",
+                "away_team": "SFG",
+                "open_home_ml": -150,
+                "open_away_ml": 140,
+                "close_home_ml": -150,
+                "close_away_ml": 140,
+                "odds_source": "pinnacle",
+            },
+            {
+                "game_date": "2026-04-01",
+                "home_team": "SEA",
+                "away_team": "TEX",
+                "open_home_ml": -110,
+                "open_away_ml": 100,
+                "close_home_ml": -510,
+                "close_away_ml": 420,
+                "odds_source": "pinnacle",
+            },
+        ]
+    )
+
+    updates = build_backfill_updates(candidates, sbr_df)
+
+    assert [update["game_pk"] for update in updates] == [1]
+    assert updates[0]["close_home_ml"] == -135
+    assert updates[0]["home_implied_prob"] is not None
+
+
+def test_backfill_skips_ambiguous_doubleheader_keys():
+    candidates = [
+        {
+            "game_pk": 1,
+            "game_date": date(2026, 4, 1),
+            "home_team": "NYY",
+            "away_team": "BOS",
+        },
+        {
+            "game_pk": 2,
+            "game_date": date(2026, 4, 1),
+            "home_team": "NYY",
+            "away_team": "BOS",
+        },
+    ]
+    sbr_df = pd.DataFrame(
+        [
+            {
+                "game_date": "2026-04-01",
+                "home_team": "NYY",
+                "away_team": "BOS",
+                "open_home_ml": -120,
+                "open_away_ml": 110,
+                "close_home_ml": -135,
+                "close_away_ml": 125,
+                "odds_source": "pinnacle",
+            }
+        ]
+    )
+
+    assert build_backfill_updates(candidates, sbr_df) == []
+
+
+def test_2025_live_line_updates_reset_close_to_open():
+    updates = build_live_line_updates(
+        [
+            {
+                "game_pk": 776300,
+                "open_home_ml": -120,
+                "open_away_ml": 110,
+                "close_home_ml": -740,
+                "close_away_ml": 600,
+            }
+        ]
+    )
+
+    assert updates == [
+        {
+            "game_pk": 776300,
+            "close_home_ml": -120,
+            "close_away_ml": 110,
+            "home_implied_prob": updates[0]["home_implied_prob"],
+            "away_implied_prob": updates[0]["away_implied_prob"],
+        }
+    ]
+    assert round(updates[0]["home_implied_prob"] + updates[0]["away_implied_prob"], 12) == 1

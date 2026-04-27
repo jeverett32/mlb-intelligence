@@ -471,12 +471,12 @@ def fetch_odds(schedule_df, today_only=False):
         for col in ml_cols:
             if col in df.columns:
                 vals = pd.to_numeric(df[col], errors="coerce").abs()
-                bad_mask = bad_mask | (vals > 700)
+                bad_mask = bad_mask | (vals > 500)
         n_bad = bad_mask.sum()
         if n_bad > 0:
             print(
                 f"  WARNING: {n_bad} {source_label} rows have implausible "
-                f"moneylines (|ml| > 700) — dropping."
+                f"moneylines (|ml| > 500) — dropping."
             )
             df = df[~bad_mask]
         return df
