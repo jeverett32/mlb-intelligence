@@ -247,6 +247,31 @@ function fmtSignedPct(v) {
   var n = Number(v);
   return (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 }
+function fmtPublicDate(value) {
+  if (!value) return '—';
+  var d = new Date(String(value).slice(0, 10) + 'T00:00:00Z');
+  if (!isFinite(d)) return String(value).slice(0, 10);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(d);
+}
+function fmtPublicDateTime(value) {
+  if (!value) return '—';
+  var d = new Date(value);
+  if (!isFinite(d)) return String(value);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short'
+  }).format(d);
+}
 function esc(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
     return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
@@ -376,9 +401,9 @@ function makeChart(id, cfg) {
 }
 
 function updateReceipts(receipts) {
-  document.getElementById('data-updated').textContent = receipts.last_updated_utc ? receipts.last_updated_utc.replace('T', ' ').replace('+00:00', '') : '—';
+  document.getElementById('data-updated').textContent = fmtPublicDateTime(receipts.last_updated_utc);
   document.getElementById('data-settled').textContent = receipts.settled_bets || 0;
-  document.getElementById('data-window').textContent = receipts.first_bet_date && receipts.last_bet_date ? receipts.first_bet_date + ' to ' + receipts.last_bet_date : 'No settled bets yet';
+  document.getElementById('data-window').textContent = receipts.first_bet_date && receipts.last_bet_date ? fmtPublicDate(receipts.first_bet_date) + ' to ' + fmtPublicDate(receipts.last_bet_date) : 'No settled bets yet';
 
   makeChart('chart-roi', roiChartCfg(receipts.roi_series || []));
 
