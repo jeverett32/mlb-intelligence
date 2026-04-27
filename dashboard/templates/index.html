@@ -645,11 +645,6 @@
     .cal-day.active .cal-day-num {
       color: var(--bg-primary);
     }
-    .cal-day.disabled {
-      opacity: 0.3;
-      cursor: default;
-    }
-    .cal-day.disabled:hover { background: none; }
     @media (max-width: 600px) {
       .cal-day { padding: 6px 8px; min-width: 36px; }
     }
@@ -2055,26 +2050,30 @@ const MONTH_NAMES = ['January','February','March','April','May','June','July','A
 
 function seasonBounds() {
   const y = new Date().getFullYear();
-  return { start: `${y}-03-20`, end: `${y}-11-05` };
+  return { start: `${y}-03-25`, end: `${y}-09-07` };
 }
 
 function renderCalendar() {
   const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const selected = state.gamesDateStr || todayDateStr();
   const weekDays = getWeekDays(anchor);
-  const mid = weekDays[3];
   const { start, end } = seasonBounds();
+  const visibleDays = weekDays.filter(d => {
+    const ds = fmtDateStr(d);
+    return ds >= start && ds <= end;
+  });
+  if (!visibleDays.length) return;
+  const mid = visibleDays[Math.floor(visibleDays.length / 2)];
 
   document.getElementById('cal-month-label').textContent = MONTH_NAMES[mid.getMonth()];
   document.getElementById('cal-year-label').textContent = mid.getFullYear();
 
   const container = document.getElementById('cal-days');
-  container.innerHTML = weekDays.map(d => {
+  container.innerHTML = visibleDays.map(d => {
     const ds = fmtDateStr(d);
     const isActive = ds === selected;
-    const outOfSeason = ds < start || ds > end;
     return `
-      <div class="cal-day${isActive ? ' active' : ''}${outOfSeason ? ' disabled' : ''}" ${outOfSeason ? '' : `onclick="selectGameDate('${ds}')"`}>
+      <div class="cal-day${isActive ? ' active' : ''}" onclick="selectGameDate('${ds}')">
         <span class="cal-day-label">${DAY_NAMES[d.getDay()]}</span>
         <span class="cal-day-num">${String(d.getDate()).padStart(2, '0')}</span>
       </div>`;
@@ -2082,19 +2081,18 @@ function renderCalendar() {
 
   const prevBtn = document.getElementById('cal-prev');
   const nextBtn = document.getElementById('cal-next');
-  const weekStart = fmtDateStr(weekDays[0]);
-  const weekEnd = fmtDateStr(weekDays[6]);
-  prevBtn.disabled = weekStart <= start;
-  nextBtn.disabled = weekEnd >= end;
+  prevBtn.disabled = fmtDateStr(weekDays[0]) <= start;
+  nextBtn.disabled = fmtDateStr(weekDays[6]) >= end;
 }
 
 function calWeekShift(dir) {
   const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const d = new Date(anchor + 'T12:00:00');
   d.setDate(d.getDate() + dir * 7);
-  const candidate = fmtDateStr(d);
   const { start, end } = seasonBounds();
-  if (candidate < start || candidate > end) return;
+  const candidate = fmtDateStr(d);
+  if (candidate < start && dir < 0) return;
+  if (candidate > end && dir > 0) return;
   state.gamesWeekAnchor = candidate;
   renderCalendar();
 }
