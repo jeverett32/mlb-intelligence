@@ -20,6 +20,7 @@ def _empty_model_picks() -> pd.DataFrame:
 db.init_auth_tables = lambda: None
 db.purge_expired_sessions = lambda: 0
 db.get_all_bets = _empty_bets
+db.get_all_user_orders = _empty_bets
 db.get_user_orders = lambda email: _empty_bets()
 db.get_model_picks = _empty_model_picks
 db.get_setting = lambda key, default="": default
