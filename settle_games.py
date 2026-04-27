@@ -27,7 +27,8 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(hours=cutoff_hours)
 
-    # Find pipeline-processed games with no result yet
+    # Find games with no result yet. Postponed games are included because MLB
+    # may later finalize the same game_pk after the make-up date.
     conn = DB.get_connection()
     try:
         with conn.cursor() as cur:
@@ -40,7 +41,7 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                   AND g.home_win IS NULL
                   AND g.game_time_utc IS NOT NULL
                   AND g.game_time_utc::timestamptz < %s
-                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+                  AND COALESCE(g.extra->>'game_status', '') <> 'cancelled'
                 ORDER BY g.game_date, g.game_pk
             """,
                 (cutoff,),
@@ -124,10 +125,17 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                         SET home_score = %s,
                             away_score = %s,
                             home_win   = %s,
+                            extra = COALESCE(extra, '{}'::jsonb) || %s::jsonb,
                             updated_at = NOW()
                         WHERE game_pk = %s
                     """,
-                        (int(h_score), int(a_score), home_win, int(game_pk)),
+                        (
+                            int(h_score),
+                            int(a_score),
+                            home_win,
+                            json.dumps({"game_status": "final"}),
+                            int(game_pk),
+                        ),
                     )
                 conn2.commit()
             finally:

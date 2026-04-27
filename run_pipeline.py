@@ -314,7 +314,7 @@ def run_pipeline_for_game(game_pk: str):
 
 def settle_completed_games():
     """
-    For each bet whose game started >4h ago and still has no result:
+    For each game that started >4h ago and still has no result:
       - fetch the final from MLB Stats API by gamePk
       - accumulate finals / postponements
       - apply all updates + bet backfill in one transaction at the end

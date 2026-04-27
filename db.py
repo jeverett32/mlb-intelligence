@@ -337,22 +337,25 @@ def get_upcoming_needing_prediction(season: int = 2026) -> pd.DataFrame:
 
 
 def get_settleable_games(season: int, cutoff_utc: datetime) -> list[dict]:
-    """Games with bets or user_orders that started before cutoff and still lack a result."""
+    """Games that started before cutoff and still lack a result.
+
+    Postponed games are intentionally included. MLB can later attach a final
+    result to the same game_pk after the make-up date, so settlement must
+    revisit them until they either become final or are explicitly cancelled.
+    """
     with pooled_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT DISTINCT g.game_pk, g.game_date, g.home_team, g.away_team,
+                SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
                        g.game_time_utc
                 FROM games g
-                LEFT JOIN bets b ON g.game_pk = b.game_pk
-                LEFT JOIN user_orders uo ON g.game_pk = uo.game_pk
                 WHERE g.season = %s
                   AND g.home_win IS NULL
                   AND g.game_time_utc IS NOT NULL
                   AND g.game_time_utc::timestamptz < %s
-                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-                  AND (b.game_pk IS NOT NULL OR uo.game_pk IS NOT NULL)
+                  AND COALESCE(g.extra->>'game_status', '') <> 'cancelled'
+                ORDER BY g.game_date, g.game_pk
                 """,
                 (season, cutoff_utc),
             )
@@ -378,6 +381,8 @@ def apply_settlements(finals: list[dict], postponed_pks: list[int]) -> None:
                         home_score = v.home_score,
                         away_score = v.away_score,
                         home_win   = v.home_win,
+                        extra = COALESCE(g.extra, '{}'::jsonb)
+                                || jsonb_build_object('game_status', 'final'),
                         updated_at = NOW()
                     FROM (VALUES %s) AS v(game_pk, home_score, away_score, home_win)
                     WHERE g.game_pk = v.game_pk
