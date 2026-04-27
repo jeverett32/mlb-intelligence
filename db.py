@@ -1515,6 +1515,27 @@ def get_user_orders(email: str) -> pd.DataFrame:
     return df
 
 
+def get_all_user_orders() -> pd.DataFrame:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM user_orders
+                ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
+    return df
+
+
 def get_user_order(email: str, game_pk: str | int) -> dict | None:
     email = _norm_email(email)
     conn = get_connection()

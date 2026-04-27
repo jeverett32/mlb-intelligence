@@ -780,7 +780,7 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
 
 
 def _build_public_performance(email: str | None = None) -> PublicPerformanceResponse:
-    bets_df = DB.get_user_orders(email) if email else DB.get_all_bets()
+    bets_df = DB.get_user_orders(email) if email else DB.get_all_user_orders()
     if bets_df.empty:
         return _empty_public_performance()
 
@@ -1006,7 +1006,7 @@ def _build_public_summary() -> PublicSummaryResponse:
 
 
 def _settled_public_bets() -> pd.DataFrame:
-    bets_df = DB.get_all_bets()
+    bets_df = DB.get_all_user_orders()
     if bets_df.empty:
         return pd.DataFrame()
 
