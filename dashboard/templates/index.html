@@ -570,6 +570,89 @@
       line-height: 1.5;
     }
 
+    /* ── Today: Game Cards Grid ── */
+    .game-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    @media (max-width: 820px) {
+      .game-cards-grid { grid-template-columns: 1fr; }
+    }
+    .game-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: box-shadow 0.15s;
+    }
+    .game-card:hover {
+      box-shadow: var(--shadow-md);
+    }
+    .game-card-matchup {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: 14px 18px 10px;
+    }
+    .game-card-team {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 0;
+    }
+    .game-card-team .team-logo {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+    }
+    .game-card-team .team-logo img {
+      width: 22px;
+      height: 22px;
+    }
+    .game-card-team-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .game-card-time {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .game-card-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 14px;
+      padding: 10px 18px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+    .game-card-detail {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+    .game-card-detail strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .game-card-side {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 4px;
+    }
+
     .teams-spotlight {
       display: grid;
       grid-template-columns: 1.2fr 0.8fr;
@@ -1178,9 +1261,9 @@
       <div class="table-wrap" id="today-open-body"></div>
     </div>
 
-    <div class="panel">
-      <div class="panel-header">Upcoming Games</div>
-      <div class="table-wrap" id="today-slate-body"></div>
+    <div>
+      <div class="panel-header" style="background:none;border:none;padding:16px 0 8px;">Upcoming Games</div>
+      <div class="game-cards-grid" id="today-slate-body"></div>
     </div>
   </div>
 
@@ -1371,6 +1454,18 @@ const state = {
   openBets: null,
   settledBets: null,
 };
+
+const TEAM_FULL = {
+  ARI:'Arizona Diamondbacks',ATL:'Atlanta Braves',BAL:'Baltimore Orioles',BOS:'Boston Red Sox',
+  CHC:'Chicago Cubs',CWS:'Chicago White Sox',CIN:'Cincinnati Reds',CLE:'Cleveland Guardians',
+  COL:'Colorado Rockies',DET:'Detroit Tigers',HOU:'Houston Astros',KC:'Kansas City Royals',
+  LAA:'Los Angeles Angels',LAD:'Los Angeles Dodgers',MIA:'Miami Marlins',MIL:'Milwaukee Brewers',
+  MIN:'Minnesota Twins',NYM:'New York Mets',NYY:'New York Yankees',OAK:'Oakland Athletics',
+  PHI:'Philadelphia Phillies',PIT:'Pittsburgh Pirates',SD:'San Diego Padres',SF:'San Francisco Giants',
+  SEA:'Seattle Mariners',STL:'St. Louis Cardinals',TB:'Tampa Bay Rays',TEX:'Texas Rangers',
+  TOR:'Toronto Blue Jays',WSH:'Washington Nationals',
+};
+function teamName(abbr) { return TEAM_FULL[abbr] || abbr; }
 
 function fmt$(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
@@ -1717,25 +1812,48 @@ function renderPassGames(targetId, games, emptyMessage) {
 }
 
 function renderUpcomingSlate(targetId, games, emptyMessage) {
-  renderTable(
-    targetId,
-    ['Date', 'Time', 'Away', 'Home', 'Market (Home)', 'Market (Away)', 'Model', 'Edge', 'Side', 'Status'],
-    games.map(g => `
-      <tr>
-        <td>${formatGameDate(g)}</td>
-        <td>${formatLocalTime(g.game_time_utc)}</td>
-        <td>${g.away_team || '—'}</td>
-        <td>${g.home_team || '—'}</td>
-        <td>${fmtML(g.close_home_ml)} <span style="color:var(--text-muted);font-size:0.75rem">(${fmtPct(g.home_implied_prob)})</span></td>
-        <td>${fmtML(g.close_away_ml)} <span style="color:var(--text-muted);font-size:0.75rem">(${fmtPct(g.away_implied_prob)})</span></td>
-        <td>${fmtPct(g.predicted_prob)}</td>
-        <td>${edgeText(g.edge)}</td>
-        <td>${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}</td>
-        <td>${betStatus(g)}</td>
-      </tr>
-    `),
-    emptyMessage
-  );
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!games.length) {
+    el.innerHTML = `<div class="empty">${emptyMessage}</div>`;
+    return;
+  }
+  el.innerHTML = games.map(g => {
+    const awayAbbr = g.away_team || '—';
+    const homeAbbr = g.home_team || '—';
+    const awayName = teamName(awayAbbr);
+    const homeName = teamName(homeAbbr);
+    return `
+      <div class="game-card">
+        <div class="game-card-matchup">
+          <div class="game-card-team">
+            <div class="team-logo">
+              <img src="/static/team-logos/${awayAbbr}.png" alt="${awayAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+              <span class="team-logo-fallback">${awayAbbr}</span>
+            </div>
+            <span class="game-card-team-name">${awayName}</span>
+            <span class="game-card-time">${formatLocalTime(g.game_time_utc)}</span>
+          </div>
+          <div class="game-card-team">
+            <div class="team-logo">
+              <img src="/static/team-logos/${homeAbbr}.png" alt="${homeAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+              <span class="team-logo-fallback">${homeAbbr}</span>
+            </div>
+            <span class="game-card-team-name">${homeName}</span>
+          </div>
+        </div>
+        <div class="game-card-details">
+          <div class="game-card-detail">Away ${fmtML(g.close_away_ml)} <strong>${fmtPct(g.away_implied_prob)}</strong></div>
+          <div class="game-card-detail">Home ${fmtML(g.close_home_ml)} <strong>${fmtPct(g.home_implied_prob)}</strong></div>
+          <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
+          <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
+          <div class="game-card-side">
+            <span>${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}</span>
+            <span>${betStatus(g)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderSettledBets(data) {
