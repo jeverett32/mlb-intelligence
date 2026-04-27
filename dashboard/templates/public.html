@@ -24,9 +24,9 @@
 <body class="public-analytics-page">
   <div class="ps-shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="MLB Betting Intelligence home">
+      <a class="brand" href="/" aria-label="MLB Intelligence home">
         <img src="/static/favicon.svg" alt="" />
-        <span>MLB Betting Intelligence</span>
+        <span>MLB Intelligence</span>
       </a>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="nav-toggle-icon"></span>
@@ -126,12 +126,12 @@
         </div>
         <article class="analytics-panel analytics-panel-wide">
           <div class="analytics-panel-header">
-            <span>Cumulative return</span>
-            <strong>Running P/L and ROI across settled wagers</strong>
+            <span>Cumulative ROI</span>
+            <strong>Stake-normalized return across settled wagers</strong>
           </div>
           <div class="analytics-panel-body">
             <div class="chart-wrap chart-wrap-large"><canvas id="chart-roi"></canvas></div>
-            <p class="chart-caption">Positive slope means realized profit is growing faster than stake deployed.</p>
+            <p class="chart-caption">Positive slope means realized return is improving relative to stake deployed.</p>
           </div>
         </article>
       </section>
@@ -190,7 +190,7 @@
         </article>
       </section>
 
-      <section class="analytics-section" data-reveal>
+      <section class="analytics-section analytics-section-receipts" data-reveal>
         <div class="analytics-section-header">
           <div>
             <span class="eyebrow">Recent Settled Bets</span>
@@ -208,7 +208,7 @@
                 <th>Model</th>
                 <th>Market</th>
                 <th>Edge</th>
-                <th>P/L</th>
+                <th>Return</th>
               </tr>
             </thead>
             <tbody id="recent-bets-body">
@@ -242,10 +242,10 @@ var charts = {};
 
 function fmtPct(v) { return v != null ? (Number(v) * 100).toFixed(1) + '%' : '—'; }
 function fmtPctWhole(v) { return v != null ? (Number(v) * 100).toFixed(1) + '%' : '—'; }
-function fmtMoney(v) {
+function fmtSignedPct(v) {
   if (v == null) return '—';
   var n = Number(v);
-  return (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2);
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 }
 function esc(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, function(c) {
@@ -324,7 +324,6 @@ function calChartCfg(data) {
 
 function roiChartCfg(data) {
   var accent = cssVar('--accent') || '#B8860B';
-  var success = cssVar('--success') || '#2D6A4F';
   var grid = cssVar('--grid-color') || '#E8E4DE';
   var tick = cssVar('--tick-color') || '#9C9690';
   var axisTitle = cssVar('--axis-title-color') || '#6B6560';
@@ -334,20 +333,12 @@ function roiChartCfg(data) {
     data: {
       labels: labels,
       datasets: [{
-        label: 'Cumulative P/L',
-        data: data.map(function(d) { return d.cumulative_profit_loss; }),
+        label: 'Cumulative ROI',
+        data: data.map(function(d) { return d.roi_pct; }),
         borderColor: accent,
         backgroundColor: accent,
         tension: 0.25,
         yAxisID: 'y',
-        pointRadius: 0,
-      }, {
-        label: 'ROI %',
-        data: data.map(function(d) { return d.roi_pct; }),
-        borderColor: success,
-        backgroundColor: success,
-        tension: 0.25,
-        yAxisID: 'y1',
         pointRadius: 0,
       }]
     },
@@ -360,7 +351,7 @@ function roiChartCfg(data) {
         tooltip: {
           callbacks: {
             label: function(d) {
-              return d.dataset.label + ': ' + (d.dataset.yAxisID === 'y' ? fmtMoney(d.parsed.y) : d.parsed.y.toFixed(1) + '%');
+              return d.dataset.label + ': ' + fmtSignedPct(d.parsed.y);
             }
           }
         }
@@ -368,14 +359,8 @@ function roiChartCfg(data) {
       scales: {
         x: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 6 } },
         y: {
-          title: { display: true, text: 'Cumulative P/L', color: axisTitle, font: { size: 11 } },
+          title: { display: true, text: 'Cumulative ROI', color: axisTitle, font: { size: 11 } },
           grid: { color: grid },
-          ticks: { color: tick, callback: function(v) { return '$' + v; } }
-        },
-        y1: {
-          position: 'right',
-          title: { display: true, text: 'ROI %', color: axisTitle, font: { size: 11 } },
-          grid: { drawOnChartArea: false },
           ticks: { color: tick, callback: function(v) { return v + '%'; } }
         }
       }
@@ -404,7 +389,7 @@ function updateReceipts(receipts) {
     return;
   }
   body.innerHTML = bets.map(function(b) {
-    var pnlClass = b.profit_loss > 0 ? 'positive' : (b.profit_loss < 0 ? 'negative' : '');
+    var returnClass = b.return_pct > 0 ? 'positive' : (b.return_pct < 0 ? 'negative' : '');
     return '<tr>' +
       '<td>' + esc(b.game_date) + '</td>' +
       '<td>' + esc(b.matchup) + '</td>' +
@@ -413,7 +398,7 @@ function updateReceipts(receipts) {
       '<td>' + fmtPctWhole(b.model_prob) + '</td>' +
       '<td>' + fmtPctWhole(b.market_prob) + '</td>' +
       '<td>' + (b.edge != null ? (Number(b.edge) * 100).toFixed(1) + ' pts' : '—') + '</td>' +
-      '<td class="' + pnlClass + '">' + fmtMoney(b.profit_loss) + '</td>' +
+      '<td class="' + returnClass + '">' + fmtSignedPct(b.return_pct) + '</td>' +
     '</tr>';
   }).join('');
 }

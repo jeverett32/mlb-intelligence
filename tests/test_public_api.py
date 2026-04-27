@@ -297,7 +297,12 @@ def test_public_receipts_returns_recent_bets_and_roi(monkeypatch, app_module, cl
     assert body["recent_bets"][0]["matchup"] == "BOS @ NYY"
     assert body["recent_bets"][0]["result"] == "L"
     assert body["recent_bets"][0]["model_prob"] == 0.58
-    assert body["roi_series"][-1]["cumulative_profit_loss"] == -4.0
+    assert body["recent_bets"][0]["return_pct"] == -100.0
+    assert "profit_loss" not in body["recent_bets"][0]
+    assert "stake" not in body["recent_bets"][0]
+    assert body["roi_series"][-1]["roi_pct"] == -18.18
+    assert "cumulative_profit_loss" not in body["roi_series"][-1]
+    assert "cumulative_wagered" not in body["roi_series"][-1]
 
 
 def test_private_api_requires_auth(client):

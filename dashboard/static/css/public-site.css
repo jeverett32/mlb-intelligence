@@ -1311,6 +1311,10 @@ html, body {
   margin-bottom: 22px;
 }
 
+.analytics-section-receipts {
+  margin-top: 42px;
+}
+
 .analytics-section-header {
   display: flex;
   align-items: end;

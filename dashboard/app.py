@@ -32,7 +32,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
-app = FastAPI(title="MLB Betting Dashboard")
+app = FastAPI(title="MLB Intelligence")
 app.state.limiter = limiter
 
 
@@ -116,14 +116,11 @@ class PublicRecentBet(BaseModel):
     model_prob: float | None
     market_prob: float | None
     edge: float | None
-    stake: float
-    profit_loss: float
+    return_pct: float
 
 
 class PublicRoiPoint(BaseModel):
     game_date: str
-    cumulative_profit_loss: float
-    cumulative_wagered: float
     roi_pct: float
 
 
@@ -1096,8 +1093,9 @@ def _build_public_receipts() -> PublicReceiptsResponse:
     for _, row in recent_source.iterrows():
         away = str(row.get("away_team") or "Away")
         home = str(row.get("home_team") or "Home")
-        stake = float(row["_stake"])
         pnl = float(row["_profit_loss"])
+        stake = float(row["_stake"])
+        return_pct = (pnl / stake * 100.0) if stake else 0.0
         recent_bets.append(
             PublicRecentBet(
                 game_date=str(_safe_value(row.get("game_date")) or "")[:10],
@@ -1107,8 +1105,7 @@ def _build_public_receipts() -> PublicReceiptsResponse:
                 model_prob=_side_probability(row, "predicted_prob"),
                 market_prob=_side_probability(row, "market_implied_prob"),
                 edge=_safe_value(row.get("edge")),
-                stake=round(stake, 2),
-                profit_loss=round(pnl, 2),
+                return_pct=round(return_pct, 2),
             )
         )
 
@@ -1123,8 +1120,6 @@ def _build_public_receipts() -> PublicReceiptsResponse:
         roi_series.append(
             PublicRoiPoint(
                 game_date=str(_safe_value(row.get("game_date")) or "")[:10],
-                cumulative_profit_loss=round(cumulative_pl, 2),
-                cumulative_wagered=round(cumulative_wagered, 2),
                 roi_pct=round(roi_pct, 2),
             )
         )

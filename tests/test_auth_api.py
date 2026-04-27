@@ -94,7 +94,7 @@ def test_admin_can_toggle_global_live(monkeypatch, app_module, client):
 def test_root_returns_landing_page_for_unauthenticated_user(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert "MLB Betting Intelligence" in r.text
+    assert "MLB Intelligence" in r.text
     assert "Public MLB model results, updated daily." in r.text
     assert "MLB Model Performance" not in r.text
     assert "MLB Betting Dashboard" not in r.text
@@ -114,8 +114,8 @@ def test_root_returns_private_dashboard_for_approved_user(monkeypatch, app_modul
 
     r = client.get("/")
     assert r.status_code == 200
-    assert "MLB Betting Dashboard" in r.text
-    assert "MLB Betting Intelligence" not in r.text
+    assert "MLB Intelligence" in r.text
+    assert "MLB Betting Dashboard" not in r.text
 
 
 def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):
@@ -223,5 +223,5 @@ def test_root_denies_private_dashboard_to_unapproved_users(monkeypatch, approval
 
     r = client.get("/")
     assert r.status_code == 200
-    assert "MLB Betting Intelligence" in r.text
+    assert "MLB Intelligence" in r.text
     assert "MLB Betting Dashboard" not in r.text
