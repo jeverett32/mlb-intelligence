@@ -1457,6 +1457,33 @@ html, body {
 
 .analytics-table tr:last-child td { border-bottom: 0; }
 
+.analytics-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.analytics-pagination button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.58);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.analytics-pagination button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .positive { color: var(--success) !important; }
 .negative { color: var(--danger) !important; }
 

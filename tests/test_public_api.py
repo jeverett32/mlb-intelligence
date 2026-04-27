@@ -528,6 +528,13 @@ def test_public_page_preserves_analytics_functionality(client):
     assert "/api/public/model-accuracy" in r.text
 
 
+def test_public_receipts_table_has_pagination_controls(client):
+    r = client.get("/public")
+    assert r.status_code == 200
+    assert 'id="recent-bets-pagination"' in r.text
+    assert "RECENT_BETS_PAGE_SIZE = 5" in r.text
+
+
 def test_public_page_feels_like_deeper_proof_surface(client):
     """Public page should feel like the intentional deeper proof surface for landing page."""
     r = client.get("/public")
