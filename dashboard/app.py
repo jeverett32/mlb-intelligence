@@ -954,6 +954,100 @@ def get_teams(user: dict = Depends(require_approved_user)):
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/games-by-date")
+def get_games_by_date(
+    date: str = None,
+    user: dict = Depends(require_approved_user),
+):
+    user_tz = ZoneInfo(
+        DB.get_user_setting(
+            user["email"], "dashboard_timezone", _get_dashboard_timezone()
+        )
+    )
+    if not date:
+        date = pd.Timestamp.now(tz=user_tz).strftime("%Y-%m-%d")
+
+    try:
+        target = pd.Timestamp(date)
+    except Exception:
+        return JSONResponse({"error": "Invalid date format"}, status_code=400)
+
+    try:
+        games_df = DB.get_games_df(season=ACTIVE_SEASON)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    if games_df.empty:
+        return {"date": date, "games": []}
+
+    games_df["game_date"] = pd.to_datetime(games_df["game_date"], errors="coerce")
+
+    if "game_time_utc" in games_df.columns:
+        game_times = pd.to_datetime(
+            games_df["game_time_utc"], errors="coerce", utc=True
+        )
+        game_local_dates = game_times.dt.tz_convert(user_tz).dt.date
+        has_time = game_times.notna()
+        matches_time = has_time & (game_local_dates == target.date())
+        matches_date = ~has_time & (games_df["game_date"].dt.date == target.date())
+        day_games = games_df[matches_time | matches_date].copy()
+    else:
+        day_games = games_df[games_df["game_date"].dt.date == target.date()].copy()
+
+    bets_df = DB.get_all_bets()
+    if not bets_df.empty:
+        pred_cols = [
+            "game_pk", "predicted_prob", "edge", "bet_side", "bet_frac",
+            "market_implied_prob", "bet_dollars", "result", "kalshi_order_id",
+        ]
+        available = [c for c in pred_cols if c in bets_df.columns]
+        bets_df["game_pk"] = bets_df["game_pk"].astype(str)
+        day_games["game_pk"] = day_games["game_pk"].astype(str)
+        day_games = day_games.merge(bets_df[available], on="game_pk", how="left")
+
+    user_orders = DB.get_user_orders(user["email"])
+    if not user_orders.empty:
+        user_orders = user_orders.copy()
+        user_orders["game_pk"] = user_orders["game_pk"].astype(str)
+        order_cols = [
+            "game_pk", "bet_dollars", "n_contracts", "kalshi_order_id",
+            "status", "dry_run", "live_price", "live_edge", "result",
+        ]
+        available = [c for c in order_cols if c in user_orders.columns]
+        day_games = day_games.merge(
+            user_orders[available], on="game_pk", how="left",
+            suffixes=("_bets", "_user"),
+        )
+        for col in order_cols:
+            if col == "game_pk":
+                continue
+            user_col = col + "_user"
+            bets_col = col + "_bets"
+            if user_col in day_games.columns and bets_col in day_games.columns:
+                day_games[col] = day_games[user_col].combine_first(day_games[bets_col])
+                day_games.drop(columns=[user_col, bets_col], inplace=True)
+            elif user_col in day_games.columns:
+                day_games.rename(columns={user_col: col}, inplace=True)
+            elif bets_col in day_games.columns:
+                day_games.rename(columns={bets_col: col}, inplace=True)
+
+    if "game_time_utc" in day_games.columns:
+        day_games = day_games.sort_values("game_time_utc", na_position="last")
+
+    cols = [
+        "game_pk", "game_date", "game_time_utc", "home_team", "away_team",
+        "home_score", "away_score", "home_win",
+        "home_implied_prob", "away_implied_prob", "close_home_ml", "close_away_ml",
+        "predicted_prob", "edge", "bet_side", "bet_frac", "bet_dollars",
+        "n_contracts", "result", "kalshi_order_id", "status", "dry_run",
+        "live_price", "live_edge",
+    ]
+    return {
+        "date": date,
+        "games": _safe_records(day_games[[c for c in cols if c in day_games.columns]]),
+    }
+
+
 @app.get("/api/upcoming")
 def get_upcoming(user: dict = Depends(require_approved_user)):
     try:

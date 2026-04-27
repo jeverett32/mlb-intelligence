@@ -571,31 +571,80 @@
     }
 
     /* ── Today: Game Cards Grid ── */
-    .date-filter {
+    /* ── Calendar Bar ── */
+    .calendar-bar {
       display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 0 20px;
     }
-    .date-filter-btn {
-      flex: 1;
-      padding: 8px 12px;
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      font-weight: 500;
+    .calendar-month {
+      display: flex;
+      flex-direction: column;
+      min-width: 52px;
+    }
+    .calendar-month span:first-child {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.15;
+    }
+    .calendar-month span:last-child {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .cal-arrow {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
       color: var(--text-secondary);
-      transition: all 0.15s;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      line-height: 1;
     }
-    .date-filter-btn:hover {
-      background: var(--bg-card);
+    .cal-arrow:hover { background: var(--bg-elevated); }
+    .cal-days {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+      justify-content: center;
+    }
+    .cal-day {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.12s;
+      min-width: 44px;
+    }
+    .cal-day:hover { background: var(--bg-elevated); }
+    .cal-day.active {
+      background: var(--text-primary);
+      color: var(--bg-primary);
+    }
+    .cal-day-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .cal-day-num {
+      font-size: 0.92rem;
+      font-weight: 700;
       color: var(--text-primary);
     }
-    .date-filter-btn.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #000;
+    .cal-day.active .cal-day-label,
+    .cal-day.active .cal-day-num {
+      color: var(--bg-primary);
+    }
+    @media (max-width: 600px) {
+      .cal-day { padding: 6px 8px; min-width: 36px; }
     }
 
     .game-cards-grid {
@@ -678,6 +727,24 @@
       align-items: center;
       justify-content: space-between;
       padding-top: 4px;
+    }
+    .game-card-score {
+      font-size: 1rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      min-width: 20px;
+      text-align: right;
+    }
+    .game-card-score.winner { color: var(--text-primary); }
+    .game-card-score.loser { color: var(--text-muted); }
+    .game-card-team-name.loser { color: var(--text-muted); }
+    .game-card-final {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      white-space: nowrap;
     }
 
     .teams-spotlight {
@@ -1196,7 +1263,7 @@
 
 <nav>
   <button data-page="overview" onclick="showPage('overview', this)" class="active">Overview</button>
-  <button data-page="today" onclick="showPage('today', this)">Today</button>
+  <button data-page="games" onclick="showPage('games', this)">Games</button>
   <button data-page="teams" onclick="showPage('teams', this)">Teams</button>
   <button data-page="bets" onclick="showPage('bets', this)">Bets</button>
   <button data-page="performance" onclick="showPage('performance', this)">Performance</button>
@@ -1274,24 +1341,18 @@
 
   </div>
 
-  <div id="page-today" class="page">
-    <div class="page-title">
-      <div>
-        <h1>Today</h1>
-        <p>Use this page to decide what to do next: review the action queue, confirm open exposure, and scan the full day's slate. All game times render in your selected timezone.</p>
+  <div id="page-games" class="page">
+    <div class="calendar-bar">
+      <div class="calendar-month">
+        <span id="cal-month-label">April</span>
+        <span id="cal-year-label">2026</span>
       </div>
-      <div class="aside" id="today-timezone-label">Timezone: America/Denver</div>
+      <button class="cal-arrow" onclick="calWeekShift(-1)">‹</button>
+      <div class="cal-days" id="cal-days"></div>
+      <button class="cal-arrow" onclick="calWeekShift(1)">›</button>
     </div>
-
-    <div class="panel">
-      <div class="panel-header">Open Positions</div>
-      <div class="table-wrap" id="today-open-body"></div>
-    </div>
-
-    <div>
-      <div class="panel-header" style="background:none;border:none;padding:16px 0 8px;">Upcoming Games</div>
-      <div class="date-filter" id="slate-date-filter"></div>
-      <div class="game-cards-grid" id="today-slate-body"></div>
+    <div class="game-cards-grid" id="games-body">
+      <div class="empty">Loading games…</div>
     </div>
   </div>
 
@@ -1481,7 +1542,8 @@ const state = {
   modelAccuracy: null,
   openBets: null,
   settledBets: null,
-  slateDateFilter: 'today', // 'today' or 'tomorrow'
+  gamesDateStr: null, // YYYY-MM-DD for games calendar
+  gamesWeekStart: null, // Date object for start of displayed week
 };
 
 const TEAM_FULL = {
@@ -1840,51 +1902,6 @@ function renderPassGames(targetId, games, emptyMessage) {
   );
 }
 
-function renderUpcomingSlate(targetId, games, emptyMessage) {
-  const el = document.getElementById(targetId);
-  if (!el) return;
-  if (!games.length) {
-    el.innerHTML = `<div class="empty">${emptyMessage}</div>`;
-    return;
-  }
-  el.innerHTML = games.map(g => {
-    const awayAbbr = g.away_team || '—';
-    const homeAbbr = g.home_team || '—';
-    const awayName = teamName(awayAbbr);
-    const homeName = teamName(homeAbbr);
-    return `
-      <div class="game-card">
-        <div class="game-card-matchup">
-          <div class="game-card-team">
-            <div class="team-logo">
-              <img src="/static/team-logos/${awayAbbr}.png" alt="${awayAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-              <span class="team-logo-fallback">${awayAbbr}</span>
-            </div>
-            <span class="game-card-team-name">${awayName}</span>
-            <span class="game-card-time">${formatLocalTime(g.game_time_utc)}</span>
-          </div>
-          <div class="game-card-team">
-            <div class="team-logo">
-              <img src="/static/team-logos/${homeAbbr}.png" alt="${homeAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-              <span class="team-logo-fallback">${homeAbbr}</span>
-            </div>
-            <span class="game-card-team-name">${homeName}</span>
-          </div>
-        </div>
-        <div class="game-card-details">
-          <div class="game-card-detail">Away ${fmtML(g.close_away_ml)} <strong>${fmtPct(g.away_implied_prob)}</strong></div>
-          <div class="game-card-detail">Home ${fmtML(g.close_home_ml)} <strong>${fmtPct(g.home_implied_prob)}</strong></div>
-          <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
-          <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
-          <div class="game-card-side">
-            <span>${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}</span>
-            <span>${betStatus(g)}</span>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-}
-
 function renderSettledBets(data) {
   betsTotal = data.total || 0;
   const bets = data.bets || [];
@@ -1969,7 +1986,7 @@ function renderOverview() {
     heroTitle.textContent = 'No open positions right now.';
     heroCopy.textContent = nextGame
       ? `Next up: ${nextGame.away_team} at ${nextGame.home_team} at ${formatLocalDateTime(nextGame.game_time_utc)}.`
-      : 'Use Today to monitor the next slate.';
+      : 'Use Games to browse the schedule.';
   }
 
   renderOpenBets('overview-open-body', openBets.slice(0, 6), 'No open positions');
@@ -2000,78 +2017,144 @@ function renderOverview() {
   }
 }
 
-function getGameLocalDate(game) {
-  if (game.game_time_utc) {
-    const d = new Date(game.game_time_utc);
-    if (isFinite(d)) {
-      const fmt = new Intl.DateTimeFormat('en-US', {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        timeZone: currentTimezone(),
-      });
-      const parts = fmt.formatToParts(d);
-      return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}-${parts.find(p => p.type === 'day').value}`;
-    }
+function todayDateStr() {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: currentTimezone() });
+  return fmt.format(new Date());
+}
+
+function getWeekDays(anchorDate) {
+  const d = new Date(anchorDate + 'T12:00:00');
+  const dow = d.getDay();
+  const sun = new Date(d);
+  sun.setDate(d.getDate() - dow);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(sun);
+    day.setDate(sun.getDate() + i);
+    days.push(day);
   }
-  if (game.game_date) return String(game.game_date).slice(0, 10);
-  return null;
+  return days;
 }
 
-function getTodayTomorrowDates() {
-  const now = new Date();
-  const tz = currentTimezone();
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: tz,
-  });
-
-  const todayParts = fmt.formatToParts(now);
-  const today = `${todayParts.find(p => p.type === 'year').value}-${todayParts.find(p => p.type === 'month').value}-${todayParts.find(p => p.type === 'day').value}`;
-
-  const tmrw = new Date(now);
-  tmrw.setDate(tmrw.getDate() + 1);
-  const tmrwParts = fmt.formatToParts(tmrw);
-  const tomorrow = `${tmrwParts.find(p => p.type === 'year').value}-${tmrwParts.find(p => p.type === 'month').value}-${tmrwParts.find(p => p.type === 'day').value}`;
-
-  return { today, tomorrow };
+function fmtDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }
 
-function filterGamesByDate(games, dateFilter) {
-  const { today, tomorrow } = getTodayTomorrowDates();
-  const targetDate = dateFilter === 'today' ? today : tomorrow;
-  return games.filter(g => getGameLocalDate(g) === targetDate);
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function renderCalendar() {
+  const selected = state.gamesDateStr || todayDateStr();
+  const weekDays = getWeekDays(selected);
+  const mid = weekDays[3];
+
+  document.getElementById('cal-month-label').textContent = MONTH_NAMES[mid.getMonth()];
+  document.getElementById('cal-year-label').textContent = mid.getFullYear();
+
+  const container = document.getElementById('cal-days');
+  container.innerHTML = weekDays.map(d => {
+    const ds = fmtDateStr(d);
+    const isActive = ds === selected;
+    return `
+      <div class="cal-day${isActive ? ' active' : ''}" onclick="selectGameDate('${ds}')">
+        <span class="cal-day-label">${DAY_NAMES[d.getDay()]}</span>
+        <span class="cal-day-num">${String(d.getDate()).padStart(2, '0')}</span>
+      </div>`;
+  }).join('');
 }
 
-function renderSlateDateFilter() {
-  const el = document.getElementById('slate-date-filter');
-  if (!el) return;
-  const { today, tomorrow } = getTodayTomorrowDates();
-  const todayLabel = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const tomorrowLabel = new Date(tomorrow + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  el.innerHTML = `
-    <button class="date-filter-btn ${state.slateDateFilter === 'today' ? 'active' : ''}" onclick="setSlateFilter('today')">Today ${todayLabel}</button>
-    <button class="date-filter-btn ${state.slateDateFilter === 'tomorrow' ? 'active' : ''}" onclick="setSlateFilter('tomorrow')">Tomorrow ${tomorrowLabel}</button>
-  `;
+function calWeekShift(dir) {
+  const current = state.gamesDateStr || todayDateStr();
+  const d = new Date(current + 'T12:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  state.gamesDateStr = fmtDateStr(d);
+  renderCalendar();
+  loadGamesForDate(state.gamesDateStr);
 }
 
-function setSlateFilter(filter) {
-  state.slateDateFilter = filter;
-  renderSlateDateFilter();
-  const upcomingGames = state.upcoming?.games || [];
-  const filtered = filterGamesByDate(upcomingGames, filter);
-  renderUpcomingSlate('today-slate-body', filtered, `No games ${filter}`);
+async function selectGameDate(dateStr) {
+  state.gamesDateStr = dateStr;
+  renderCalendar();
+  await loadGamesForDate(dateStr);
 }
 
-function renderToday() {
-  const upcomingGames = state.upcoming?.games || [];
-  const openBets = getOpenBetRows();
-  document.getElementById('today-timezone-label').textContent = `Timezone: ${currentTimezone()}`;
+async function loadGamesForDate(dateStr) {
+  const body = document.getElementById('games-body');
+  body.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const res = await fetch(`/api/games-by-date?date=${dateStr}`);
+    const data = await res.json();
+    renderGameCards(data.games || []);
+  } catch (e) {
+    body.innerHTML = '<div class="empty">Failed to load games</div>';
+  }
+}
 
-  renderOpenBets('today-open-body', openBets, 'No open positions');
-  renderSlateDateFilter();
-  const filtered = filterGamesByDate(upcomingGames, state.slateDateFilter);
-  renderUpcomingSlate('today-slate-body', filtered, `No games ${state.slateDateFilter}`);
+function renderGameCards(games) {
+  const el = document.getElementById('games-body');
+  if (!games.length) {
+    el.innerHTML = '<div class="empty">No games on this date</div>';
+    return;
+  }
+  el.innerHTML = games.map(g => {
+    const awayAbbr = g.away_team || '—';
+    const homeAbbr = g.home_team || '—';
+    const awayName = teamName(awayAbbr);
+    const homeName = teamName(homeAbbr);
+    const finished = g.home_win != null;
+    const homeWon = g.home_win === true;
+    const awayWon = g.home_win === false;
+
+    const rightTop = finished
+      ? `<span class="game-card-score${awayWon ? ' winner' : ' loser'}">${g.away_score}</span>`
+      : `<span class="game-card-time">${formatLocalTime(g.game_time_utc)}</span>`;
+    const rightBot = finished
+      ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
+      : '';
+    const statusLine = finished ? '<div style="text-align:center;padding-top:2px"><span class="game-card-final">Final</span></div>' : '';
+
+    return `
+      <div class="game-card">
+        <div class="game-card-matchup">
+          <div class="game-card-team">
+            <div class="team-logo">
+              <img src="/static/team-logos/${awayAbbr}.png" alt="${awayAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+              <span class="team-logo-fallback">${awayAbbr}</span>
+            </div>
+            <span class="game-card-team-name${finished && homeWon ? ' loser' : ''}">${awayName}</span>
+            ${rightTop}
+          </div>
+          <div class="game-card-team">
+            <div class="team-logo">
+              <img src="/static/team-logos/${homeAbbr}.png" alt="${homeAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+              <span class="team-logo-fallback">${homeAbbr}</span>
+            </div>
+            <span class="game-card-team-name${finished && awayWon ? ' loser' : ''}">${homeName}</span>
+            ${rightBot}
+          </div>
+          ${statusLine}
+        </div>
+        <div class="game-card-details">
+          <div class="game-card-detail">Away ${fmtML(g.close_away_ml)} <strong>${fmtPct(g.away_implied_prob)}</strong></div>
+          <div class="game-card-detail">Home ${fmtML(g.close_home_ml)} <strong>${fmtPct(g.home_implied_prob)}</strong></div>
+          <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
+          <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
+          <div class="game-card-side">
+            <span>${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}</span>
+            <span>${betStatus(g)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderGamesPage() {
+  if (!state.gamesDateStr) state.gamesDateStr = todayDateStr();
+  renderCalendar();
+  loadGamesForDate(state.gamesDateStr);
 }
 
 function renderTeamNext(team) {
@@ -2270,7 +2353,7 @@ function renderAll() {
   renderModeToggle();
   renderLiveStatus();
   renderOverview();
-  renderToday();
+  renderGamesPage();
   renderTeams();
   renderBets();
   renderPerformance();
