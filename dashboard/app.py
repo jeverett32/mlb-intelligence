@@ -1182,22 +1182,31 @@ def _build_public_performance(
     mode: str = "live",
 ) -> PublicPerformanceResponse:
     mode = _validate_bet_mode(mode)
-    bets_df = _orders_for_mode(email, mode) if email else _all_orders_for_mode(mode)
-    if bets_df.empty:
-        return _empty_public_performance()
+    if email is None and mode == "paper":
+        settled = _settled_public_bets()
+    else:
+        bets_df = _orders_for_mode(email, mode) if email else _all_orders_for_mode(mode)
+        if bets_df.empty:
+            return _empty_public_performance()
 
-    settled = bets_df[
-        bets_df["result"].notna() & bets_df["bet_dollars"].notna()
-    ].copy()
-    settled = settled[settled["bet_dollars"].astype(float) > 0]
+        settled = bets_df[
+            bets_df["result"].notna() & bets_df["bet_dollars"].notna()
+        ].copy()
+        settled = settled[settled["bet_dollars"].astype(float) > 0]
     if settled.empty:
         return _empty_public_performance()
 
-    result = settled["result"].astype(bool)
     side = settled["bet_side"]
-    won_mask = ((result & (side == "home")) | (~result & (side == "away"))).to_numpy()
+    if "_won" in settled.columns:
+        won_mask = settled["_won"].astype(bool).to_numpy()
+    else:
+        result = settled["result"].astype(bool)
+        won_mask = ((result & (side == "home")) | (~result & (side == "away"))).to_numpy()
 
-    bd = settled["bet_dollars"].astype(float).to_numpy()
+    bd = pd.to_numeric(
+        settled["_stake"] if "_stake" in settled.columns else settled["bet_dollars"],
+        errors="coerce",
+    ).fillna(0.0).to_numpy()
     n_contracts = settled.get("n_contracts")
     n_contracts_arr = (
         pd.to_numeric(n_contracts, errors="coerce").to_numpy()
@@ -1217,8 +1226,11 @@ def _build_public_performance(
     total_bets = len(settled)
     wins = int(won_mask.sum())
     total_wagered = float(bd.sum())
-    total_returned = float(returned_row[won_mask].sum())
-    roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
+    if "_profit_loss" in settled.columns:
+        roi = float(settled["_profit_loss"].sum()) / total_wagered if total_wagered else 0.0
+    else:
+        total_returned = float(returned_row[won_mask].sum())
+        roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
 
     calibration: list[CalibrationPoint] = []
     if "predicted_prob" in settled.columns:
@@ -1407,6 +1419,18 @@ def _build_public_summary() -> PublicSummaryResponse:
     )
 
 
+def _dedupe_public_bet_games(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse per-user paper copies into one public row per model wager."""
+    if df.empty or "game_pk" not in df.columns:
+        return df
+
+    sort_cols = [c for c in ("game_date", "game_pk", "email") if c in df.columns]
+    if sort_cols:
+        ascending = [False if c in ("game_date", "game_pk") else True for c in sort_cols]
+        df = df.sort_values(sort_cols, ascending=ascending, na_position="last")
+    return df.drop_duplicates(subset=["game_pk"], keep="first").copy()
+
+
 def _settled_public_bets() -> pd.DataFrame:
     bets_df = DB.get_all_paper_orders()
     if bets_df.empty:
@@ -1423,6 +1447,7 @@ def _settled_public_bets() -> pd.DataFrame:
     settled = settled[settled["bet_side"].isin(["home", "away"])]
     if settled.empty:
         return settled
+    settled = _dedupe_public_bet_games(settled)
 
     result = settled["result"].astype(bool)
     side = settled["bet_side"]

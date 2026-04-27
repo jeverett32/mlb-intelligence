@@ -305,6 +305,75 @@ def test_public_receipts_returns_recent_bets_and_roi(monkeypatch, app_module, cl
     assert "cumulative_wagered" not in body["roi_series"][-1]
 
 
+def test_public_receipts_dedupes_per_user_paper_copies(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_all_paper_orders",
+        lambda: app_module.pd.DataFrame(
+            [
+                {
+                    "email": "a@example.com",
+                    "game_pk": 1,
+                    "game_date": "2026-04-20",
+                    "away_team": "NYM",
+                    "home_team": "ATL",
+                    "result": True,
+                    "bet_side": "home",
+                    "predicted_prob": 0.64,
+                    "market_implied_prob": 0.58,
+                    "edge": 0.06,
+                    "bet_dollars": 10.0,
+                    "profit_loss": 8.0,
+                },
+                {
+                    "email": "b@example.com",
+                    "game_pk": 1,
+                    "game_date": "2026-04-20",
+                    "away_team": "NYM",
+                    "home_team": "ATL",
+                    "result": True,
+                    "bet_side": "home",
+                    "predicted_prob": 0.64,
+                    "market_implied_prob": 0.58,
+                    "edge": 0.06,
+                    "bet_dollars": 10.0,
+                    "profit_loss": 8.0,
+                },
+                {
+                    "email": "a@example.com",
+                    "game_pk": 2,
+                    "game_date": "2026-04-21",
+                    "away_team": "BOS",
+                    "home_team": "NYY",
+                    "result": True,
+                    "bet_side": "away",
+                    "predicted_prob": 0.42,
+                    "market_implied_prob": 0.5,
+                    "edge": 0.08,
+                    "bet_dollars": 12.0,
+                    "profit_loss": -12.0,
+                },
+            ]
+        ),
+    )
+
+    receipts = client.get("/api/public/receipts")
+    performance = client.get("/api/public/performance")
+
+    assert receipts.status_code == 200
+    assert performance.status_code == 200
+
+    receipts_body = receipts.json()
+    performance_body = performance.json()
+    assert receipts_body["settled_bets"] == 2
+    assert len(receipts_body["recent_bets"]) == 2
+    assert [b["matchup"] for b in receipts_body["recent_bets"]] == [
+        "BOS @ NYY",
+        "NYM @ ATL",
+    ]
+    assert performance_body["total_bets"] == 2
+
+
 def test_private_api_requires_auth(client):
     r = client.get("/api/balance")
     assert r.status_code in (401, 403)
