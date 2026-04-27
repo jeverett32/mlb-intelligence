@@ -963,19 +963,55 @@
       main { padding: 14px; }
       .hero-card h2,
       .page-title h1 { font-size: 1.7rem; }
+      .team-search-card { padding: 18px; }
+      .division-card-header { padding: 14px; }
       .team-row {
-        grid-template-columns: minmax(160px, 1.4fr) repeat(3, minmax(54px, 0.5fr));
+        grid-template-columns: minmax(0, 1fr) 64px 40px 48px;
+        gap: 8px;
+        padding: 12px 14px;
       }
       .team-row > :nth-child(5),
       .team-row > :nth-child(6),
       .team-row > :nth-child(7) {
         display: none;
       }
+      .team-logo {
+        width: 30px;
+        height: 30px;
+      }
+      .team-logo img {
+        width: 24px;
+        height: 24px;
+      }
       .settings-page { gap: 18px; }
       .settings-section { padding: 18px; }
       .settings-actions { flex-direction: column; align-items: stretch; }
       .action-button,
       .settings-action { width: 100%; }
+    }
+
+    @media (max-width: 520px) {
+      .team-row {
+        grid-template-columns: minmax(0, 1fr) 62px 34px;
+      }
+      .team-row > :nth-child(4) {
+        display: none;
+      }
+      .team-identity { gap: 8px; }
+      .team-name { font-size: 0.8rem; }
+      .team-sub { display: none; }
+      .team-rank {
+        width: 14px;
+        text-align: right;
+        flex: 0 0 auto;
+      }
+      .team-stat {
+        font-size: 0.76rem;
+        text-align: right;
+      }
+      .team-row.head > div:not(:first-child) {
+        text-align: right;
+      }
     }
   </style>
 </head>
