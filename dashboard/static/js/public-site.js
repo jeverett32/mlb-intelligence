@@ -230,3 +230,7 @@ function initRememberEmail() {
     else localStorage.removeItem('mlbRememberedEmail');
   });
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  initRememberEmail();
+});
