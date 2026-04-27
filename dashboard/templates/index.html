@@ -575,14 +575,13 @@
     .calendar-bar {
       display: flex;
       align-items: center;
-      gap: 0;
+      gap: 6px;
       padding: 16px 0 20px;
     }
     .calendar-month {
       display: flex;
       flex-direction: column;
       min-width: 52px;
-      margin-right: 8px;
     }
     .calendar-month span:first-child {
       font-family: 'Playfair Display', serif;
@@ -606,7 +605,8 @@
       line-height: 1;
       flex: 0 0 auto;
     }
-    .cal-arrow:hover { background: var(--bg-elevated); }
+    .cal-arrow:hover:not(:disabled) { background: var(--bg-elevated); }
+    .cal-arrow:disabled { opacity: 0.3; cursor: default; }
     .cal-days {
       display: flex;
       gap: 4px;
@@ -645,6 +645,11 @@
     .cal-day.active .cal-day-num {
       color: var(--bg-primary);
     }
+    .cal-day.disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+    .cal-day.disabled:hover { background: none; }
     @media (max-width: 600px) {
       .cal-day { padding: 6px 8px; min-width: 36px; }
     }
@@ -1345,13 +1350,13 @@
 
   <div id="page-games" class="page">
     <div class="calendar-bar">
+      <button class="cal-arrow" id="cal-prev" onclick="calWeekShift(-1)">‹</button>
       <div class="calendar-month">
         <span id="cal-month-label">April</span>
         <span id="cal-year-label">2026</span>
       </div>
-      <button class="cal-arrow" onclick="calWeekShift(-1)">‹</button>
       <div class="cal-days" id="cal-days"></div>
-      <button class="cal-arrow" onclick="calWeekShift(1)">›</button>
+      <button class="cal-arrow" id="cal-next" onclick="calWeekShift(1)">›</button>
     </div>
     <div class="game-cards-grid" id="games-body">
       <div class="empty">Loading games…</div>
@@ -2048,11 +2053,17 @@ function fmtDateStr(d) {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+function seasonBounds() {
+  const y = new Date().getFullYear();
+  return { start: `${y}-03-20`, end: `${y}-11-05` };
+}
+
 function renderCalendar() {
   const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const selected = state.gamesDateStr || todayDateStr();
   const weekDays = getWeekDays(anchor);
   const mid = weekDays[3];
+  const { start, end } = seasonBounds();
 
   document.getElementById('cal-month-label').textContent = MONTH_NAMES[mid.getMonth()];
   document.getElementById('cal-year-label').textContent = mid.getFullYear();
@@ -2061,19 +2072,30 @@ function renderCalendar() {
   container.innerHTML = weekDays.map(d => {
     const ds = fmtDateStr(d);
     const isActive = ds === selected;
+    const outOfSeason = ds < start || ds > end;
     return `
-      <div class="cal-day${isActive ? ' active' : ''}" onclick="selectGameDate('${ds}')">
+      <div class="cal-day${isActive ? ' active' : ''}${outOfSeason ? ' disabled' : ''}" ${outOfSeason ? '' : `onclick="selectGameDate('${ds}')"`}>
         <span class="cal-day-label">${DAY_NAMES[d.getDay()]}</span>
         <span class="cal-day-num">${String(d.getDate()).padStart(2, '0')}</span>
       </div>`;
   }).join('');
+
+  const prevBtn = document.getElementById('cal-prev');
+  const nextBtn = document.getElementById('cal-next');
+  const weekStart = fmtDateStr(weekDays[0]);
+  const weekEnd = fmtDateStr(weekDays[6]);
+  prevBtn.disabled = weekStart <= start;
+  nextBtn.disabled = weekEnd >= end;
 }
 
 function calWeekShift(dir) {
   const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const d = new Date(anchor + 'T12:00:00');
   d.setDate(d.getDate() + dir * 7);
-  state.gamesWeekAnchor = fmtDateStr(d);
+  const candidate = fmtDateStr(d);
+  const { start, end } = seasonBounds();
+  if (candidate < start || candidate > end) return;
+  state.gamesWeekAnchor = candidate;
   renderCalendar();
 }
 
