@@ -3,8 +3,13 @@ from datetime import date
 import pandas as pd
 
 import db
+from fetch.fetch_data import SBR_NAME_TO_ABB, sbr_normalize
 from scripts.backfill_sbr_odds import build_backfill_updates
 from scripts.reset_2025_live_lines import build_updates as build_live_line_updates
+
+
+def test_sbr_maps_athletics_duplicate_name():
+    assert SBR_NAME_TO_ABB[sbr_normalize("Athletics Athletics")] == "ATH"
 
 
 def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
