@@ -664,6 +664,15 @@
       letter-spacing: 0.02em;
       flex: 0 0 auto;
     }
+    .team-logo img {
+      width: 27px;
+      height: 27px;
+      object-fit: contain;
+      display: block;
+    }
+    .team-logo-fallback {
+      display: none;
+    }
     .team-name {
       color: var(--text-primary);
       font-size: 0.84rem;
@@ -1738,12 +1747,21 @@ function renderTeamNext(team) {
   return `<span class="team-next"><strong>${next.venue === 'Home' ? 'vs' : '@'} ${next.opponent || '—'}</strong><br>${formatLocalDateTime(next.game_time_utc) || String(next.game_date || '').slice(0, 10)}</span>`;
 }
 
+function renderTeamLogo(team) {
+  return `
+    <div class="team-logo">
+      <img src="/static/team-logos/${team.abbr}.png" alt="${team.name} logo" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+      <span class="team-logo-fallback">${team.abbr}</span>
+    </div>
+  `;
+}
+
 function renderDivisionCard(division) {
   const rows = (division.teams || []).map(team => `
     <div class="team-row">
       <div class="team-identity">
         <div class="team-rank">${team.division_rank}</div>
-        <div class="team-logo">${team.abbr}</div>
+        ${renderTeamLogo(team)}
         <div>
           <div class="team-name">${team.name}</div>
           <div class="team-sub">${team.league_name} ${team.division}</div>
