@@ -2081,18 +2081,24 @@ function renderCalendar() {
 
   const prevBtn = document.getElementById('cal-prev');
   const nextBtn = document.getElementById('cal-next');
-  prevBtn.disabled = fmtDateStr(weekDays[0]) <= start;
-  nextBtn.disabled = fmtDateStr(weekDays[6]) >= end;
+  const prevWeek = getWeekDays(fmtDateStr(new Date(weekDays[0].getTime() - 7 * 86400000)));
+  const nextWeek = getWeekDays(fmtDateStr(new Date(weekDays[6].getTime() + 7 * 86400000)));
+  prevBtn.disabled = !prevWeek.some(wd => { const ds = fmtDateStr(wd); return ds >= start && ds <= end; });
+  nextBtn.disabled = !nextWeek.some(wd => { const ds = fmtDateStr(wd); return ds >= start && ds <= end; });
 }
 
 function calWeekShift(dir) {
   const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const d = new Date(anchor + 'T12:00:00');
   d.setDate(d.getDate() + dir * 7);
-  const { start, end } = seasonBounds();
   const candidate = fmtDateStr(d);
-  if (candidate < start && dir < 0) return;
-  if (candidate > end && dir > 0) return;
+  const week = getWeekDays(candidate);
+  const { start, end } = seasonBounds();
+  const hasSeasonDay = week.some(wd => {
+    const ds = fmtDateStr(wd);
+    return ds >= start && ds <= end;
+  });
+  if (!hasSeasonDay) return;
   state.gamesWeekAnchor = candidate;
   renderCalendar();
 }
