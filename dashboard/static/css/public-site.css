@@ -1312,7 +1312,8 @@ html, body {
 }
 
 .analytics-section-receipts {
-  margin-top: 42px;
+  margin-top: 76px;
+  padding-top: 8px;
 }
 
 .analytics-section-header {
