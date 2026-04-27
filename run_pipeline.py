@@ -3,7 +3,7 @@ run_pipeline.py — MLB betting pipeline orchestrator.
 Runs from the project root. Loops automatically, executing the full pipeline
 15 minutes before each scheduled game window.
 
-Games starting within 15 minutes of each other are treated as a batch:
+Games sharing the same scheduled start minute are treated as a batch:
   - fetch_data + fetch_balance run ONCE for the whole batch
   - predict + place_bet run IN PARALLEL for each game
 
@@ -48,13 +48,9 @@ MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
 # How many minutes before game start to trigger the pipeline
 LEAD_MINUTES = 15
 
-# Games starting within this cushion of the earliest game are batched together.
-# This protects tight slates from compute delays without running later games
-# too far before their own first pitch.
-BATCH_WINDOW_MINUTES = 15
-
-# Don't process games that start less than this many minutes from now
-MIN_GAME_TIME_MINUTES = 10
+# Skip games once first pitch has passed. If the ideal 15-minute lead was
+# missed because an earlier run took too long, run the game immediately.
+MIN_GAME_TIME_MINUTES = 0
 
 # Skip the pre-batch schedule refresh if we fetched more recently than this
 FETCH_STALE_SECONDS = 300
@@ -167,7 +163,7 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
     """
     Find the next game(s) to process.
     Returns (batch, run_at_utc) where batch is a list of games starting
-    within BATCH_WINDOW_MINUTES of each other, and run_at_utc is when to
+    at the same scheduled start minute, and run_at_utc is when to
     kick off the pipeline (LEAD_MINUTES before the earliest game).
     Returns ([], None) if nothing to process.
     """
@@ -177,16 +173,13 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
     if not all_games:
         return [], None
 
-    # Find the earliest game that is still processable:
-    #   - not more than 3 hours in the past (safety net for stale games)
-    #   - at least MIN_GAME_TIME_MINUTES in the future (enough time to run pipeline)
+    # Find the earliest game that is still processable. If compute delays make
+    # us miss the ideal lead time, process it immediately until first pitch.
     first_game = None
     for game in all_games:
         start = get_game_start_utc(game)
-        if start < now_utc - timedelta(hours=3):
-            continue  # too old, skip
         if start < now_utc + timedelta(minutes=MIN_GAME_TIME_MINUTES):
-            continue  # too soon to process, skip
+            continue  # already started, skip
         first_game = game
         break
 
@@ -195,13 +188,13 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 
     first_start = get_game_start_utc(first_game)
     run_at_utc = first_start - timedelta(minutes=LEAD_MINUTES)
-    window_end = first_start + timedelta(minutes=BATCH_WINDOW_MINUTES)
 
-    # Collect all games in the batch window
+    # Batch only games in the exact same first-pitch slot. This handles crowded
+    # slates without pulling later standalone games into an earlier run.
     batch = [
         game
         for game in all_games
-        if first_start <= get_game_start_utc(game) <= window_end
+        if get_game_start_utc(game) == first_start
     ]
 
     return batch, run_at_utc
