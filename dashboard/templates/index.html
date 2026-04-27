@@ -571,6 +571,33 @@
     }
 
     /* ── Today: Game Cards Grid ── */
+    .date-filter {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .date-filter-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.15s;
+    }
+    .date-filter-btn:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+    .date-filter-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+    }
+
     .game-cards-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1263,6 +1290,7 @@
 
     <div>
       <div class="panel-header" style="background:none;border:none;padding:16px 0 8px;">Upcoming Games</div>
+      <div class="date-filter" id="slate-date-filter"></div>
       <div class="game-cards-grid" id="today-slate-body"></div>
     </div>
   </div>
@@ -1453,6 +1481,7 @@ const state = {
   modelAccuracy: null,
   openBets: null,
   settledBets: null,
+  slateDateFilter: 'today', // 'today' or 'tomorrow'
 };
 
 const TEAM_FULL = {
@@ -1971,13 +2000,85 @@ function renderOverview() {
   }
 }
 
+function getGameLocalDate(game) {
+  if (!game.game_time_utc) return null;
+  const d = new Date(game.game_time_utc);
+  if (!isFinite(d)) return null;
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: currentTimezone(),
+  });
+  const parts = fmt.formatToParts(d);
+  const year = parts.find(p => p.type === 'year').value;
+  const month = parts.find(p => p.type === 'month').value;
+  const day = parts.find(p => p.type === 'day').value;
+  return `${year}-${month}-${day}`;
+}
+
+function getTodayTomorrowDates() {
+  const now = new Date();
+  const tz = currentTimezone();
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: tz,
+  });
+
+  const todayParts = fmt.formatToParts(now);
+  const todayYear = todayParts.find(p => p.type === 'year').value;
+  const todayMonth = todayParts.find(p => p.type === 'month').value;
+  const todayDay = todayParts.find(p => p.type === 'day').value;
+  const today = `${todayYear}-${todayMonth}-${todayDay}`;
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowParts = fmt.formatToParts(tomorrow);
+  const tomorrowYear = tomorrowParts.find(p => p.type === 'year').value;
+  const tomorrowMonth = tomorrowParts.find(p => p.type === 'month').value;
+  const tomorrowDay = tomorrowParts.find(p => p.type === 'day').value;
+  const tomorrowStr = `${tomorrowYear}-${tomorrowMonth}-${tomorrowDay}`;
+
+  return { today, tomorrow };
+}
+
+function filterGamesByDate(games, dateFilter) {
+  const { today, tomorrow } = getTodayTomorrowDates();
+  const targetDate = dateFilter === 'today' ? today : tomorrow;
+  return games.filter(g => getGameLocalDate(g) === targetDate);
+}
+
+function renderSlateDateFilter() {
+  const el = document.getElementById('slate-date-filter');
+  if (!el) return;
+  const { today, tomorrow } = getTodayTomorrowDates();
+  const todayLabel = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const tomorrowLabel = new Date(tomorrow + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  el.innerHTML = `
+    <button class="date-filter-btn ${state.slateDateFilter === 'today' ? 'active' : ''}" onclick="setSlateFilter('today')">Today ${todayLabel}</button>
+    <button class="date-filter-btn ${state.slateDateFilter === 'tomorrow' ? 'active' : ''}" onclick="setSlateFilter('tomorrow')">Tomorrow ${tomorrowLabel}</button>
+  `;
+}
+
+function setSlateFilter(filter) {
+  state.slateDateFilter = filter;
+  renderSlateDateFilter();
+  const upcomingGames = state.upcoming?.games || [];
+  const filtered = filterGamesByDate(upcomingGames, filter);
+  renderUpcomingSlate('today-slate-body', filtered, `No games ${filter}`);
+}
+
 function renderToday() {
   const upcomingGames = state.upcoming?.games || [];
   const openBets = getOpenBetRows();
   document.getElementById('today-timezone-label').textContent = `Timezone: ${currentTimezone()}`;
 
   renderOpenBets('today-open-body', openBets, 'No open positions');
-  renderUpcomingSlate('today-slate-body', upcomingGames, 'No upcoming games in the next 48 hours');
+  renderSlateDateFilter();
+  const filtered = filterGamesByDate(upcomingGames, state.slateDateFilter);
+  renderUpcomingSlate('today-slate-body', filtered, `No games ${state.slateDateFilter}`);
 }
 
 function renderTeamNext(team) {
