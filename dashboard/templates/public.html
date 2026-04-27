@@ -208,12 +208,11 @@
                 <th>Model</th>
                 <th>Market</th>
                 <th>Edge</th>
-                <th>Stake</th>
                 <th>P/L</th>
               </tr>
             </thead>
             <tbody id="recent-bets-body">
-              <tr><td colspan="9">Loading settled bets...</td></tr>
+              <tr><td colspan="8">Loading settled bets...</td></tr>
             </tbody>
           </table>
         </div>
@@ -401,7 +400,7 @@ function updateReceipts(receipts) {
   var body = document.getElementById('recent-bets-body');
   var bets = receipts.recent_bets || [];
   if (!bets.length) {
-    body.innerHTML = '<tr><td colspan="9">No settled public bets yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8">No settled public bets yet.</td></tr>';
     return;
   }
   body.innerHTML = bets.map(function(b) {
@@ -414,7 +413,6 @@ function updateReceipts(receipts) {
       '<td>' + fmtPctWhole(b.model_prob) + '</td>' +
       '<td>' + fmtPctWhole(b.market_prob) + '</td>' +
       '<td>' + (b.edge != null ? (Number(b.edge) * 100).toFixed(1) + ' pts' : '—') + '</td>' +
-      '<td>' + fmtMoney(b.stake) + '</td>' +
       '<td class="' + pnlClass + '">' + fmtMoney(b.profit_loss) + '</td>' +
     '</tr>';
   }).join('');
