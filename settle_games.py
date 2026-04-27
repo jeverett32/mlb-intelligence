@@ -145,6 +145,8 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                 f"  ERROR settling game_pk={game_pk} ({away_team} @ {home_team}): {e}"
             )
 
+    DB.backfill_user_order_results()
+
     print(f"\nDone. Settled {settled_count}/{len(rows)} game(s).")
     return settled_count
 

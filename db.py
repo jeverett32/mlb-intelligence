@@ -291,20 +291,22 @@ def get_upcoming_needing_prediction(season: int = 2026) -> pd.DataFrame:
 
 
 def get_settleable_games(season: int, cutoff_utc: datetime) -> list[dict]:
-    """Rows from games∩bets that started before cutoff and still lack a result."""
+    """Games with bets or user_orders that started before cutoff and still lack a result."""
     with pooled_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
+                SELECT DISTINCT g.game_pk, g.game_date, g.home_team, g.away_team,
                        g.game_time_utc
                 FROM games g
-                JOIN bets b ON g.game_pk = b.game_pk
+                LEFT JOIN bets b ON g.game_pk = b.game_pk
+                LEFT JOIN user_orders uo ON g.game_pk = uo.game_pk
                 WHERE g.season = %s
                   AND g.home_win IS NULL
                   AND g.game_time_utc IS NOT NULL
                   AND g.game_time_utc::timestamptz < %s
                   AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+                  AND (b.game_pk IS NOT NULL OR uo.game_pk IS NOT NULL)
                 """,
                 (season, cutoff_utc),
             )

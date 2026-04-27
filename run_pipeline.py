@@ -326,66 +326,69 @@ def settle_completed_games():
         rows = DB.get_settleable_games(2026, cutoff)
     except Exception as e:
         print(f"  Settlement check failed: {e}")
-        return
-    if not rows:
-        return
+        rows = []
 
-    print(f"  Settling {len(rows)} completed game(s)...")
-    import requests as _requests
+    if rows:
+        print(f"  Settling {len(rows)} completed game(s)...")
+        import requests as _requests
 
-    finals: list[dict] = []
-    postponed: list[int] = []
-    for r in rows:
-        game_pk = r["game_pk"]
-        home_team = r["home_team"]
-        away_team = r["away_team"]
-        try:
-            resp = _requests.get(
-                "https://statsapi.mlb.com/api/v1/schedule",
-                params={"sportId": 1, "gamePk": game_pk, "hydrate": "linescore"},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            dates = resp.json().get("dates", [])
-            if not dates:
-                continue
-            game_data = dates[0]["games"][0]
-            status = game_data.get("status", {})
-            if "postponed" in status.get("detailedState", "").lower():
-                postponed.append(int(game_pk))
-                print(f"    Marked postponed: {away_team} @ {home_team}")
-                continue
-            if status.get("abstractGameState", "") != "Final":
-                continue
-            ls = game_data.get("linescore", {}).get("teams", {})
-            h_score = ls.get("home", {}).get("runs")
-            a_score = ls.get("away", {}).get("runs")
-            if h_score is None or a_score is None:
-                continue
-            if h_score == a_score:
-                print(
-                    f"    Tie {a_score}-{h_score} for {away_team} @ {home_team} — skipping settlement."
+        finals: list[dict] = []
+        postponed: list[int] = []
+        for r in rows:
+            game_pk = r["game_pk"]
+            home_team = r["home_team"]
+            away_team = r["away_team"]
+            try:
+                resp = _requests.get(
+                    "https://statsapi.mlb.com/api/v1/schedule",
+                    params={"sportId": 1, "gamePk": game_pk, "hydrate": "linescore"},
+                    timeout=10,
                 )
-                continue
-            home_win = bool(h_score > a_score)
-            finals.append({
-                "game_pk":    game_pk,
-                "home_score": h_score,
-                "away_score": a_score,
-                "home_win":   home_win,
-            })
-            print(
-                f"    Settled: {away_team} @ {home_team} — "
-                f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)"
-            )
+                resp.raise_for_status()
+                dates = resp.json().get("dates", [])
+                if not dates:
+                    continue
+                game_data = dates[0]["games"][0]
+                status = game_data.get("status", {})
+                if "postponed" in status.get("detailedState", "").lower():
+                    postponed.append(int(game_pk))
+                    print(f"    Marked postponed: {away_team} @ {home_team}")
+                    continue
+                if status.get("abstractGameState", "") != "Final":
+                    continue
+                ls = game_data.get("linescore", {}).get("teams", {})
+                h_score = ls.get("home", {}).get("runs")
+                a_score = ls.get("away", {}).get("runs")
+                if h_score is None or a_score is None:
+                    continue
+                if h_score == a_score:
+                    print(
+                        f"    Tie {a_score}-{h_score} for {away_team} @ {home_team} — skipping settlement."
+                    )
+                    continue
+                home_win = bool(h_score > a_score)
+                finals.append({
+                    "game_pk":    game_pk,
+                    "home_score": h_score,
+                    "away_score": a_score,
+                    "home_win":   home_win,
+                })
+                print(
+                    f"    Settled: {away_team} @ {home_team} — "
+                    f"{a_score}-{h_score} ({'Home' if home_win else 'Away'} win)"
+                )
+            except Exception as e:
+                print(f"    Could not settle game_pk={game_pk}: {e}")
+
+        try:
+            DB.apply_settlements(finals, postponed)
         except Exception as e:
-            print(f"    Could not settle game_pk={game_pk}: {e}")
+            print(f"  Settlement write failed: {e}")
 
     try:
-        DB.apply_settlements(finals, postponed)
         DB.backfill_user_order_results()
     except Exception as e:
-        print(f"  Settlement write failed: {e}")
+        print(f"  User order backfill failed: {e}")
 
 
 # ---------------------------------------------------------------------------

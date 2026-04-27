@@ -728,8 +728,20 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
             user_orders[available],
             on="game_pk",
             how="left",
-            suffixes=("", "_user"),
+            suffixes=("_bets", "_user"),
         )
+        for col in order_cols:
+            if col == "game_pk":
+                continue
+            user_col = col + "_user"
+            bets_col = col + "_bets"
+            if user_col in upcoming.columns and bets_col in upcoming.columns:
+                upcoming[col] = upcoming[user_col].combine_first(upcoming[bets_col])
+                upcoming.drop(columns=[user_col, bets_col], inplace=True)
+            elif user_col in upcoming.columns:
+                upcoming.rename(columns={user_col: col}, inplace=True)
+            elif bets_col in upcoming.columns:
+                upcoming.rename(columns={bets_col: col}, inplace=True)
 
     if "game_time_utc" in upcoming.columns:
         upcoming = upcoming.sort_values("game_time_utc", na_position="last")
