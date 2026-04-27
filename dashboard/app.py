@@ -17,6 +17,7 @@ from urllib.parse import quote_plus
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
+from config import ACTIVE_SEASON
 from fetch.fetch_balance import fetch_balance_for_account
 
 import bcrypt as _bcrypt
@@ -517,6 +518,19 @@ def disconnect_kalshi_account(user: dict = Depends(require_approved_user)):
 # ---------------------------------------------------------------------------
 
 
+ACTIVE_BET_STATUSES = {"filled", "dry_run"}
+
+
+def _is_open_position_frame(df: pd.DataFrame) -> pd.Series:
+    if df.empty:
+        return pd.Series(dtype=bool)
+    result_open = df["result"].isna() if "result" in df.columns else pd.Series(True, index=df.index)
+    dollars_src = df["bet_dollars"] if "bet_dollars" in df.columns else pd.Series(0, index=df.index)
+    dollars = pd.to_numeric(dollars_src, errors="coerce").fillna(0)
+    statuses = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
+    return result_open & (dollars > 0) & statuses.isin(ACTIVE_BET_STATUSES)
+
+
 @app.get("/api/bets")
 def get_bets(
     limit: int = 100,
@@ -536,8 +550,8 @@ def get_bets(
     if df.empty:
         return {"bets": [], "total": 0}
 
-    if status == "open" and "result" in df.columns:
-        df = df[df["result"].isna()].copy()
+    if status == "open":
+        df = df[_is_open_position_frame(df)].copy()
     elif status == "settled" and "result" in df.columns:
         df = df[df["result"].notna()].copy()
     elif status != "all":
@@ -591,14 +605,14 @@ def get_open_bets(user: dict = Depends(require_approved_user)):
     if df.empty or "result" not in df.columns:
         return {"bets": [], "total": 0}
 
-    open_df = df[df["result"].isna()].copy()
+    open_df = df[_is_open_position_frame(df)].copy()
     if open_df.empty:
         return {"bets": [], "total": 0}
 
     if "game_pk" in open_df.columns:
         open_df["game_pk"] = open_df["game_pk"].astype(str)
 
-    games_df = DB.get_games_df(season=2026, upcoming_only=True)
+    games_df = DB.get_games_df(season=ACTIVE_SEASON, upcoming_only=True)
     if not games_df.empty:
         games_df = games_df.copy()
         if "game_pk" in games_df.columns:
@@ -654,7 +668,7 @@ def get_balance(user: dict = Depends(require_approved_user)):
 @app.get("/api/upcoming")
 def get_upcoming(user: dict = Depends(require_approved_user)):
     try:
-        games_df = DB.get_games_df(season=2026, upcoming_only=True)
+        games_df = DB.get_games_df(season=ACTIVE_SEASON, upcoming_only=True)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 

@@ -1,6 +1,6 @@
 """
 settle_games.py — Fetch final scores from the MLB Stats API for any
-pipeline-processed 2026 game that is still missing a result in the DB.
+pipeline-processed active-season game that is still missing a result in the DB.
 
 Designed to be run as a nightly cron job (e.g. 2 AM MT) after all games
 have finished. Safe to run multiple times — already-settled rows are skipped.
@@ -17,6 +17,7 @@ import requests
 
 sys.path.insert(0, ".")
 import db as DB
+from config import ACTIVE_SEASON
 
 
 def settle_completed_games(cutoff_hours: int = 4) -> int:
@@ -37,14 +38,14 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                 SELECT g.game_pk, g.game_date, g.home_team, g.away_team,
                        g.game_time_utc
                 FROM games g
-                WHERE g.season = 2026
+                WHERE g.season = %s
                   AND g.home_win IS NULL
                   AND g.game_time_utc IS NOT NULL
                   AND g.game_time_utc::timestamptz < %s
                   AND COALESCE(g.extra->>'game_status', '') <> 'cancelled'
                 ORDER BY g.game_date, g.game_pk
             """,
-                (cutoff,),
+                (ACTIVE_SEASON, cutoff),
             )
             rows = cur.fetchall()
     finally:

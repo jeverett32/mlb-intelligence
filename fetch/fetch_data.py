@@ -1,8 +1,8 @@
 """
-fetch_data.py — Daily data pipeline for the 2026 MLB season.
+fetch_data.py — Daily data pipeline for the active MLB season.
 
 Fetches schedule, odds, pitcher stats, weather, and FanGraphs team stats,
-then assembles mlb_2026.csv in the same format as master_mlb.csv so that
+then assembles mlb_<season>.csv in the same format as master_mlb.csv so that
 train.py can consume it directly.
 
 Incremental: loads existing CSV, skips complete past games, and re-fetches
@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
+from config import ACTIVE_SEASON, CURRENT_CSV
 
 import numpy as np
 import pandas as pd
@@ -35,9 +36,9 @@ warnings.filterwarnings("ignore")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SEASON = 2026
+SEASON = ACTIVE_SEASON
 CACHE_DIR = Path("data/cache")
-OUTPUT_CSV = "data/mlb_2026.csv"
+OUTPUT_CSV = CURRENT_CSV
 MLB_API = "https://statsapi.mlb.com/api/v1"
 PREFERRED_BOOKS = ["pinnacle", "draftkings", "fanduel", "betmgm", "bet365"]
 
@@ -261,7 +262,7 @@ def _split_existing(existing, schedule_pks, today):
 # STEP 1: Schedule from MLB Stats API
 # ═══════════════════════════════════════════════════════════════════════════
 def fetch_schedule():
-    """Fetch all 2026 regular-season games (completed + upcoming)."""
+    """Fetch all active-season regular-season games (completed + upcoming)."""
     print("  Querying MLB Stats API...")
     data = _api_get(
         f"{MLB_API}/schedule",
@@ -427,12 +428,45 @@ def _merge_odds_into_cache(new_df, odds_cache):
     return combined
 
 
+def _align_odds_api_dates(api_df: pd.DataFrame, schedule_df: pd.DataFrame) -> pd.DataFrame:
+    """Use game start time to map Odds API UTC dates back to MLB slate dates."""
+    if api_df.empty or "commence_time_utc" not in api_df.columns or "game_time_utc" not in schedule_df.columns:
+        return api_df
+
+    schedule = schedule_df[["game_date", "game_time_utc", "home_team", "away_team"]].copy()
+    schedule["game_time_utc"] = pd.to_datetime(schedule["game_time_utc"], errors="coerce", utc=True)
+    schedule = schedule.dropna(subset=["game_time_utc"])
+    if schedule.empty:
+        return api_df
+
+    aligned = api_df.copy()
+    aligned["game_date"] = pd.to_datetime(aligned["game_date"], errors="coerce")
+    aligned["commence_time_utc"] = pd.to_datetime(
+        aligned["commence_time_utc"], errors="coerce", utc=True
+    )
+    for idx, row in aligned.iterrows():
+        commence = row.get("commence_time_utc")
+        if pd.isna(commence):
+            continue
+        candidates = schedule[
+            (schedule["home_team"] == row.get("home_team"))
+            & (schedule["away_team"] == row.get("away_team"))
+        ].copy()
+        if candidates.empty:
+            continue
+        candidates["delta"] = (candidates["game_time_utc"] - commence).abs()
+        best = candidates.sort_values("delta").iloc[0]
+        if best["delta"] <= pd.Timedelta(hours=2):
+            aligned.at[idx, "game_date"] = best["game_date"]
+    return aligned
+
+
 def fetch_odds(schedule_df, today_only=False):
     """Fetch odds from SBR, supplementing gaps with The Odds API when needed."""
     from scraper import scrape_range_async
     from odds_api import fetch_odds_api
 
-    odds_cache = CACHE_DIR / "odds_2026.csv"
+    odds_cache = CACHE_DIR / f"odds_{SEASON}.csv"
     cached = pd.read_csv(odds_cache) if odds_cache.exists() else pd.DataFrame()
     if not cached.empty:
         cached["game_date"] = pd.to_datetime(cached["game_date"])
@@ -524,6 +558,7 @@ def fetch_odds(schedule_df, today_only=False):
         api_df = _drop_implausible_moneylines(api_df, "Odds API")
         if not api_df.empty:
             api_df = api_df.copy()
+            api_df = _align_odds_api_dates(api_df, schedule_df)
             api_df["game_date"] = pd.to_datetime(api_df["game_date"])
             api_df = api_df[
                 api_df.apply(
@@ -1200,11 +1235,16 @@ def assemble(games_to_process, odds_df, pitcher_df, weather_df, fg_df):
 # Main
 # ═══════════════════════════════════════════════════════════════════════════
 def main():
+    global SEASON, OUTPUT_CSV
     parser = argparse.ArgumentParser(
-        description="Fetch 2026 MLB data for model predictions.")
+        description="Fetch active-season MLB data for model predictions.")
     parser.add_argument("--today-only", action="store_true",
                         help="Only scrape odds for today's games")
+    parser.add_argument("--season", type=int, default=SEASON,
+                        help="MLB season to fetch (defaults to MLB_SEASON/current year)")
     args = parser.parse_args()
+    SEASON = args.season
+    OUTPUT_CSV = f"data/mlb_{SEASON}.csv"
 
     t0 = time.time()
     today = pd.to_datetime(datetime.today().date())

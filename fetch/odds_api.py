@@ -220,6 +220,7 @@ def fetch_odds_api() -> pd.DataFrame:
         rows.append(
             {
                 "game_date": game_date,
+                "commence_time_utc": commence_dt.strftime("%Y-%m-%d %H:%M"),
                 "home_team": home_abb,
                 "away_team": away_abb,
                 "open_home_ml": home_ml,

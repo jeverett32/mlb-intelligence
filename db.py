@@ -20,6 +20,8 @@ from psycopg2 import pool as _pg_pool
 from psycopg2.extras import RealDictCursor, execute_values
 from dotenv import load_dotenv
 
+from config import ACTIVE_SEASON
+
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -301,7 +303,15 @@ def get_games_df(season: int = None, upcoming_only: bool = False) -> pd.DataFram
     return pd.DataFrame(records)
 
 
-def get_upcoming_needing_prediction(season: int = 2026) -> pd.DataFrame:
+RETRYABLE_ORDER_STATUSES = (
+    "error",
+    "unfilled",
+    "skipped_no_market",
+    "skipped_no_live_price",
+)
+
+
+def get_upcoming_needing_prediction(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
     Single-query version of the old run_pipeline filter:
     games that haven't started (home_win IS NULL), not postponed/cancelled,
@@ -314,12 +324,21 @@ def get_upcoming_needing_prediction(season: int = 2026) -> pd.DataFrame:
         WHERE g.season = %s
           AND g.home_win IS NULL
           AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-          AND (b.game_pk IS NULL OR b.predicted_prob IS NULL)
+          AND (
+              b.game_pk IS NULL
+              OR b.predicted_prob IS NULL
+              OR EXISTS (
+                  SELECT 1
+                  FROM user_orders uo
+                  WHERE uo.game_pk = g.game_pk
+                    AND uo.status = ANY(%s)
+              )
+          )
         ORDER BY g.game_date, g.game_pk
     """
     with pooled_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql, (season,))
+            cur.execute(sql, (season, list(RETRYABLE_ORDER_STATUSES)))
             rows = cur.fetchall()
     if not rows:
         return pd.DataFrame()
@@ -1289,7 +1308,7 @@ def is_global_live_betting() -> bool:
 
 
 def is_user_live_betting(email: str) -> bool:
-    return get_user_setting(email, "live_betting", "true").lower() == "true"
+    return get_user_setting(email, "live_betting", "false").lower() == "true"
 
 
 def upsert_kalshi_account(

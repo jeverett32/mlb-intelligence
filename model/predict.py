@@ -32,9 +32,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import train as T
 import db as DB
+from config import ACTIVE_SEASON, CURRENT_CSV
 
 HISTORICAL_CSV = "data/master_mlb.csv"
-CURRENT_CSV    = "data/mlb_2026.csv"
 
 
 class PredictError(RuntimeError):
@@ -147,7 +147,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def _load_historical() -> pd.DataFrame:
     try:
         hist = DB.get_games_df()
-        hist = hist[hist["season"].notna() & (hist["season"].astype(float) < 2026)]
+        hist = hist[hist["season"].notna() & (hist["season"].astype(float) < ACTIVE_SEASON)]
         if hist.empty:
             raise ValueError("No historical rows in DB")
         return hist
@@ -158,9 +158,9 @@ def _load_historical() -> pd.DataFrame:
 
 def _load_current() -> pd.DataFrame:
     try:
-        curr = DB.get_games_df(season=2026)
+        curr = DB.get_games_df(season=ACTIVE_SEASON)
         if curr.empty:
-            raise ValueError("No 2026 rows in DB")
+            raise ValueError(f"No {ACTIVE_SEASON} rows in DB")
         return curr
     except Exception as e:
         print(f"  WARNING: DB load failed ({e}), falling back to CSV.")
@@ -282,7 +282,7 @@ def find_target_game(game_pk: str | None = None, game_date: str | None = None,
                 "home_team": row["home_team"],
                 "away_team": row["away_team"],
             }
-        df = DB.get_games_df(season=2026)
+        df = DB.get_games_df(season=ACTIVE_SEASON)
         if not df.empty:
             df["game_pk"] = df["game_pk"].astype(str)
             rows = df[df["game_pk"] == str(game_pk)]
@@ -296,9 +296,9 @@ def find_target_game(game_pk: str | None = None, game_date: str | None = None,
                 }
         raise PredictError(f"game_pk={game_pk} not found in DB")
 
-    df = DB.get_games_df(season=2026)
+    df = DB.get_games_df(season=ACTIVE_SEASON)
     if df.empty:
-        raise PredictError("No 2026 games in DB. Run fetch/fetch_data.py first.")
+        raise PredictError(f"No {ACTIVE_SEASON} games in DB. Run fetch/fetch_data.py first.")
     df["game_date"] = pd.to_datetime(df["game_date"]).dt.strftime("%Y-%m-%d")
     mask = (
         (df["game_date"] == str(game_date)) &

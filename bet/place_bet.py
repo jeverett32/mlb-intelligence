@@ -58,6 +58,71 @@ def _to_float(value):
     return float(value)
 
 
+def _first_float(*values):
+    for value in values:
+        try:
+            parsed = _to_float(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _price_to_dollars(value):
+    parsed = _first_float(value)
+    if parsed is None:
+        return None
+    if parsed > 1:
+        return parsed / 100.0
+    return parsed
+
+
+def _market_yes_price(market: dict) -> float | None:
+    return _price_to_dollars(_first_float(
+        market.get("yes_ask_dollars"),
+        market.get("yes_ask"),
+        market.get("yes_ask_cents"),
+        market.get("yes_bid_dollars"),
+        market.get("yes_bid"),
+        market.get("yes_bid_cents"),
+    ))
+
+
+def _order_fill_count(order: dict) -> float:
+    return _first_float(
+        order.get("fill_count"),
+        order.get("fill_count_fp"),
+        order.get("filled_count"),
+        order.get("filled_count_fp"),
+    ) or 0.0
+
+
+def _order_fill_cost(order: dict) -> float:
+    taker_dollars = _first_float(order.get("taker_fill_cost_dollars"))
+    maker_dollars = _first_float(order.get("maker_fill_cost_dollars"))
+    if taker_dollars is not None or maker_dollars is not None:
+        return (taker_dollars or 0.0) + (maker_dollars or 0.0)
+    filled_dollars = _first_float(order.get("filled_cost_dollars"))
+    if filled_dollars is not None:
+        return filled_dollars
+    taker_cents = _first_float(order.get("taker_fill_cost"))
+    maker_cents = _first_float(order.get("maker_fill_cost"))
+    if taker_cents is not None or maker_cents is not None:
+        return ((taker_cents or 0.0) + (maker_cents or 0.0)) / 100.0
+    filled_cents = _first_float(order.get("filled_cost"))
+    return (filled_cents or 0.0) / 100.0 if filled_cents is not None else 0.0
+
+
+def _place_bet_error_status(exc: Exception) -> str:
+    msg = str(exc).lower()
+    if "no open kalshi market" in msg:
+        return "skipped_no_market"
+    if "no live" in msg and "price" in msg:
+        return "skipped_no_live_price"
+    return "error"
+
+
 def _kelly_stake(prob: float, decimal_odds: float) -> float:
     b = decimal_odds - 1.0
     if b <= 0:
@@ -152,12 +217,15 @@ def find_kalshi_market(
     if not events:
         return None, None
 
-    # If multiple events match (doubleheader), use game time to disambiguate
+    # If multiple events match (doubleheader), use game time to disambiguate.
+    # Without a unique event, fail closed rather than risk betting the wrong game.
     if len(events) > 1 and game_hhmm_et:
         for event_key, event_markets in events.items():
             if game_hhmm_et in event_key:
                 events = {event_key: event_markets}
                 break
+    if len(events) > 1:
+        return None, None
 
     # Take first (or only) matching event
     event_markets = next(iter(events.values()))
@@ -168,8 +236,7 @@ def find_kalshi_market(
         if ticker.endswith(f"-{bet_team}"):
             return m["ticker"], m
 
-    # Fallback: return first market in event (caller handles yes/no logic)
-    return event_markets[0]["ticker"], event_markets[0]
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +298,7 @@ def _execute_bet_row(
     # find_kalshi_market already picked the market for our bet_side team.
     side = "yes"
     price_field = "yes_price"
-    live_price = _to_float(market.get("yes_ask_dollars")) or _to_float(market.get("yes_bid_dollars"))
+    live_price = _market_yes_price(market)
     if bet_side == "home":
         model_prob = predicted_prob
     elif bet_side == "away":
@@ -326,10 +393,8 @@ def _execute_bet_row(
     if resp.status_code == 201:
         order = resp.json()["order"]
         order_id = order["order_id"]
-        fill_count = _to_float(order.get("fill_count_fp")) or 0.0
-        actual_cost = (_to_float(order.get("taker_fill_cost_dollars")) or 0.0) + (
-            _to_float(order.get("maker_fill_cost_dollars")) or 0.0
-        )
+        fill_count = _order_fill_count(order)
+        actual_cost = _order_fill_cost(order)
         print(f"\n  Order placed:    {order_id}")
         print(f"  Status:          {order['status']}")
         print(f"  Filled:          {fill_count:.2f}")
@@ -424,7 +489,11 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             dry_run=dry_run,
         )
     except PlaceBetError as exc:
-        result = {"game_pk": str(game_pk), "status": "error", "error": str(exc)}
+        result = {
+            "game_pk": str(game_pk),
+            "status": _place_bet_error_status(exc),
+            "error": str(exc),
+        }
     DB.upsert_user_order(
         email,
         game_pk,

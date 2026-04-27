@@ -24,11 +24,11 @@ jobs:
       - name: Pre-deployment health check
         run: |
           echo "=== Pre-deployment health check ==="
-          curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/health || {
-            echo "ERROR: Dashboard is not responding to health checks before deployment"
-            exit 1
-          }
-          echo "✓ Dashboard is healthy before deployment"
+          if curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/health; then
+            echo "✓ Dashboard is healthy before deployment"
+          else
+            echo "WARNING: Dashboard health check failed before deployment; continuing so deploy can repair it"
+          fi
 
       - name: Run deployment script
         run: |

@@ -36,13 +36,14 @@ load_dotenv()
 
 import db as DB
 import notify as NOTIFY
+from config import ACTIVE_SEASON, CURRENT_CSV
 sys.path.insert(0, str(Path(__file__).parent / "model"))
 sys.path.insert(0, str(Path(__file__).parent / "bet"))
 from model import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
-MLB_CSV = Path("data/mlb_2026.csv")  # local CSV fallback
+MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
 
 # How many minutes before game start to trigger the pipeline
 LEAD_MINUTES = 15
@@ -140,11 +141,11 @@ def get_game_start_utc(game: dict) -> datetime:
 
 def get_all_upcoming_unprocessed() -> list[dict]:
     """
-    Return all upcoming 2026 games that need predictions, sorted by start time.
+    Return all upcoming active-season games that need predictions, sorted by start time.
     Uses a single JOIN query against the DB; falls back to CSV if DB is down.
     """
     try:
-        df = DB.get_upcoming_needing_prediction(season=2026)
+        df = DB.get_upcoming_needing_prediction(season=ACTIVE_SEASON)
     except Exception as e:
         print(f"  WARNING: DB unavailable ({e}), falling back to CSV.")
         if not MLB_CSV.exists():
@@ -323,7 +324,7 @@ def settle_completed_games():
     cutoff = now_utc - timedelta(hours=4)
 
     try:
-        rows = DB.get_settleable_games(2026, cutoff)
+        rows = DB.get_settleable_games(ACTIVE_SEASON, cutoff)
     except Exception as e:
         print(f"  Settlement check failed: {e}")
         rows = []
@@ -410,7 +411,7 @@ def main():
     # ── One-shot: specific game ───────────────────────────────────────────
     if args.game_pk:
         try:
-            game_df = DB.get_games_df(season=2026)
+            game_df = DB.get_games_df(season=ACTIVE_SEASON)
             rows = game_df[game_df["game_pk"].astype(str) == args.game_pk]
             if not rows.empty:
                 init_game_row(rows.iloc[0].to_dict())

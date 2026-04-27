@@ -1118,14 +1118,17 @@ function pnlBadge(v) {
 }
 function betStatus(game) {
   if (game.result != null) return badge('Settled', 'gray');
-  if ((game.bet_dollars != null && Number(game.bet_dollars) > 0) || game.kalshi_order_id) return badge('Placed', 'green');
   const s = game.status;
+  if (s === 'filled') return badge('Placed', 'green');
+  if (s === 'dry_run') return badge('Dry Run', 'gold');
   if (s === 'skipped_no_live_edge') return badge('No Edge', 'red');
+  if (s === 'skipped_no_market') return badge('No Market', 'red');
+  if (s === 'skipped_no_live_price') return badge('No Price', 'red');
   if (s === 'skipped_too_small' || s === 'skipped_below_contract') return badge('Too Small', 'red');
   if (s === 'unfilled') return badge('Unfilled', 'red');
-  if (s === 'dry_run') return badge('Dry Run', 'gold');
   if (s === 'error') return badge('Error', 'red');
   if (s && s.startsWith('skipped_')) return badge('Skipped', 'red');
+  if ((game.bet_dollars != null && Number(game.bet_dollars) > 0) || game.kalshi_order_id) return badge('Placed', 'green');
   if (game.bet_side === 'home' || game.bet_side === 'away') return badge('Ready', 'gold');
   if (game.predicted_prob != null) return badge('No Bet', 'gray');
   return badge('Pending', 'gray');
@@ -1320,7 +1323,7 @@ function renderOpenBets(targetId, bets, emptyMessage) {
         <td>${fmtPct(b.predicted_prob)}</td>
         <td>${fmtPct(b.market_implied_prob)}</td>
         <td>${edgeText(b.edge)}</td>
-        <td>${badge('Open', 'gold')}</td>
+        <td>${betStatus(b)}</td>
       </tr>
     `),
     emptyMessage
