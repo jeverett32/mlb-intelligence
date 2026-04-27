@@ -738,6 +738,7 @@ def get_paper_bankroll(user: dict = Depends(require_approved_user)):
     return {
         "starting_dollars": DB.PAPER_STARTING_BANKROLL_DOLLARS,
         "current_dollars": DB.get_paper_bankroll_dollars(user["email"]),
+        "history": DB.get_paper_bankroll_history(user["email"]),
     }
 
 
@@ -1171,7 +1172,7 @@ def get_performance(mode: str = "paper", user: dict = Depends(require_approved_u
 @app.get("/api/public/performance", response_model=PublicPerformanceResponse)
 @limiter.limit("30/minute")
 def get_public_performance(request: Request):
-    return _build_public_performance()
+    return _build_public_performance(mode="paper")
 
 
 @app.get("/api/public/model-accuracy", response_model=PublicModelAccuracyResponse)
@@ -1303,7 +1304,7 @@ def _build_private_model_accuracy() -> PrivateModelAccuracyResponse:
 
 
 def _build_public_summary() -> PublicSummaryResponse:
-    performance = _build_public_performance()
+    performance = _build_public_performance(mode="paper")
     model_accuracy = _build_public_model_accuracy()
     return PublicSummaryResponse(
         performance=performance,
@@ -1312,7 +1313,7 @@ def _build_public_summary() -> PublicSummaryResponse:
 
 
 def _settled_public_bets() -> pd.DataFrame:
-    bets_df = DB.get_all_user_orders()
+    bets_df = DB.get_all_paper_orders()
     if bets_df.empty:
         return pd.DataFrame()
 

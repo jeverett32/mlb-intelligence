@@ -213,6 +213,35 @@ def test_teams_api_returns_overview_for_approved_user(monkeypatch, app_module, c
     assert body["summary"]["completed_games"] == 1
 
 
+def test_paper_bankroll_endpoint_includes_history(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(app_module.DB, "backfill_paper_orders_from_bets", lambda email: 0)
+    monkeypatch.setattr(app_module.DB, "get_paper_bankroll_dollars", lambda email: 10409.09)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_paper_bankroll_history",
+        lambda email: [
+            {"recorded_at": None, "balance_dollars": 10000.0, "source": "paper"},
+            {"recorded_at": "2026-04-01", "balance_dollars": 10409.09, "source": "paper"},
+        ],
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/paper-bankroll")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["current_dollars"] == 10409.09
+    assert body["history"][-1]["balance_dollars"] == 10409.09
+
+
 def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):
     now_utc = pd.Timestamp.now(tz="UTC")
     today_started = now_utc - pd.Timedelta(hours=2)

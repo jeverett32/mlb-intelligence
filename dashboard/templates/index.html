@@ -697,12 +697,20 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: var(--accent-light);
+      background: transparent;
       color: var(--accent);
       font-size: 0.72rem;
       font-weight: 800;
       letter-spacing: 0.02em;
       flex: 0 0 auto;
+    }
+    :root[data-theme="dark"] .team-logo {
+      background: rgba(255,255,255,0.86);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] .team-logo {
+        background: rgba(255,255,255,0.86);
+      }
     }
     .team-logo img {
       width: 27px;
@@ -1819,15 +1827,22 @@ function renderOverview() {
 
   renderOpenBets('overview-open-body', openBets.slice(0, 6), 'No open positions');
 
-  if (bal.history && bal.history.length > 1) {
+  const bankrollHistory = state.betMode === 'paper'
+    ? (paperBankroll.history || [])
+    : (bal.history || []);
+  if (bankrollHistory.length > 1) {
     const wrap = document.getElementById('balance-chart-wrap');
     wrap.innerHTML = '<canvas id="chart-balance"></canvas>';
     makeChart('chart-balance', lineChartCfg(
-      bal.history.map(r => String(r.recorded_at).slice(0, 10)),
-      bal.history.map(r => r.balance_dollars)
+      bankrollHistory.map(r => r.recorded_at ? String(r.recorded_at).slice(0, 10) : 'Start'),
+      bankrollHistory.map(r => r.balance_dollars)
     ));
   } else {
-    setChartEmpty('balance-chart-wrap', 'No balance history yet', 'chart-balance');
+    setChartEmpty(
+      'balance-chart-wrap',
+      state.betMode === 'paper' ? 'No paper bankroll history yet' : 'No balance history yet',
+      'chart-balance'
+    );
   }
 
   const mmCopyEl = document.getElementById('s-model-market-copy');

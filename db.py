@@ -1532,6 +1532,44 @@ def get_paper_bankroll_dollars(email: str) -> float:
         conn.close()
 
 
+def get_paper_bankroll_history(email: str) -> list[dict]:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT game_date, game_pk, paper_bankroll_after
+                FROM paper_orders
+                WHERE email = %s
+                  AND paper_bankroll_after IS NOT NULL
+                ORDER BY game_date ASC NULLS LAST, game_pk ASC
+                """,
+                (email,),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    history = [
+        {
+            "recorded_at": None,
+            "balance_dollars": PAPER_STARTING_BANKROLL_DOLLARS,
+            "source": "paper",
+        }
+    ]
+    for row in rows:
+        history.append(
+            {
+                "recorded_at": row.get("game_date"),
+                "balance_dollars": float(row["paper_bankroll_after"]),
+                "game_pk": row.get("game_pk"),
+                "source": "paper",
+            }
+        )
+    return history
+
+
 def backfill_paper_orders_from_bets(email: str | None = None) -> int:
     """Create missing paper orders from historical model-qualified bet signals."""
     target_email = _norm_email(email or "")

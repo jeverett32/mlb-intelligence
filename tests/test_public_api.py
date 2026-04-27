@@ -45,7 +45,7 @@ def test_public_performance_shape(client):
 
 
 def test_public_performance_empty_state(monkeypatch, app_module, client):
-    monkeypatch.setattr(app_module.DB, "get_all_user_orders", lambda: app_module.pd.DataFrame())
+    monkeypatch.setattr(app_module.DB, "get_all_paper_orders", lambda: app_module.pd.DataFrame())
 
     r = client.get("/api/public/performance")
     assert r.status_code == 200
@@ -200,7 +200,7 @@ def test_public_summary_shape(client):
 
 
 def test_public_summary_empty_state(monkeypatch, app_module, client):
-    monkeypatch.setattr(app_module.DB, "get_all_user_orders", lambda: app_module.pd.DataFrame())
+    monkeypatch.setattr(app_module.DB, "get_all_paper_orders", lambda: app_module.pd.DataFrame())
     monkeypatch.setattr(
         app_module.DB,
         "get_model_picks",
@@ -234,7 +234,7 @@ def test_public_summary_empty_state(monkeypatch, app_module, client):
 
 
 def test_public_receipts_empty_state(monkeypatch, app_module, client):
-    monkeypatch.setattr(app_module.DB, "get_all_user_orders", lambda: app_module.pd.DataFrame())
+    monkeypatch.setattr(app_module.DB, "get_all_paper_orders", lambda: app_module.pd.DataFrame())
 
     r = client.get("/api/public/receipts")
     assert r.status_code == 200
@@ -255,7 +255,7 @@ def test_public_receipts_empty_state(monkeypatch, app_module, client):
 def test_public_receipts_returns_recent_bets_and_roi(monkeypatch, app_module, client):
     monkeypatch.setattr(
         app_module.DB,
-        "get_all_user_orders",
+        "get_all_paper_orders",
         lambda: app_module.pd.DataFrame(
             [
                 {
