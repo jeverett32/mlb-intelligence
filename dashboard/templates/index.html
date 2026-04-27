@@ -709,8 +709,6 @@
       grid-template-columns: 1fr 1fr;
       gap: 6px 14px;
       padding: 10px 18px 14px;
-      border-top: 1px solid var(--border);
-      background: var(--bg-elevated);
     }
     .game-card-detail {
       display: flex;
@@ -740,6 +738,12 @@
     .game-card-score.winner { color: var(--text-primary); }
     .game-card-score.loser { color: var(--text-muted); }
     .game-card-team-name.loser { color: var(--text-muted); }
+    .game-card-odds {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 400;
+      margin-left: 2px;
+    }
     .game-card-final {
       font-size: 0.72rem;
       font-weight: 600;
@@ -1549,14 +1553,22 @@ const state = {
 };
 
 const TEAM_FULL = {
-  ARI:'Arizona Diamondbacks',ATL:'Atlanta Braves',BAL:'Baltimore Orioles',BOS:'Boston Red Sox',
-  CHC:'Chicago Cubs',CWS:'Chicago White Sox',CIN:'Cincinnati Reds',CLE:'Cleveland Guardians',
-  COL:'Colorado Rockies',DET:'Detroit Tigers',HOU:'Houston Astros',KC:'Kansas City Royals',
-  LAA:'Los Angeles Angels',LAD:'Los Angeles Dodgers',MIA:'Miami Marlins',MIL:'Milwaukee Brewers',
-  MIN:'Minnesota Twins',NYM:'New York Mets',NYY:'New York Yankees',OAK:'Oakland Athletics',
-  PHI:'Philadelphia Phillies',PIT:'Pittsburgh Pirates',SD:'San Diego Padres',SF:'San Francisco Giants',
-  SEA:'Seattle Mariners',STL:'St. Louis Cardinals',TB:'Tampa Bay Rays',TEX:'Texas Rangers',
-  TOR:'Toronto Blue Jays',WSH:'Washington Nationals',
+  ARI:'Arizona Diamondbacks',AZ:'Arizona Diamondbacks',
+  ATL:'Atlanta Braves',BAL:'Baltimore Orioles',BOS:'Boston Red Sox',
+  CHC:'Chicago Cubs',CWS:'Chicago White Sox',CHW:'Chicago White Sox',
+  CIN:'Cincinnati Reds',CLE:'Cleveland Guardians',
+  COL:'Colorado Rockies',DET:'Detroit Tigers',HOU:'Houston Astros',
+  KC:'Kansas City Royals',KCR:'Kansas City Royals',
+  LAA:'Los Angeles Angels',LAD:'Los Angeles Dodgers',
+  MIA:'Miami Marlins',MIL:'Milwaukee Brewers',
+  MIN:'Minnesota Twins',NYM:'New York Mets',NYY:'New York Yankees',
+  OAK:'Oakland Athletics',PHI:'Philadelphia Phillies',PIT:'Pittsburgh Pirates',
+  SD:'San Diego Padres',SDP:'San Diego Padres',
+  SF:'San Francisco Giants',SFG:'San Francisco Giants',
+  SEA:'Seattle Mariners',STL:'St. Louis Cardinals',
+  TB:'Tampa Bay Rays',TBR:'Tampa Bay Rays',
+  TEX:'Texas Rangers',TOR:'Toronto Blue Jays',
+  WSH:'Washington Nationals',WSN:'Washington Nationals',WAS:'Washington Nationals',
 };
 function teamName(abbr) { return TEAM_FULL[abbr] || abbr; }
 
@@ -2149,7 +2161,7 @@ function renderGameCards(games) {
               <img src="/static/team-logos/${awayAbbr}.png" alt="${awayAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
               <span class="team-logo-fallback">${awayAbbr}</span>
             </div>
-            <span class="game-card-team-name${finished && homeWon ? ' loser' : ''}">${awayName}</span>
+            <span class="game-card-team-name${finished && homeWon ? ' loser' : ''}">${awayName} <span class="game-card-odds">${fmtML(g.close_away_ml)}</span></span>
             ${rightTop}
           </div>
           <div class="game-card-team">
@@ -2157,14 +2169,12 @@ function renderGameCards(games) {
               <img src="/static/team-logos/${homeAbbr}.png" alt="${homeAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
               <span class="team-logo-fallback">${homeAbbr}</span>
             </div>
-            <span class="game-card-team-name${finished && awayWon ? ' loser' : ''}">${homeName}</span>
+            <span class="game-card-team-name${finished && awayWon ? ' loser' : ''}">${homeName} <span class="game-card-odds">${fmtML(g.close_home_ml)}</span></span>
             ${rightBot}
           </div>
           ${statusLine}
         </div>
         <div class="game-card-details">
-          <div class="game-card-detail">Away ${fmtML(g.close_away_ml)} <strong>${fmtPct(g.away_implied_prob)}</strong></div>
-          <div class="game-card-detail">Home ${fmtML(g.close_home_ml)} <strong>${fmtPct(g.home_implied_prob)}</strong></div>
           <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
           <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
           <div class="game-card-side">
