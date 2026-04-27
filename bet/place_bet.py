@@ -417,6 +417,31 @@ def _execute_bet_row(
     }
 
 
+def _upsert_paper_result(email: str, game_pk: str, row: dict, result: dict, paper_bankroll: float) -> None:
+    paper_after = None
+    if result.get("status") in {"dry_run", "skipped_no_live_edge"}:
+        paper_after = paper_bankroll
+    DB.upsert_paper_order(
+        email,
+        game_pk,
+        game_date=row.get("game_date", ""),
+        home_team=row.get("home_team", ""),
+        away_team=row.get("away_team", ""),
+        predicted_prob=row.get("predicted_prob"),
+        market_implied_prob=row.get("market_implied_prob"),
+        edge=row.get("edge"),
+        bet_side=row.get("bet_side") or "none",
+        bet_frac=row.get("bet_frac") or 0.0,
+        bet_dollars=result.get("bet_dollars"),
+        n_contracts=result.get("contracts"),
+        live_price=result.get("live_price"),
+        live_edge=result.get("live_edge"),
+        status=result.get("status", "pending"),
+        paper_bankroll_before=paper_bankroll,
+        paper_bankroll_after=paper_after,
+    )
+
+
 def place_bet(game_pk: str) -> dict:
     """Legacy single-account placement path using env-configured Kalshi credentials."""
     row = DB.get_bet(game_pk)
@@ -472,13 +497,34 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     if original_bet_frac <= 0 or bet_side == "none":
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_no_bet"}
 
+    paper_bankroll = DB.get_paper_bankroll_dollars(email)
+    try:
+        paper_result = _execute_bet_row(
+            row,
+            key_id=account["key_id"],
+            key_path=account["key_path"],
+            kalshi_env=account["kalshi_env"],
+            balance_cents=int(round(paper_bankroll * 100)),
+            dry_run=True,
+        )
+    except PlaceBetError as exc:
+        paper_result = {
+            "game_pk": str(game_pk),
+            "status": _place_bet_error_status(exc),
+            "error": str(exc),
+        }
+    _upsert_paper_result(email, game_pk, row, paper_result, paper_bankroll)
+
+    live_enabled = DB.is_global_live_betting() and DB.is_user_live_betting(email)
+    if not live_enabled or paper_result.get("status", "").startswith("skipped_no_"):
+        return {**paper_result, "email": email, "mode": "paper"}
+
     balance_cents = fetch_balance_for_account(
         key_id=account["key_id"],
         key_path=account["key_path"],
         kalshi_env=account["kalshi_env"],
         email=email,
     )
-    dry_run = not (DB.is_global_live_betting() and DB.is_user_live_betting(email))
     try:
         result = _execute_bet_row(
             row,
@@ -486,7 +532,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             key_path=account["key_path"],
             kalshi_env=account["kalshi_env"],
             balance_cents=balance_cents,
-            dry_run=dry_run,
+            dry_run=False,
         )
     except PlaceBetError as exc:
         result = {
@@ -511,7 +557,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
         live_price=result.get("live_price"),
         live_edge=result.get("live_edge"),
         status=result.get("status", "pending"),
-        dry_run=dry_run,
+        dry_run=False,
     )
     return result
 

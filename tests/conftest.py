@@ -22,8 +22,12 @@ db.purge_expired_sessions = lambda: 0
 db.get_all_bets = _empty_bets
 db.get_all_user_orders = _empty_bets
 db.get_user_orders = lambda email: _empty_bets()
+db.get_all_paper_orders = _empty_bets
+db.get_paper_orders = lambda email: _empty_bets()
+db.get_paper_bankroll_dollars = lambda email: 10000.0
 db.get_model_picks = _empty_model_picks
 db.get_setting = lambda key, default="": default
+db.PAPER_STARTING_BANKROLL_DOLLARS = 10000.0
 
 import dashboard.app as dashboard_app
 

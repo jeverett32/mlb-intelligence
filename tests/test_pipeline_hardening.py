@@ -33,6 +33,73 @@ class _FakeSession:
         return _FakeResponse({"market": {}}, status_code=404)
 
 
+class _FakeCursor:
+    def __init__(self):
+        self.calls = []
+        self._rows = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        self.calls.append((sql, params))
+        if "FROM app_users" in sql:
+            self._rows = [{"email": "user@example.com"}]
+        elif "FROM bets b" in sql:
+            self._rows = [
+                {
+                    "game_pk": 1,
+                    "game_date": "2026-04-01",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "predicted_prob": 0.65,
+                    "market_implied_prob": 0.55,
+                    "edge": 0.10,
+                    "bet_side": "home",
+                    "bet_frac": 0.05,
+                    "home_win": True,
+                },
+                {
+                    "game_pk": 2,
+                    "game_date": "2026-04-02",
+                    "home_team": "LAD",
+                    "away_team": "SFG",
+                    "predicted_prob": 0.40,
+                    "market_implied_prob": 0.50,
+                    "edge": 0.10,
+                    "bet_side": "away",
+                    "bet_frac": 0.05,
+                    "home_win": False,
+                },
+            ]
+        elif "FROM paper_orders" in sql:
+            self._rows = []
+        else:
+            self._rows = []
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeConnection:
+    def __init__(self, cursor):
+        self.cursor_obj = cursor
+        self.committed = False
+        self.closed = False
+
+    def cursor(self, cursor_factory=None):
+        return self.cursor_obj
+
+    def commit(self):
+        self.committed = True
+
+    def close(self):
+        self.closed = True
+
+
 def test_kalshi_market_matching_fails_closed_without_team_suffix(monkeypatch):
     markets = [
         {
@@ -55,6 +122,29 @@ def test_kalshi_market_matching_fails_closed_without_team_suffix(monkeypatch):
 
     assert ticker is None
     assert market is None
+
+
+def test_backfill_paper_orders_uses_rolling_bankroll(monkeypatch):
+    fake_cursor = _FakeCursor()
+    fake_conn = _FakeConnection(fake_cursor)
+    inserted = []
+
+    monkeypatch.setattr(db, "get_connection", lambda: fake_conn)
+    monkeypatch.setattr(
+        db,
+        "execute_values",
+        lambda cur, sql, rows, template=None: inserted.extend(rows),
+    )
+
+    count = db.backfill_paper_orders_from_bets("user@example.com")
+
+    assert count == 2
+    assert inserted[0][10] == 500.0
+    assert inserted[0][16] == 409.09
+    assert inserted[0][17] == 10000.0
+    assert inserted[0][18] == 10409.09
+    assert inserted[1][10] == 520.45
+    assert inserted[1][17] == 10409.09
 
 
 def test_kalshi_market_matching_uses_exact_team_suffix(monkeypatch):
@@ -94,7 +184,8 @@ def test_kalshi_price_parser_accepts_cents_fields():
 
 
 def test_place_user_bet_persists_no_market_status(monkeypatch):
-    recorded = {}
+    recorded_paper = {}
+    recorded_live = {}
     row = {
         "game_pk": 123,
         "game_date": "2026-04-27",
@@ -111,15 +202,19 @@ def test_place_user_bet_persists_no_market_status(monkeypatch):
     monkeypatch.setattr(place_bet.DB, "get_kalshi_account", lambda email: {"is_active": True, "key_id": "kid", "key_path": "k.pem", "kalshi_env": "demo"})
     monkeypatch.setattr(place_bet.DB, "get_bet", lambda game_pk: row)
     monkeypatch.setattr(place_bet.DB, "get_user_order", lambda email, game_pk: None)
+    monkeypatch.setattr(place_bet.DB, "get_paper_bankroll_dollars", lambda email: 10000.0)
     monkeypatch.setattr(place_bet, "fetch_balance_for_account", lambda **kwargs: 10000)
     monkeypatch.setattr(place_bet, "_execute_bet_row", lambda *args, **kwargs: (_ for _ in ()).throw(place_bet.PlaceBetError("No open Kalshi market found")))
-    monkeypatch.setattr(place_bet.DB, "upsert_user_order", lambda email, game_pk, **kwargs: recorded.update(kwargs))
+    monkeypatch.setattr(place_bet.DB, "upsert_paper_order", lambda email, game_pk, **kwargs: recorded_paper.update(kwargs))
+    monkeypatch.setattr(place_bet.DB, "upsert_user_order", lambda email, game_pk, **kwargs: recorded_live.update(kwargs))
 
     result = place_bet.place_user_bet("User@Example.com", "123")
 
     assert result["status"] == "skipped_no_market"
-    assert recorded["status"] == "skipped_no_market"
-    assert recorded["bet_dollars"] is None
+    assert result["mode"] == "paper"
+    assert recorded_paper["status"] == "skipped_no_market"
+    assert recorded_paper["bet_dollars"] is None
+    assert recorded_live == {}
 
 
 def test_missing_user_live_betting_setting_defaults_off(monkeypatch):

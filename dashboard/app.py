@@ -560,9 +560,35 @@ def disconnect_kalshi_account(user: dict = Depends(require_approved_user)):
 
 
 ACTIVE_BET_STATUSES = {"filled", "dry_run"}
+LIVE_BET_STATUSES = {"filled"}
+PAPER_BET_STATUSES = {"dry_run"}
 
 
-def _is_open_position_frame(df: pd.DataFrame) -> pd.Series:
+def _validate_bet_mode(mode: str) -> str:
+    mode = (mode or "paper").strip().lower()
+    if mode not in {"paper", "live"}:
+        raise HTTPException(status_code=400, detail="Invalid bet mode")
+    return mode
+
+
+def _ensure_paper_backfill(email: str) -> None:
+    try:
+        DB.backfill_paper_orders_from_bets(email)
+    except Exception as exc:
+        print(f"Paper order backfill failed for {email}: {exc}")
+
+
+def _orders_for_mode(email: str, mode: str) -> pd.DataFrame:
+    if mode == "paper":
+        _ensure_paper_backfill(email)
+    return DB.get_paper_orders(email) if mode == "paper" else DB.get_user_orders(email)
+
+
+def _all_orders_for_mode(mode: str) -> pd.DataFrame:
+    return DB.get_all_paper_orders() if mode == "paper" else DB.get_all_user_orders()
+
+
+def _is_open_position_frame(df: pd.DataFrame, active_statuses: set[str] = ACTIVE_BET_STATUSES) -> pd.Series:
     if df.empty:
         return pd.Series(dtype=bool)
     result_open = df["result"].isna() if "result" in df.columns else pd.Series(True, index=df.index)
@@ -577,9 +603,11 @@ def get_bets(
     limit: int = 100,
     offset: int = 0,
     status: str = "all",
+    mode: str = "paper",
     user: dict = Depends(require_approved_user),
 ):
-    df = DB.get_user_orders(user["email"])
+    mode = _validate_bet_mode(mode)
+    df = _orders_for_mode(user["email"], mode)
     if df.empty:
         return {"bets": [], "total": 0}
 
@@ -592,7 +620,8 @@ def get_bets(
         return {"bets": [], "total": 0}
 
     if status == "open":
-        df = df[_is_open_position_frame(df)].copy()
+        statuses = PAPER_BET_STATUSES if mode == "paper" else LIVE_BET_STATUSES
+        df = df[_is_open_position_frame(df, statuses)].copy()
     elif status == "settled" and "result" in df.columns:
         df = df[df["result"].notna()].copy()
     elif status != "all":
@@ -633,8 +662,9 @@ def get_bets(
 
 
 @app.get("/api/open-bets")
-def get_open_bets(user: dict = Depends(require_approved_user)):
-    df = DB.get_user_orders(user["email"])
+def get_open_bets(mode: str = "paper", user: dict = Depends(require_approved_user)):
+    mode = _validate_bet_mode(mode)
+    df = _orders_for_mode(user["email"], mode)
     if df.empty:
         return {"bets": [], "total": 0}
 
@@ -646,7 +676,8 @@ def get_open_bets(user: dict = Depends(require_approved_user)):
     if df.empty or "result" not in df.columns:
         return {"bets": [], "total": 0}
 
-    open_df = df[_is_open_position_frame(df)].copy()
+    statuses = PAPER_BET_STATUSES if mode == "paper" else LIVE_BET_STATUSES
+    open_df = df[_is_open_position_frame(df, statuses)].copy()
     if open_df.empty:
         return {"bets": [], "total": 0}
 
@@ -698,6 +729,15 @@ def get_balance(user: dict = Depends(require_approved_user)):
     return {
         "history": _safe_records(df),
         "current_dollars": float(df.iloc[-1]["balance_dollars"]),
+    }
+
+
+@app.get("/api/paper-bankroll")
+def get_paper_bankroll(user: dict = Depends(require_approved_user)):
+    _ensure_paper_backfill(user["email"])
+    return {
+        "starting_dollars": DB.PAPER_STARTING_BANKROLL_DOLLARS,
+        "current_dollars": DB.get_paper_bankroll_dollars(user["email"]),
     }
 
 
@@ -1040,8 +1080,13 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
 # ---------------------------------------------------------------------------
 
 
-def _build_public_performance(email: str | None = None) -> PublicPerformanceResponse:
-    bets_df = DB.get_user_orders(email) if email else DB.get_all_user_orders()
+def _build_public_performance(
+    email: str | None = None,
+    *,
+    mode: str = "live",
+) -> PublicPerformanceResponse:
+    mode = _validate_bet_mode(mode)
+    bets_df = _orders_for_mode(email, mode) if email else _all_orders_for_mode(mode)
     if bets_df.empty:
         return _empty_public_performance()
 
@@ -1119,8 +1164,8 @@ def _empty_public_performance() -> PublicPerformanceResponse:
 
 
 @app.get("/api/performance", response_model=PublicPerformanceResponse)
-def get_performance(user: dict = Depends(require_approved_user)):
-    return _build_public_performance(user["email"])
+def get_performance(mode: str = "paper", user: dict = Depends(require_approved_user)):
+    return _build_public_performance(user["email"], mode=mode)
 
 
 @app.get("/api/public/performance", response_model=PublicPerformanceResponse)

@@ -197,6 +197,46 @@
     }
     nav button.active::after { width: 80%; background: var(--accent); }
 
+    .mode-bar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .mode-label {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .mode-toggle {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-elevated);
+    }
+    .mode-toggle button {
+      border: none;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .mode-toggle button.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
     main {
       padding: 32px;
       max-width: 1440px;
@@ -960,6 +1000,7 @@
       .settings-button svg { width: 16px; height: 16px; }
       nav { padding: 0 14px; }
       nav button { padding: 14px 14px; font-size: 0.75rem; }
+      .mode-bar { padding: 8px 14px; justify-content: space-between; }
       main { padding: 14px; }
       .hero-card h2,
       .page-title h1 { font-size: 1.7rem; }
@@ -1043,6 +1084,14 @@
   <button data-page="performance" onclick="showPage('performance', this)">Performance</button>
 </nav>
 
+<div class="mode-bar">
+  <span class="mode-label">Bet View</span>
+  <div class="mode-toggle" role="group" aria-label="Bet view mode">
+    <button id="mode-paper" type="button" onclick="setBetMode('paper')">Paper</button>
+    <button id="mode-live" type="button" onclick="setBetMode('live')">Live</button>
+  </div>
+</div>
+
 <main>
   <div id="page-overview" class="page active">
     <div class="hero-grid">
@@ -1076,7 +1125,7 @@
       <div class="metric-card">
         <div class="metric-card-label">Current Balance</div>
         <div class="metric-card-value" id="s-balance">—</div>
-        <div class="metric-card-copy">Latest bankroll snapshot from the balance table.</div>
+        <div class="metric-card-copy" id="s-balance-copy">Latest bankroll snapshot from the balance table.</div>
       </div>
       <div class="metric-card">
         <div class="metric-card-label">Live Betting</div>
@@ -1304,7 +1353,9 @@ const state = {
   currentUser: null,
   account: null,
   settings: { live_betting: false, dashboard_timezone: 'America/Denver' },
+  betMode: 'paper',
   balance: null,
+  paperBankroll: null,
   performance: null,
   upcoming: null,
   teams: null,
@@ -1560,6 +1611,19 @@ function showPage(page, btn) {
   localStorage.setItem('dashboard_page', page);
 }
 
+function renderModeToggle() {
+  document.getElementById('mode-paper')?.classList.toggle('active', state.betMode === 'paper');
+  document.getElementById('mode-live')?.classList.toggle('active', state.betMode === 'live');
+}
+
+async function setBetMode(mode) {
+  state.betMode = mode === 'live' ? 'live' : 'paper';
+  localStorage.setItem('bet_mode', state.betMode);
+  renderModeToggle();
+  await loadBetModeData();
+  renderAll();
+}
+
 function getActionableGames() {
   const games = state.upcoming?.games || [];
   return games.filter(g => (g.bet_side === 'home' || g.bet_side === 'away') && g.result == null);
@@ -1697,13 +1761,14 @@ function renderSettledBets(data) {
 
 async function betsPage(dir) {
   betsOffset = Math.max(0, betsOffset + dir * BETS_LIMIT);
-  const data = await fetch(`/api/bets?status=settled&limit=${BETS_LIMIT}&offset=${betsOffset}`).then(r => r.json());
+  const data = await fetch(`/api/bets?mode=${state.betMode}&status=settled&limit=${BETS_LIMIT}&offset=${betsOffset}`).then(r => r.json());
   state.settledBets = data;
   renderSettledBets(data);
 }
 
 function renderOverview() {
   const bal = state.balance || { history: [], current_dollars: 0 };
+  const paperBankroll = state.paperBankroll || { current_dollars: 10000, starting_dollars: 10000 };
   const perf = state.performance || {};
   const modelAcc = state.modelAccuracy || {};
   const openBets = getOpenBetRows();
@@ -1711,12 +1776,17 @@ function renderOverview() {
   const nowMs = Date.now();
   const nextGame = upcomingGames.find(g => g.game_time_utc && new Date(g.game_time_utc).getTime() > nowMs)
     ?? upcomingGames[0];
-  const balance = Number(bal.current_dollars || 0);
+  const balance = state.betMode === 'paper'
+    ? Number(paperBankroll.current_dollars || paperBankroll.starting_dollars || 10000)
+    : Number(bal.current_dollars || 0);
   const openExposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
   const delta = ((modelAcc.accuracy || 0) - (modelAcc.market_accuracy || 0)) * 100;
 
   document.getElementById('hdr-balance').textContent = fmt$(balance);
   document.getElementById('s-balance').textContent = fmt$(balance);
+  document.getElementById('s-balance-copy').textContent = state.betMode === 'paper'
+    ? `Paper bankroll starts at ${fmt$(paperBankroll.starting_dollars || 10000)} and changes only after simulated settlements.`
+    : 'Latest real bankroll snapshot from the balance table.';
   document.getElementById('s-open-bets').textContent = String(openBets.length);
 
   const roi = perf.roi_pct;
@@ -1880,7 +1950,8 @@ function renderBets() {
   const openBets = getOpenBetRows();
   renderOpenBets('bets-open-body', openBets, 'No open bets');
   const exposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
-  document.getElementById('bets-summary-label').textContent = openBets.length ? `${openBets.length} open bets • ${fmt$(exposure)} exposed` : 'No open exposure';
+  const label = state.betMode === 'paper' ? 'paper' : 'live';
+  document.getElementById('bets-summary-label').textContent = openBets.length ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed` : `No open ${label} exposure`;
   renderSettledBets(state.settledBets || { bets: [], total: 0 });
 }
 
@@ -1969,6 +2040,7 @@ function renderLiveStatus() {
 }
 
 function renderAll() {
+  renderModeToggle();
   renderLiveStatus();
   renderOverview();
   renderToday();
@@ -1977,30 +2049,44 @@ function renderAll() {
   renderPerformance();
 }
 
+async function loadBetModeData() {
+  const [performance, settledBets, openBets] = await Promise.all([
+    fetch(`/api/performance?mode=${state.betMode}`).then(r => { if (!r.ok) throw new Error('performance failed'); return r.json(); }),
+    fetch(`/api/bets?mode=${state.betMode}&status=settled&limit=${BETS_LIMIT}&offset=0`).then(r => { if (!r.ok) throw new Error('bets failed'); return r.json(); }),
+    fetch(`/api/open-bets?mode=${state.betMode}`).then(r => { if (!r.ok) throw new Error('open bets failed'); return r.json(); }),
+  ]);
+  betsOffset = 0;
+  state.performance = performance;
+  state.settledBets = settledBets;
+  state.openBets = openBets;
+}
+
 async function loadAll() {
-  const [me, account, settings, balance, performance, settledBets, upcoming, teams, modelAccuracy, openBets] = await Promise.all([
+  const [me, account, settings, balance, paperBankroll, upcoming, teams, modelAccuracy] = await Promise.all([
     fetch('/api/me').then(r => { if (!r.ok) throw new Error('me failed'); return r.json(); }),
     fetch('/api/account/kalshi').then(r => { if (!r.ok) throw new Error('account failed'); return r.json(); }),
     fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings failed'); return r.json(); }),
     fetch('/api/balance').then(r => { if (!r.ok) throw new Error('balance failed'); return r.json(); }),
-    fetch('/api/performance').then(r => { if (!r.ok) throw new Error('performance failed'); return r.json(); }),
-    fetch(`/api/bets?status=settled&limit=${BETS_LIMIT}&offset=0`).then(r => { if (!r.ok) throw new Error('bets failed'); return r.json(); }),
+    fetch('/api/paper-bankroll').then(r => { if (!r.ok) throw new Error('paper bankroll failed'); return r.json(); }),
     fetch('/api/upcoming').then(r => { if (!r.ok) throw new Error('upcoming failed'); return r.json(); }),
     fetch('/api/teams').then(r => { if (!r.ok) throw new Error('teams failed'); return r.json(); }),
     fetch('/api/model-accuracy').then(r => { if (!r.ok) throw new Error('model accuracy failed'); return r.json(); }),
-    fetch('/api/open-bets').then(r => { if (!r.ok) throw new Error('open bets failed'); return r.json(); }),
   ]);
   betsOffset = 0;
   state.currentUser = me;
   state.account = account;
   state.settings = settings;
+  if (localStorage.getItem('bet_mode') === null) {
+    state.betMode = settings.effective_live_betting === true ? 'live' : 'paper';
+  } else {
+    state.betMode = localStorage.getItem('bet_mode') === 'live' ? 'live' : 'paper';
+  }
   state.balance = balance;
-  state.performance = performance;
-  state.settledBets = settledBets;
+  state.paperBankroll = paperBankroll;
   state.upcoming = upcoming;
   state.teams = teams;
   state.modelAccuracy = modelAccuracy;
-  state.openBets = openBets;
+  await loadBetModeData();
   renderAll();
 }
 

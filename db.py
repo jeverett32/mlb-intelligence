@@ -310,6 +310,8 @@ RETRYABLE_ORDER_STATUSES = (
     "skipped_no_live_price",
 )
 
+PAPER_STARTING_BANKROLL_DOLLARS = 10_000.0
+
 
 def get_upcoming_needing_prediction(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
@@ -759,6 +761,7 @@ BROWSABLE_TABLES = {
     "kalshi_accounts",
     "user_balance",
     "user_orders",
+    "paper_orders",
 }
 
 
@@ -901,11 +904,39 @@ def init_auth_tables():
                     UNIQUE (email, game_pk)
                 )
             """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS paper_orders (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    game_pk BIGINT NOT NULL,
+                    game_date DATE,
+                    home_team TEXT,
+                    away_team TEXT,
+                    predicted_prob DOUBLE PRECISION,
+                    market_implied_prob DOUBLE PRECISION,
+                    edge DOUBLE PRECISION,
+                    bet_side TEXT,
+                    bet_frac DOUBLE PRECISION,
+                    bet_dollars DOUBLE PRECISION,
+                    n_contracts INTEGER,
+                    live_price DOUBLE PRECISION,
+                    live_edge DOUBLE PRECISION,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    result BOOLEAN,
+                    profit_loss DOUBLE PRECISION,
+                    paper_bankroll_before DOUBLE PRECISION,
+                    paper_bankroll_after DOUBLE PRECISION,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (email, game_pk)
+                )
+            """)
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_approval_status ON {APP_USERS_TABLE} (approval_status)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_is_admin ON {APP_USERS_TABLE} (is_admin)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_SESSIONS_TABLE}_email ON {APP_SESSIONS_TABLE} (email)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_balance_email_recorded ON user_balance (email, recorded_at)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_email_status ON user_orders (email, status, game_date)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_orders_email_status ON paper_orders (email, status, game_date)")
 
             cur.execute(
                 f"""
@@ -1480,6 +1511,315 @@ def get_user_balance_history(email: str) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
 
+def get_paper_bankroll_dollars(email: str) -> float:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(profit_loss), 0)
+                FROM paper_orders
+                WHERE email = %s
+                  AND profit_loss IS NOT NULL
+                """,
+                (email,),
+            )
+            row = cur.fetchone()
+            paper_profit = float(row[0] or 0.0) if row else 0.0
+            return round(PAPER_STARTING_BANKROLL_DOLLARS + paper_profit, 2)
+    finally:
+        conn.close()
+
+
+def backfill_paper_orders_from_bets(email: str | None = None) -> int:
+    """Create missing paper orders from historical model-qualified bet signals."""
+    target_email = _norm_email(email or "")
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if target_email:
+                cur.execute(
+                    f"""
+                    SELECT email
+                    FROM {APP_USERS_TABLE}
+                    WHERE email = %s
+                      AND approval_status = 'approved'
+                    """,
+                    (target_email,),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT email
+                    FROM {APP_USERS_TABLE}
+                    WHERE approval_status = 'approved'
+                    ORDER BY email
+                    """
+                )
+            users = [dict(row)["email"] for row in cur.fetchall()]
+            if not users:
+                return 0
+
+            cur.execute(
+                """
+                SELECT b.game_pk, b.game_date, b.home_team, b.away_team,
+                       b.predicted_prob, b.market_implied_prob, b.edge,
+                       b.bet_side, b.bet_frac, g.home_win
+                FROM bets b
+                LEFT JOIN games g ON g.game_pk = b.game_pk
+                WHERE b.bet_side IN ('home', 'away')
+                  AND COALESCE(b.bet_frac, 0) > 0
+                  AND b.predicted_prob IS NOT NULL
+                ORDER BY b.game_date ASC NULLS LAST, b.game_pk ASC
+                """
+            )
+            signals = [dict(row) for row in cur.fetchall()]
+            if not signals:
+                return 0
+
+            inserted = 0
+            for user_email in users:
+                cur.execute(
+                    """
+                    SELECT game_pk, profit_loss
+                    FROM paper_orders
+                    WHERE email = %s
+                    """,
+                    (user_email,),
+                )
+                existing = {int(row["game_pk"]): dict(row) for row in cur.fetchall()}
+                bankroll = PAPER_STARTING_BANKROLL_DOLLARS
+                rows_to_insert = []
+                for signal in signals:
+                    game_pk = int(signal["game_pk"])
+                    existing_row = existing.get(game_pk)
+                    if existing_row:
+                        if existing_row.get("profit_loss") is not None:
+                            bankroll += float(existing_row["profit_loss"])
+                        continue
+
+                    bet_frac = float(signal.get("bet_frac") or 0.0)
+                    bet_dollars = round(bankroll * bet_frac, 2)
+                    bet_side = str(signal.get("bet_side") or "none")
+                    market_prob = signal.get("market_implied_prob")
+                    live_price = None
+                    live_edge = None
+                    if market_prob is not None:
+                        market_prob = float(market_prob)
+                        live_price = market_prob if bet_side == "home" else 1.0 - market_prob
+                        model_prob = float(signal["predicted_prob"])
+                        if bet_side == "away":
+                            model_prob = 1.0 - model_prob
+                        live_edge = model_prob - live_price
+
+                    result = signal.get("home_win")
+                    profit_loss = None
+                    bankroll_after = bankroll
+                    if result is not None and bet_dollars > 0:
+                        won = (bool(result) and bet_side == "home") or (
+                            not bool(result) and bet_side == "away"
+                        )
+                        if won and live_price and 0 < live_price < 1:
+                            profit_loss = round(bet_dollars * (1.0 / live_price - 1.0), 2)
+                        elif not won:
+                            profit_loss = -bet_dollars
+                        if profit_loss is not None:
+                            bankroll_after = round(bankroll + profit_loss, 2)
+
+                    rows_to_insert.append(
+                        (
+                            user_email,
+                            game_pk,
+                            str(signal.get("game_date") or "")[:10] or None,
+                            signal.get("home_team") or "",
+                            signal.get("away_team") or "",
+                            float(signal["predicted_prob"]),
+                            float(market_prob) if market_prob is not None else None,
+                            float(signal["edge"]) if signal.get("edge") is not None else None,
+                            bet_side,
+                            bet_frac,
+                            bet_dollars,
+                            None,
+                            live_price,
+                            live_edge,
+                            "dry_run" if bet_dollars > 0 else "skipped_too_small",
+                            bool(result) if result is not None else None,
+                            profit_loss,
+                            bankroll,
+                            bankroll_after,
+                        )
+                    )
+                    inserted += 1
+                    if profit_loss is not None:
+                        bankroll = bankroll_after
+
+                if rows_to_insert:
+                    execute_values(
+                        cur,
+                        """
+                        INSERT INTO paper_orders (
+                            email, game_pk, game_date, home_team, away_team,
+                            predicted_prob, market_implied_prob, edge,
+                            bet_side, bet_frac, bet_dollars, n_contracts,
+                            live_price, live_edge, status, result, profit_loss,
+                            paper_bankroll_before, paper_bankroll_after, updated_at
+                        )
+                        VALUES %s
+                        ON CONFLICT (email, game_pk) DO NOTHING
+                        """,
+                        rows_to_insert,
+                        template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())",
+                    )
+        conn.commit()
+        return inserted
+    finally:
+        conn.close()
+
+
+def upsert_paper_order(
+    email: str,
+    game_pk: str | int,
+    *,
+    game_date: str = "",
+    home_team: str = "",
+    away_team: str = "",
+    predicted_prob=None,
+    market_implied_prob=None,
+    edge=None,
+    bet_side: str = "none",
+    bet_frac: float = 0.0,
+    bet_dollars=None,
+    n_contracts=None,
+    live_price=None,
+    live_edge=None,
+    status: str = "pending",
+    paper_bankroll_before=None,
+    paper_bankroll_after=None,
+):
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO paper_orders (
+                    email, game_pk, game_date, home_team, away_team,
+                    predicted_prob, market_implied_prob, edge,
+                    bet_side, bet_frac, bet_dollars, n_contracts,
+                    live_price, live_edge, status,
+                    paper_bankroll_before, paper_bankroll_after, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, NOW()
+                )
+                ON CONFLICT (email, game_pk) DO UPDATE SET
+                    game_date = EXCLUDED.game_date,
+                    home_team = EXCLUDED.home_team,
+                    away_team = EXCLUDED.away_team,
+                    predicted_prob = EXCLUDED.predicted_prob,
+                    market_implied_prob = EXCLUDED.market_implied_prob,
+                    edge = EXCLUDED.edge,
+                    bet_side = EXCLUDED.bet_side,
+                    bet_frac = EXCLUDED.bet_frac,
+                    bet_dollars = COALESCE(EXCLUDED.bet_dollars, paper_orders.bet_dollars),
+                    n_contracts = COALESCE(EXCLUDED.n_contracts, paper_orders.n_contracts),
+                    live_price = EXCLUDED.live_price,
+                    live_edge = EXCLUDED.live_edge,
+                    status = EXCLUDED.status,
+                    paper_bankroll_before = COALESCE(EXCLUDED.paper_bankroll_before, paper_orders.paper_bankroll_before),
+                    paper_bankroll_after = COALESCE(EXCLUDED.paper_bankroll_after, paper_orders.paper_bankroll_after),
+                    updated_at = NOW()
+                """,
+                (
+                    email,
+                    int(game_pk),
+                    str(game_date)[:10] or None,
+                    home_team,
+                    away_team,
+                    float(predicted_prob) if predicted_prob is not None else None,
+                    float(market_implied_prob) if market_implied_prob is not None else None,
+                    float(edge) if edge is not None and edge == edge else None,
+                    bet_side,
+                    float(bet_frac or 0.0),
+                    float(bet_dollars) if bet_dollars is not None else None,
+                    int(n_contracts) if n_contracts is not None else None,
+                    float(live_price) if live_price is not None else None,
+                    float(live_edge) if live_edge is not None else None,
+                    status,
+                    float(paper_bankroll_before) if paper_bankroll_before is not None else None,
+                    float(paper_bankroll_after) if paper_bankroll_after is not None else None,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_paper_orders(email: str) -> pd.DataFrame:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM paper_orders
+                WHERE email = %s
+                ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                """,
+                (email,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
+    return df
+
+
+def get_all_paper_orders() -> pd.DataFrame:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM paper_orders
+                ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                """
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
+    return df
+
+
+def get_paper_order(email: str, game_pk: str | int) -> dict | None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM paper_orders WHERE email = %s AND game_pk = %s",
+                (email, int(game_pk)),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def upsert_user_order(
     email: str,
     game_pk: str | int,
@@ -1648,6 +1988,61 @@ def backfill_user_order_results():
                 WHERE uo.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
                   AND (uo.result IS DISTINCT FROM g.home_win OR uo.profit_loss IS NULL)
+                """
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
+def backfill_paper_order_results():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE paper_orders po
+                SET result = g.home_win,
+                    profit_loss = CASE
+                        WHEN po.bet_side IS NULL OR po.bet_side = 'none'
+                             OR po.bet_dollars IS NULL THEN NULL
+                        WHEN (g.home_win AND po.bet_side = 'home') OR (NOT g.home_win AND po.bet_side = 'away') THEN
+                            ROUND((
+                                CASE
+                                    WHEN po.n_contracts IS NOT NULL THEN po.n_contracts::numeric - po.bet_dollars
+                                    WHEN po.live_price IS NOT NULL AND po.live_price > 0 THEN po.bet_dollars * (1.0 / po.live_price - 1)
+                                    WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'home' THEN po.bet_dollars * (1.0 / NULLIF(po.market_implied_prob, 0) - 1)
+                                    WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'away' THEN po.bet_dollars * (1.0 / NULLIF(1.0 - po.market_implied_prob, 0) - 1)
+                                    ELSE NULL
+                                END
+                            )::numeric, 2)
+                        ELSE -po.bet_dollars
+                    END,
+                    paper_bankroll_after = CASE
+                        WHEN po.paper_bankroll_before IS NULL THEN NULL
+                        WHEN po.bet_side IS NULL OR po.bet_side = 'none'
+                             OR po.bet_dollars IS NULL THEN po.paper_bankroll_before
+                        WHEN (g.home_win AND po.bet_side = 'home') OR (NOT g.home_win AND po.bet_side = 'away') THEN
+                            ROUND((
+                                po.paper_bankroll_before + (
+                                    CASE
+                                        WHEN po.n_contracts IS NOT NULL THEN po.n_contracts::numeric - po.bet_dollars
+                                        WHEN po.live_price IS NOT NULL AND po.live_price > 0 THEN po.bet_dollars * (1.0 / po.live_price - 1)
+                                        WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'home' THEN po.bet_dollars * (1.0 / NULLIF(po.market_implied_prob, 0) - 1)
+                                        WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'away' THEN po.bet_dollars * (1.0 / NULLIF(1.0 - po.market_implied_prob, 0) - 1)
+                                        ELSE 0
+                                    END
+                                )
+                            )::numeric, 2)
+                        ELSE ROUND((po.paper_bankroll_before - po.bet_dollars)::numeric, 2)
+                    END,
+                    updated_at = NOW()
+                FROM games g
+                WHERE po.game_pk = g.game_pk
+                  AND g.home_win IS NOT NULL
+                  AND (po.result IS DISTINCT FROM g.home_win OR po.profit_loss IS NULL)
                 """
             )
             count = cur.rowcount

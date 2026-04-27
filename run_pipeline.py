@@ -390,6 +390,10 @@ def settle_completed_games():
         DB.backfill_user_order_results()
     except Exception as e:
         print(f"  User order backfill failed: {e}")
+    try:
+        DB.backfill_paper_order_results()
+    except Exception as e:
+        print(f"  Paper order backfill failed: {e}")
 
 
 # ---------------------------------------------------------------------------
