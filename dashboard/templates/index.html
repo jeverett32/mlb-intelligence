@@ -574,14 +574,13 @@
     .calendar-bar {
       display: flex;
       align-items: center;
-      gap: 0;
+      gap: 4px;
       padding: 16px 0 20px;
     }
     .calendar-month {
       display: flex;
       flex-direction: column;
       min-width: 64px;
-      margin-right: 4px;
     }
     .calendar-month span:first-child {
       font-family: 'Playfair Display', serif;
@@ -1346,11 +1345,11 @@
 
   <div id="page-games" class="page">
     <div class="calendar-bar">
-      <button class="cal-arrow" id="cal-prev" onclick="calWeekShift(-1)">‹</button>
       <div class="calendar-month">
         <span id="cal-month-label">April</span>
         <span id="cal-year-label">2026</span>
       </div>
+      <button class="cal-arrow" id="cal-prev" onclick="calWeekShift(-1)">‹</button>
       <div class="cal-days" id="cal-days"></div>
       <button class="cal-arrow" id="cal-next" onclick="calWeekShift(1)">›</button>
     </div>
