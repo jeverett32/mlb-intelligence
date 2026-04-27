@@ -369,9 +369,9 @@
     .info-icon::after {
       content: attr(data-tooltip);
       position: absolute;
-      left: 50%;
+      left: 0;
       top: calc(100% + 8px);
-      transform: translateX(-50%) translateY(4px);
+      transform: translateY(4px);
       width: min(260px, 72vw);
       padding: 9px 10px;
       background: var(--text-primary);
@@ -394,7 +394,7 @@
     .info-icon:focus-visible::after {
       opacity: 1;
       visibility: visible;
-      transform: translateX(-50%) translateY(0);
+      transform: translateY(0);
     }
     .panel-body { padding: 16px; }
     .panel-note {
