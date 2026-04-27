@@ -336,6 +336,9 @@
       margin-bottom: 24px;
     }
     .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       background: var(--bg-elevated);
       color: var(--text-secondary);
       font-size: 0.7rem;
@@ -344,6 +347,54 @@
       text-transform: uppercase;
       padding: 12px 16px;
       border-bottom: 1px solid var(--border);
+    }
+    .info-icon {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border: 1px solid var(--accent);
+      border-radius: 50%;
+      color: var(--accent);
+      font-size: 0.62rem;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0;
+      text-transform: none;
+      cursor: help;
+      flex: 0 0 auto;
+    }
+    .info-icon::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 8px);
+      transform: translateX(-50%) translateY(4px);
+      width: min(260px, 72vw);
+      padding: 9px 10px;
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      font-size: 0.72rem;
+      font-weight: 500;
+      line-height: 1.45;
+      letter-spacing: 0;
+      text-transform: none;
+      white-space: normal;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      z-index: 20;
+    }
+    .info-icon:hover::after,
+    .info-icon:focus-visible::after {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
     }
     .panel-body { padding: 16px; }
     .panel-note {
@@ -1367,14 +1418,6 @@
   </div>
 
   <div id="page-teams" class="page">
-    <div class="page-title">
-      <div>
-        <h1>Teams</h1>
-        <p>A league-wide view of divisions, records, standings, streaks, run differential, and schedule context from the games database.</p>
-      </div>
-      <div class="aside" id="teams-updated-label">Season standings</div>
-    </div>
-
     <div class="teams-spotlight">
       <section class="team-search-card">
         <div class="hero-kicker">MLB Overview</div>
@@ -1419,21 +1462,19 @@
   </div>
 
   <div id="page-bets" class="page">
-    <div class="page-title">
-      <div>
-        <h1>Bets</h1>
-        <p>Separate open exposure from realized results. Open positions answer what money is at risk now; settled history answers how the strategy has paid out.</p>
-      </div>
-      <div class="aside" id="bets-summary-label">Tracking open and settled wagers</div>
-    </div>
-
     <div class="panel">
-      <div class="panel-header">Open Bets</div>
+      <div class="panel-header">
+        Open Bets
+        <span class="info-icon" tabindex="0" aria-label="Open Bets info" data-tooltip="Unsettled wagers with money still at risk. This table shows current exposure, stake, model probability, market probability, edge, and execution status.">i</span>
+      </div>
       <div class="table-wrap" id="bets-open-body"></div>
     </div>
 
     <div class="panel" style="margin-top:24px">
-      <div class="panel-header">Settled Bet History</div>
+      <div class="panel-header">
+        Settled Bet History
+        <span class="info-icon" tabindex="0" aria-label="Settled Bet History info" data-tooltip="Completed wagers with known outcomes. Use this to review historical stake, signal, result, and profit or loss.">i</span>
+      </div>
       <div class="table-wrap" id="bets-body"></div>
       <div class="pagination">
         <button id="bets-prev" onclick="betsPage(-1)">← Prev</button>
@@ -1444,14 +1485,6 @@
   </div>
 
   <div id="page-performance" class="page">
-    <div class="page-title">
-      <div>
-        <h1>Performance</h1>
-        <p>This page separates prediction quality from wagering results. Model-versus-market accuracy tells you whether the signal is better than consensus; bet ROI tells you whether execution has produced money.</p>
-      </div>
-      <div class="aside">Settled outcomes only</div>
-    </div>
-
     <div class="metric-grid">
       <div class="metric-card">
         <div class="metric-card-label">Model Accuracy</div>
@@ -1511,13 +1544,19 @@
 
     <div class="panel-row">
       <section class="panel">
-        <div class="panel-header">Model Calibration</div>
+        <div class="panel-header">
+          Model Calibration
+          <span class="info-icon" tabindex="0" aria-label="Model Calibration info" data-tooltip="Groups settled model predictions by confidence bucket and compares predicted home-win probability against actual results. Closer to the diagonal means better calibration.">i</span>
+        </div>
         <div class="panel-body">
           <div class="chart-wrap" id="model-cal-chart-wrap"><canvas id="chart-cal-model"></canvas></div>
         </div>
       </section>
       <section class="panel">
-        <div class="panel-header">Bet Calibration</div>
+        <div class="panel-header">
+          Bet Calibration
+          <span class="info-icon" tabindex="0" aria-label="Bet Calibration info" data-tooltip="Groups settled wagers by model confidence and compares expected win rate against actual wager outcomes. This reflects calibration on games the system actually bet.">i</span>
+        </div>
         <div class="panel-body">
           <div class="chart-wrap" id="bet-cal-chart-wrap"><canvas id="chart-cal-perf"></canvas></div>
         </div>
@@ -2261,9 +2300,12 @@ function renderTeams() {
   const hottest = summary.hottest;
   const divisions = data.divisions || [];
 
-  document.getElementById('teams-updated-label').textContent = data.last_updated_utc
-    ? `Updated ${formatLocalDateTime(data.last_updated_utc)}`
-    : 'Season standings';
+  const teamsUpdatedLabel = document.getElementById('teams-updated-label');
+  if (teamsUpdatedLabel) {
+    teamsUpdatedLabel.textContent = data.last_updated_utc
+      ? `Updated ${formatLocalDateTime(data.last_updated_utc)}`
+      : 'Season standings';
+  }
   document.getElementById('teams-count').textContent = summary.teams ?? '—';
   document.getElementById('teams-games').textContent = summary.completed_games ?? '—';
 
@@ -2304,7 +2346,10 @@ function renderBets() {
   renderOpenBets('bets-open-body', openBets, 'No open bets');
   const exposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
   const label = state.betMode === 'paper' ? 'paper' : 'live';
-  document.getElementById('bets-summary-label').textContent = openBets.length ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed` : `No open ${label} exposure`;
+  const betsSummaryLabel = document.getElementById('bets-summary-label');
+  if (betsSummaryLabel) {
+    betsSummaryLabel.textContent = openBets.length ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed` : `No open ${label} exposure`;
+  }
   renderSettledBets(state.settledBets || { bets: [], total: 0 });
 }
 
