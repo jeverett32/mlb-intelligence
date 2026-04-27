@@ -421,12 +421,12 @@ TEAM_INFO = {
 LEAGUE_LABELS = {"AL": "American League", "NL": "National League"}
 
 DIVISION_ORDER = [
-    ("AL", "East"),
-    ("AL", "Central"),
-    ("AL", "West"),
     ("NL", "East"),
+    ("AL", "East"),
     ("NL", "Central"),
+    ("AL", "Central"),
     ("NL", "West"),
+    ("AL", "West"),
 ]
 
 
