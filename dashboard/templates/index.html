@@ -575,13 +575,14 @@
     .calendar-bar {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 0;
       padding: 16px 0 20px;
     }
     .calendar-month {
       display: flex;
       flex-direction: column;
       min-width: 52px;
+      margin-right: 8px;
     }
     .calendar-month span:first-child {
       font-family: 'Playfair Display', serif;
@@ -603,6 +604,7 @@
       padding: 4px 6px;
       border-radius: 6px;
       line-height: 1;
+      flex: 0 0 auto;
     }
     .cal-arrow:hover { background: var(--bg-elevated); }
     .cal-days {
@@ -1542,8 +1544,8 @@ const state = {
   modelAccuracy: null,
   openBets: null,
   settledBets: null,
-  gamesDateStr: null, // YYYY-MM-DD for games calendar
-  gamesWeekStart: null, // Date object for start of displayed week
+  gamesDateStr: null, // YYYY-MM-DD selected day
+  gamesWeekAnchor: null, // YYYY-MM-DD any day in the displayed week
 };
 
 const TEAM_FULL = {
@@ -2047,8 +2049,9 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function renderCalendar() {
+  const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const selected = state.gamesDateStr || todayDateStr();
-  const weekDays = getWeekDays(selected);
+  const weekDays = getWeekDays(anchor);
   const mid = weekDays[3];
 
   document.getElementById('cal-month-label').textContent = MONTH_NAMES[mid.getMonth()];
@@ -2067,16 +2070,16 @@ function renderCalendar() {
 }
 
 function calWeekShift(dir) {
-  const current = state.gamesDateStr || todayDateStr();
-  const d = new Date(current + 'T12:00:00');
+  const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
+  const d = new Date(anchor + 'T12:00:00');
   d.setDate(d.getDate() + dir * 7);
-  state.gamesDateStr = fmtDateStr(d);
+  state.gamesWeekAnchor = fmtDateStr(d);
   renderCalendar();
-  loadGamesForDate(state.gamesDateStr);
 }
 
 async function selectGameDate(dateStr) {
   state.gamesDateStr = dateStr;
+  state.gamesWeekAnchor = dateStr;
   renderCalendar();
   await loadGamesForDate(dateStr);
 }
@@ -2153,6 +2156,7 @@ function renderGameCards(games) {
 
 function renderGamesPage() {
   if (!state.gamesDateStr) state.gamesDateStr = todayDateStr();
+  if (!state.gamesWeekAnchor) state.gamesWeekAnchor = state.gamesDateStr;
   renderCalendar();
   loadGamesForDate(state.gamesDateStr);
 }
