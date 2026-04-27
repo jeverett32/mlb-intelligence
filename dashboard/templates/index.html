@@ -627,6 +627,9 @@
       background: var(--text-primary);
       color: var(--bg-primary);
     }
+    .cal-day.today:not(.active) {
+      box-shadow: inset 0 0 0 2px var(--text-primary);
+    }
     .cal-day-label {
       font-size: 0.68rem;
       font-weight: 600;
@@ -2069,6 +2072,7 @@ function seasonBounds() {
 function renderCalendar() {
   const anchor = state.gamesWeekAnchor || state.gamesDateStr || todayDateStr();
   const selected = state.gamesDateStr || todayDateStr();
+  const today = todayDateStr();
   const weekDays = getWeekDays(anchor);
   const { start, end } = seasonBounds();
 
@@ -2083,8 +2087,9 @@ function renderCalendar() {
     const inSeason = ds >= start && ds <= end;
     if (!inSeason) return '<div class="cal-day empty"><span class="cal-day-label">&nbsp;</span><span class="cal-day-num">&nbsp;</span></div>';
     const isActive = ds === selected;
+    const isToday = ds === today;
     return `
-      <div class="cal-day${isActive ? ' active' : ''}" onclick="selectGameDate('${ds}')">
+      <div class="cal-day${isActive ? ' active' : ''}${isToday ? ' today' : ''}" onclick="selectGameDate('${ds}')">
         <span class="cal-day-label">${DAY_NAMES[d.getDay()]}</span>
         <span class="cal-day-num">${String(d.getDate()).padStart(2, '0')}</span>
       </div>`;
