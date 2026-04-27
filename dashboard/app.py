@@ -446,7 +446,8 @@ def get_settings(user: dict = Depends(require_approved_user)):
         "dashboard_timezone": DB.get_user_setting(
             user["email"], "dashboard_timezone", _get_dashboard_timezone()
         ),
-        "global_live_betting": DB.is_global_live_betting() if user["is_admin"] else None,
+        "global_live_betting": DB.is_global_live_betting(),
+        "can_manage_global_live_betting": bool(user["is_admin"]),
         "effective_live_betting": DB.is_global_live_betting() and DB.is_user_live_betting(user["email"]),
     }
 

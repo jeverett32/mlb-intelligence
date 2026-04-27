@@ -280,6 +280,10 @@
     }
     .toggle-switch input:checked + .toggle-slider { background: var(--success); }
     .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .toggle-switch input:disabled + .toggle-slider {
+      cursor: not-allowed;
+      opacity: 0.58;
+    }
     .toggle-status { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); }
     .toggle-status.live { color: var(--success); }
 
@@ -401,9 +405,9 @@
           <div class="settings-feedback" id="live-feedback"></div>
         </section>
 
-        <section class="settings-section" id="global-live-section" style="display:none">
+        <section class="settings-section" id="global-live-section">
           <div class="settings-section-title">Global Master Switch</div>
-          <p>Admin-only. Turning this off disables live execution for every user.</p>
+          <p id="global-live-copy">Admin-only. Turning this off disables live execution for every user.</p>
           <div class="toggle-wrap">
             <span class="toggle-label">Global Master Switch</span>
             <label class="toggle-switch">
@@ -577,14 +581,19 @@
       document.getElementById('toggle-status').textContent = personalOn ? 'ON' : 'OFF';
       document.getElementById('toggle-status').classList.toggle('live', personalOn);
 
-      // Admin-only
+      // Global live state is visible to everyone; only admins can edit it.
+      const globalOn = settings.global_live_betting === true;
+      const canManageGlobal = settings.can_manage_global_live_betting === true;
+      document.getElementById('global-live-toggle').checked = globalOn;
+      document.getElementById('global-live-toggle').disabled = !canManageGlobal;
+      document.getElementById('global-toggle-status').textContent = globalOn ? 'ON' : 'OFF';
+      document.getElementById('global-toggle-status').classList.toggle('live', globalOn);
+      document.getElementById('global-live-copy').textContent = canManageGlobal
+        ? 'Admin-only. Turning this off disables live execution for every user.'
+        : 'Read-only. An admin controls whether live execution is globally enabled.';
+
       if (me.is_admin) {
-        document.getElementById('global-live-section').style.display = '';
         document.getElementById('admin-tab-btn').style.display = '';
-        const globalOn = settings.global_live_betting !== false;
-        document.getElementById('global-live-toggle').checked = globalOn;
-        document.getElementById('global-toggle-status').textContent = globalOn ? 'ON' : 'OFF';
-        document.getElementById('global-toggle-status').classList.toggle('live', globalOn);
       }
 
       // Kalshi account

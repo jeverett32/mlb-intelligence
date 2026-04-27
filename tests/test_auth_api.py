@@ -64,7 +64,8 @@ def test_user_settings_include_personal_and_effective_live(monkeypatch, app_modu
     assert r.status_code == 200
     body = r.json()
     assert body["live_betting"] is True
-    assert body["global_live_betting"] is None
+    assert body["global_live_betting"] is False
+    assert body["can_manage_global_live_betting"] is False
     assert body["effective_live_betting"] is False
 
 
@@ -89,6 +90,29 @@ def test_admin_can_toggle_global_live(monkeypatch, app_module, client):
     r = client.post("/api/admin/settings/global_live_betting", json={"value": "false"})
     assert r.status_code == 200
     assert seen == {"key": "global_live_betting", "value": "false"}
+
+
+def test_settings_page_shows_readonly_global_toggle(client):
+    r = client.get("/settings")
+    assert r.status_code in (401, 403)
+
+
+def test_settings_template_contains_global_readonly_copy(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/settings")
+    assert r.status_code == 200
+    assert "Read-only. An admin controls whether live execution is globally enabled." in r.text
+    assert "global-live-toggle" in r.text
 
 
 def test_root_returns_landing_page_for_unauthenticated_user(client):
