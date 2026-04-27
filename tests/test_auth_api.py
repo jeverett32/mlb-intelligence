@@ -116,6 +116,101 @@ def test_root_returns_private_dashboard_for_approved_user(monkeypatch, app_modul
     assert r.status_code == 200
     assert "MLB Intelligence" in r.text
     assert "MLB Betting Dashboard" not in r.text
+    assert 'data-page="teams"' in r.text
+    assert 'id="page-teams"' in r.text
+
+
+def test_team_overview_computes_division_standings_and_streaks(app_module):
+    games = pd.DataFrame(
+        [
+            {
+                "game_pk": 1,
+                "game_date": "2026-04-01",
+                "game_time_utc": "2026-04-01T17:00:00Z",
+                "home_team": "NYY",
+                "away_team": "BOS",
+                "home_score": 5,
+                "away_score": 3,
+                "home_win": True,
+            },
+            {
+                "game_pk": 2,
+                "game_date": "2026-04-02",
+                "game_time_utc": "2026-04-02T17:00:00Z",
+                "home_team": "TOR",
+                "away_team": "NYY",
+                "home_score": 2,
+                "away_score": 4,
+                "home_win": False,
+            },
+            {
+                "game_pk": 3,
+                "game_date": "2026-04-03",
+                "game_time_utc": "2026-04-03T17:00:00Z",
+                "home_team": "BOS",
+                "away_team": "TOR",
+                "home_score": None,
+                "away_score": None,
+                "home_win": None,
+            },
+        ]
+    )
+
+    overview = app_module._build_team_overview(games, season=2026)
+    al_east = next(d for d in overview["divisions"] if d["name"] == "AL East")
+    yankees = next(t for t in al_east["teams"] if t["abbr"] == "NYY")
+    blue_jays = next(t for t in al_east["teams"] if t["abbr"] == "TOR")
+
+    assert overview["summary"]["completed_games"] == 2
+    assert yankees["division_rank"] == 1
+    assert yankees["wins"] == 2
+    assert yankees["streak"] == "W2"
+    assert yankees["run_diff"] == 4
+    assert blue_jays["games_back"] == 1.5
+    assert blue_jays["next_game"]["opponent"] == "BOS"
+
+
+def test_teams_api_requires_auth(client):
+    r = client.get("/api/teams")
+    assert r.status_code in (401, 403)
+
+
+def test_teams_api_returns_overview_for_approved_user(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_games_df",
+        lambda season=2026, upcoming_only=False: pd.DataFrame(
+            [
+                {
+                    "game_pk": 1,
+                    "game_date": "2026-04-01",
+                    "game_time_utc": "2026-04-01T17:00:00Z",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "home_score": 5,
+                    "away_score": 3,
+                    "home_win": True,
+                }
+            ]
+        ),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/teams")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {"season", "last_updated_utc", "summary", "divisions", "teams"}
+    assert body["summary"]["teams"] == 30
+    assert body["summary"]["completed_games"] == 1
 
 
 def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):

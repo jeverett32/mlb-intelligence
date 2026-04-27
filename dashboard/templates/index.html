@@ -530,6 +530,172 @@
       line-height: 1.5;
     }
 
+    .teams-spotlight {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .team-search-card {
+      background:
+        radial-gradient(circle at top right, rgba(184,134,11,0.14), transparent 38%),
+        var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow-md);
+      padding: 22px;
+    }
+    .team-search-card h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 2rem;
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+    .team-search-card p {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      max-width: 46rem;
+    }
+    .teams-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .team-pill-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--bg-elevated);
+      padding: 14px;
+    }
+    .team-pill-label {
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .team-pill-value {
+      color: var(--text-primary);
+      font-size: 1.1rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    .team-pill-copy {
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      margin-top: 4px;
+    }
+    .division-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+    }
+    .division-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .division-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+    }
+    .division-card-header h3 {
+      color: var(--text-primary);
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .division-card-header span {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .team-row {
+      display: grid;
+      grid-template-columns: minmax(170px, 1.6fr) repeat(5, minmax(58px, 0.45fr)) minmax(110px, 0.8fr);
+      gap: 10px;
+      align-items: center;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .team-row:last-child { border-bottom: none; }
+    .team-row:hover { background: var(--bg-elevated); }
+    .team-row.head {
+      padding-top: 10px;
+      padding-bottom: 10px;
+      color: var(--text-muted);
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: var(--bg-card);
+    }
+    .team-identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .team-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      flex: 0 0 auto;
+    }
+    .team-name {
+      color: var(--text-primary);
+      font-size: 0.88rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .team-sub {
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .team-stat {
+      color: var(--text-primary);
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .team-next {
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    .team-next strong { color: var(--text-primary); }
+    .team-rank {
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      font-weight: 700;
+    }
+
     .settings-page {
       max-width: 900px;
       margin: 0 auto;
@@ -756,7 +922,10 @@
         grid-template-columns: 1fr;
       }
       .split-metrics,
-      .hero-metrics {
+      .hero-metrics,
+      .teams-summary-grid,
+      .teams-spotlight,
+      .division-grid {
         grid-template-columns: 1fr;
       }
       .page-title {
@@ -785,6 +954,14 @@
       main { padding: 14px; }
       .hero-card h2,
       .page-title h1 { font-size: 1.7rem; }
+      .team-row {
+        grid-template-columns: minmax(160px, 1.4fr) repeat(3, minmax(54px, 0.5fr));
+      }
+      .team-row > :nth-child(5),
+      .team-row > :nth-child(6),
+      .team-row > :nth-child(7) {
+        display: none;
+      }
       .settings-page { gap: 18px; }
       .settings-section { padding: 18px; }
       .settings-actions { flex-direction: column; align-items: stretch; }
@@ -816,6 +993,7 @@
 <nav>
   <button data-page="overview" onclick="showPage('overview', this)" class="active">Overview</button>
   <button data-page="today" onclick="showPage('today', this)">Today</button>
+  <button data-page="teams" onclick="showPage('teams', this)">Teams</button>
   <button data-page="bets" onclick="showPage('bets', this)">Bets</button>
   <button data-page="performance" onclick="showPage('performance', this)">Performance</button>
 </nav>
@@ -901,6 +1079,58 @@
     <div class="panel">
       <div class="panel-header">Upcoming Games</div>
       <div class="table-wrap" id="today-slate-body"></div>
+    </div>
+  </div>
+
+  <div id="page-teams" class="page">
+    <div class="page-title">
+      <div>
+        <h1>Teams</h1>
+        <p>A league-wide view of divisions, records, standings, streaks, run differential, and schedule context from the games database.</p>
+      </div>
+      <div class="aside" id="teams-updated-label">Season standings</div>
+    </div>
+
+    <div class="teams-spotlight">
+      <section class="team-search-card">
+        <div class="hero-kicker">MLB Overview</div>
+        <h2 id="teams-hero-title">Loading league standings.</h2>
+        <p id="teams-hero-copy">Records, streaks, recent form, and next games are calculated from completed and upcoming rows in the database.</p>
+        <div class="teams-summary-grid">
+          <div class="team-pill-card">
+            <div class="team-pill-label">Best Record</div>
+            <div class="team-pill-value" id="teams-leader">—</div>
+            <div class="team-pill-copy" id="teams-leader-copy">—</div>
+          </div>
+          <div class="team-pill-card">
+            <div class="team-pill-label">Hottest Team</div>
+            <div class="team-pill-value" id="teams-hottest">—</div>
+            <div class="team-pill-copy" id="teams-hottest-copy">—</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">League Snapshot</div>
+        <div class="panel-body">
+          <div class="mini-grid">
+            <div class="mini-card">
+              <div class="mini-card-label">Teams Tracked</div>
+              <div class="mini-card-value" id="teams-count">—</div>
+              <div class="mini-card-copy">All active MLB clubs mapped to league and division.</div>
+            </div>
+            <div class="mini-card">
+              <div class="mini-card-label">Completed Games</div>
+              <div class="mini-card-value" id="teams-games">—</div>
+              <div class="mini-card-copy">Final games counted toward standings.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="division-grid" id="teams-division-grid">
+      <div class="empty">Loading team standings...</div>
     </div>
   </div>
 
@@ -1032,6 +1262,7 @@ const state = {
   balance: null,
   performance: null,
   upcoming: null,
+  teams: null,
   modelAccuracy: null,
   openBets: null,
   settledBets: null,
@@ -1051,6 +1282,22 @@ function fmtPctPoints(v) {
   return (n >= 0 ? '+' : '') + n.toFixed(1) + ' pts';
 }
 function fmtML(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  const n = Number(v);
+  return (n > 0 ? '+' : '') + n;
+}
+function fmtRecord(w, l) {
+  return `${Number(w || 0)}-${Number(l || 0)}`;
+}
+function fmtWinPct(v) {
+  if (v == null || Number.isNaN(Number(v))) return '.000';
+  return Number(v).toFixed(3).replace(/^0/, '');
+}
+function fmtGamesBack(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  return Number(v) === 0 ? '—' : Number(v).toFixed(1).replace('.0', '');
+}
+function fmtRunDiff(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
   const n = Number(v);
   return (n > 0 ? '+' : '') + n;
@@ -1099,6 +1346,10 @@ function formatGameDate(game) {
 }
 function badge(text, cls) {
   return `<span class="badge${cls ? ' ' + cls : ''}">${text}</span>`;
+}
+function streakBadge(streak) {
+  if (!streak || streak === '—') return badge('—', 'gray');
+  return badge(streak, streak.startsWith('W') ? 'green' : 'red');
 }
 function sideBadge(side) {
   if (side === 'home') return badge('Home', 'blue');
@@ -1481,6 +1732,96 @@ function renderToday() {
   renderUpcomingSlate('today-slate-body', upcomingGames, 'No upcoming games in the next 48 hours');
 }
 
+function renderTeamNext(team) {
+  const next = team.next_game;
+  if (!next) return '<span class="team-next">No upcoming game</span>';
+  return `<span class="team-next"><strong>${next.venue === 'Home' ? 'vs' : '@'} ${next.opponent || '—'}</strong><br>${formatLocalDateTime(next.game_time_utc) || String(next.game_date || '').slice(0, 10)}</span>`;
+}
+
+function renderDivisionCard(division) {
+  const rows = (division.teams || []).map(team => `
+    <div class="team-row">
+      <div class="team-identity">
+        <div class="team-rank">${team.division_rank}</div>
+        <div class="team-logo">${team.abbr}</div>
+        <div>
+          <div class="team-name">${team.name}</div>
+          <div class="team-sub">${team.league_name} ${team.division}</div>
+        </div>
+      </div>
+      <div class="team-stat"><strong>${fmtRecord(team.wins, team.losses)}</strong><br><span class="team-sub">${fmtWinPct(team.win_pct)}</span></div>
+      <div class="team-stat">${fmtGamesBack(team.games_back)}</div>
+      <div class="team-stat">${team.last_ten_wins}-${team.last_ten_losses}</div>
+      <div class="team-stat">${streakBadge(team.streak)}</div>
+      <div class="team-stat" style="color:${Number(team.run_diff || 0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtRunDiff(team.run_diff)}</div>
+      <div>${renderTeamNext(team)}</div>
+    </div>
+  `).join('');
+  return `
+    <section class="division-card">
+      <div class="division-card-header">
+        <h3>${division.name}</h3>
+        <span>${division.league_name}</span>
+      </div>
+      <div class="team-row head">
+        <div>Team</div>
+        <div>Record</div>
+        <div>GB</div>
+        <div>L10</div>
+        <div>Strk</div>
+        <div>Diff</div>
+        <div>Next</div>
+      </div>
+      ${rows}
+    </section>
+  `;
+}
+
+function renderTeams() {
+  const data = state.teams || {};
+  const summary = data.summary || {};
+  const leader = summary.leader;
+  const hottest = summary.hottest;
+  const divisions = data.divisions || [];
+
+  document.getElementById('teams-updated-label').textContent = data.last_updated_utc
+    ? `Updated ${formatLocalDateTime(data.last_updated_utc)}`
+    : 'Season standings';
+  document.getElementById('teams-count').textContent = summary.teams ?? '—';
+  document.getElementById('teams-games').textContent = summary.completed_games ?? '—';
+
+  if (leader) {
+    document.getElementById('teams-leader').textContent = `${leader.name} ${fmtRecord(leader.wins, leader.losses)}`;
+    document.getElementById('teams-leader-copy').textContent = `${leader.division_name} • ${fmtWinPct(leader.win_pct)} win pct • ${fmtRunDiff(leader.run_diff)} run diff`;
+  } else {
+    document.getElementById('teams-leader').textContent = '—';
+    document.getElementById('teams-leader-copy').textContent = 'No completed games yet.';
+  }
+
+  if (hottest) {
+    document.getElementById('teams-hottest').textContent = `${hottest.name} ${hottest.streak}`;
+    document.getElementById('teams-hottest-copy').textContent = `${fmtRecord(hottest.wins, hottest.losses)} overall • last 10: ${hottest.last_ten_wins}-${hottest.last_ten_losses}`;
+  } else {
+    document.getElementById('teams-hottest').textContent = '—';
+    document.getElementById('teams-hottest-copy').textContent = 'No streak data yet.';
+  }
+
+  const heroTitle = document.getElementById('teams-hero-title');
+  const heroCopy = document.getElementById('teams-hero-copy');
+  heroTitle.textContent = leader
+    ? `${leader.name} sit on top of MLB.`
+    : 'Standings are ready when results arrive.';
+  heroCopy.textContent = leader
+    ? `${leader.division_name} leader with a ${fmtRecord(leader.wins, leader.losses)} record. Browse every division below for games back, form, streaks, and next matchups.`
+    : 'Records, streaks, recent form, and next games are calculated from completed and upcoming rows in the database.';
+
+  const grid = document.getElementById('teams-division-grid');
+  if (!grid) return;
+  grid.innerHTML = divisions.length
+    ? divisions.map(renderDivisionCard).join('')
+    : '<div class="empty">No team standings available</div>';
+}
+
 function renderBets() {
   const openBets = getOpenBetRows();
   renderOpenBets('bets-open-body', openBets, 'No open bets');
@@ -1577,12 +1918,13 @@ function renderAll() {
   renderLiveStatus();
   renderOverview();
   renderToday();
+  renderTeams();
   renderBets();
   renderPerformance();
 }
 
 async function loadAll() {
-  const [me, account, settings, balance, performance, settledBets, upcoming, modelAccuracy, openBets] = await Promise.all([
+  const [me, account, settings, balance, performance, settledBets, upcoming, teams, modelAccuracy, openBets] = await Promise.all([
     fetch('/api/me').then(r => { if (!r.ok) throw new Error('me failed'); return r.json(); }),
     fetch('/api/account/kalshi').then(r => { if (!r.ok) throw new Error('account failed'); return r.json(); }),
     fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings failed'); return r.json(); }),
@@ -1590,6 +1932,7 @@ async function loadAll() {
     fetch('/api/performance').then(r => { if (!r.ok) throw new Error('performance failed'); return r.json(); }),
     fetch(`/api/bets?status=settled&limit=${BETS_LIMIT}&offset=0`).then(r => { if (!r.ok) throw new Error('bets failed'); return r.json(); }),
     fetch('/api/upcoming').then(r => { if (!r.ok) throw new Error('upcoming failed'); return r.json(); }),
+    fetch('/api/teams').then(r => { if (!r.ok) throw new Error('teams failed'); return r.json(); }),
     fetch('/api/model-accuracy').then(r => { if (!r.ok) throw new Error('model accuracy failed'); return r.json(); }),
     fetch('/api/open-bets').then(r => { if (!r.ok) throw new Error('open bets failed'); return r.json(); }),
   ]);
@@ -1601,6 +1944,7 @@ async function loadAll() {
   state.performance = performance;
   state.settledBets = settledBets;
   state.upcoming = upcoming;
+  state.teams = teams;
   state.modelAccuracy = modelAccuracy;
   state.openBets = openBets;
   renderAll();

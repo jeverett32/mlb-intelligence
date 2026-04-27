@@ -385,6 +385,50 @@ class KalshiAccountPayload(BaseModel):
 
 DEFAULT_TIMEZONE = "America/Denver"
 
+TEAM_INFO = {
+    "ARI": {"name": "Arizona Diamondbacks", "league": "NL", "division": "West"},
+    "ATL": {"name": "Atlanta Braves", "league": "NL", "division": "East"},
+    "BAL": {"name": "Baltimore Orioles", "league": "AL", "division": "East"},
+    "BOS": {"name": "Boston Red Sox", "league": "AL", "division": "East"},
+    "CHC": {"name": "Chicago Cubs", "league": "NL", "division": "Central"},
+    "CHW": {"name": "Chicago White Sox", "league": "AL", "division": "Central"},
+    "CIN": {"name": "Cincinnati Reds", "league": "NL", "division": "Central"},
+    "CLE": {"name": "Cleveland Guardians", "league": "AL", "division": "Central"},
+    "COL": {"name": "Colorado Rockies", "league": "NL", "division": "West"},
+    "DET": {"name": "Detroit Tigers", "league": "AL", "division": "Central"},
+    "HOU": {"name": "Houston Astros", "league": "AL", "division": "West"},
+    "KCR": {"name": "Kansas City Royals", "league": "AL", "division": "Central"},
+    "LAA": {"name": "Los Angeles Angels", "league": "AL", "division": "West"},
+    "LAD": {"name": "Los Angeles Dodgers", "league": "NL", "division": "West"},
+    "MIA": {"name": "Miami Marlins", "league": "NL", "division": "East"},
+    "MIL": {"name": "Milwaukee Brewers", "league": "NL", "division": "Central"},
+    "MIN": {"name": "Minnesota Twins", "league": "AL", "division": "Central"},
+    "NYM": {"name": "New York Mets", "league": "NL", "division": "East"},
+    "NYY": {"name": "New York Yankees", "league": "AL", "division": "East"},
+    "ATH": {"name": "Athletics", "league": "AL", "division": "West"},
+    "PHI": {"name": "Philadelphia Phillies", "league": "NL", "division": "East"},
+    "PIT": {"name": "Pittsburgh Pirates", "league": "NL", "division": "Central"},
+    "SDP": {"name": "San Diego Padres", "league": "NL", "division": "West"},
+    "SEA": {"name": "Seattle Mariners", "league": "AL", "division": "West"},
+    "SFG": {"name": "San Francisco Giants", "league": "NL", "division": "West"},
+    "STL": {"name": "St. Louis Cardinals", "league": "NL", "division": "Central"},
+    "TBR": {"name": "Tampa Bay Rays", "league": "AL", "division": "East"},
+    "TEX": {"name": "Texas Rangers", "league": "AL", "division": "West"},
+    "TOR": {"name": "Toronto Blue Jays", "league": "AL", "division": "East"},
+    "WSN": {"name": "Washington Nationals", "league": "NL", "division": "East"},
+}
+
+LEAGUE_LABELS = {"AL": "American League", "NL": "National League"}
+
+DIVISION_ORDER = [
+    ("AL", "East"),
+    ("AL", "Central"),
+    ("AL", "West"),
+    ("NL", "East"),
+    ("NL", "Central"),
+    ("NL", "West"),
+]
+
 
 def _get_dashboard_timezone() -> str:
     tz = DB.get_setting("dashboard_timezone", DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE
@@ -655,6 +699,212 @@ def get_balance(user: dict = Depends(require_approved_user)):
         "history": _safe_records(df),
         "current_dollars": float(df.iloc[-1]["balance_dollars"]),
     }
+
+
+# ---------------------------------------------------------------------------
+# API — Teams / standings
+# ---------------------------------------------------------------------------
+
+
+def _empty_team_row(abbr: str) -> dict:
+    info = TEAM_INFO[abbr]
+    return {
+        "abbr": abbr,
+        "name": info["name"],
+        "league": info["league"],
+        "league_name": LEAGUE_LABELS[info["league"]],
+        "division": info["division"],
+        "division_name": f"{info['league']} {info['division']}",
+        "wins": 0,
+        "losses": 0,
+        "win_pct": 0.0,
+        "runs_for": 0,
+        "runs_against": 0,
+        "run_diff": 0,
+        "home_wins": 0,
+        "home_losses": 0,
+        "away_wins": 0,
+        "away_losses": 0,
+        "last_ten_wins": 0,
+        "last_ten_losses": 0,
+        "streak": "—",
+        "division_rank": None,
+        "games_back": None,
+        "last_game": None,
+        "next_game": None,
+        "_results": [],
+    }
+
+
+def _is_known_game(row: pd.Series) -> bool:
+    return (
+        pd.notna(row.get("home_score"))
+        and pd.notna(row.get("away_score"))
+        and pd.notna(row.get("home_team"))
+        and pd.notna(row.get("away_team"))
+    )
+
+
+def _team_game_summary(row: pd.Series, team: str, completed: bool) -> dict:
+    home = str(row.get("home_team") or "")
+    away = str(row.get("away_team") or "")
+    opponent = away if team == home else home
+    is_home = team == home
+    summary = {
+        "game_pk": _safe_value(row.get("game_pk")),
+        "game_date": _safe_value(row.get("game_date")),
+        "game_time_utc": _safe_value(row.get("game_time_utc")),
+        "opponent": opponent,
+        "home_team": home,
+        "away_team": away,
+        "venue": "Home" if is_home else "Away",
+        "matchup": f"{away} @ {home}",
+    }
+    if completed:
+        home_score = int(float(row.get("home_score")))
+        away_score = int(float(row.get("away_score")))
+        won = home_score > away_score if is_home else away_score > home_score
+        summary.update(
+            {
+                "result": "W" if won else "L",
+                "team_score": home_score if is_home else away_score,
+                "opponent_score": away_score if is_home else home_score,
+            }
+        )
+    return summary
+
+
+def _record_streak(results: list[bool]) -> str:
+    if not results:
+        return "—"
+    latest = results[-1]
+    count = 0
+    for result in reversed(results):
+        if result != latest:
+            break
+        count += 1
+    return ("W" if latest else "L") + str(count)
+
+
+def _games_back(team: dict, leader: dict) -> float:
+    return round(((leader["wins"] - team["wins"]) + (team["losses"] - leader["losses"])) / 2, 1)
+
+
+def _build_team_overview(games_df: pd.DataFrame, season: int = ACTIVE_SEASON) -> dict:
+    teams = {abbr: _empty_team_row(abbr) for abbr in TEAM_INFO}
+    if not games_df.empty:
+        games_df = games_df.copy()
+        if "game_time_utc" in games_df.columns:
+            games_df["game_time_utc"] = pd.to_datetime(games_df["game_time_utc"], errors="coerce", utc=True)
+        if "game_date" in games_df.columns:
+            games_df["game_date"] = pd.to_datetime(games_df["game_date"], errors="coerce")
+        sort_cols = [c for c in ("game_date", "game_time_utc", "game_pk") if c in games_df.columns]
+        if sort_cols:
+            games_df = games_df.sort_values(sort_cols, na_position="last")
+
+        for _, row in games_df.iterrows():
+            home = str(row.get("home_team") or "")
+            away = str(row.get("away_team") or "")
+            if home not in teams or away not in teams:
+                continue
+
+            completed = _is_known_game(row)
+            if completed:
+                home_score = int(float(row.get("home_score")))
+                away_score = int(float(row.get("away_score")))
+                home_won = bool(row.get("home_win")) if pd.notna(row.get("home_win")) else home_score > away_score
+
+                home_row = teams[home]
+                away_row = teams[away]
+                home_row["runs_for"] += home_score
+                home_row["runs_against"] += away_score
+                away_row["runs_for"] += away_score
+                away_row["runs_against"] += home_score
+
+                if home_won:
+                    home_row["wins"] += 1
+                    home_row["home_wins"] += 1
+                    away_row["losses"] += 1
+                    away_row["away_losses"] += 1
+                else:
+                    away_row["wins"] += 1
+                    away_row["away_wins"] += 1
+                    home_row["losses"] += 1
+                    home_row["home_losses"] += 1
+
+                home_row["_results"].append(home_won)
+                away_row["_results"].append(not home_won)
+                home_row["last_game"] = _team_game_summary(row, home, completed=True)
+                away_row["last_game"] = _team_game_summary(row, away, completed=True)
+            else:
+                if teams[home]["next_game"] is None:
+                    teams[home]["next_game"] = _team_game_summary(row, home, completed=False)
+                if teams[away]["next_game"] is None:
+                    teams[away]["next_game"] = _team_game_summary(row, away, completed=False)
+
+    for team in teams.values():
+        games = team["wins"] + team["losses"]
+        team["win_pct"] = round(team["wins"] / games, 3) if games else 0.0
+        team["run_diff"] = team["runs_for"] - team["runs_against"]
+        last_ten = team["_results"][-10:]
+        team["last_ten_wins"] = sum(1 for result in last_ten if result)
+        team["last_ten_losses"] = len(last_ten) - team["last_ten_wins"]
+        team["streak"] = _record_streak(team["_results"])
+
+    divisions = []
+    for league, division in DIVISION_ORDER:
+        rows = [
+            team for team in teams.values()
+            if team["league"] == league and team["division"] == division
+        ]
+        rows.sort(key=lambda t: (-t["win_pct"], -t["wins"], t["losses"], -t["run_diff"], t["name"]))
+        leader = rows[0] if rows else None
+        for rank, team in enumerate(rows, start=1):
+            team["division_rank"] = rank
+            team["games_back"] = 0.0 if rank == 1 or leader is None else _games_back(team, leader)
+        divisions.append(
+            {
+                "key": f"{league}-{division}",
+                "league": league,
+                "league_name": LEAGUE_LABELS[league],
+                "division": division,
+                "name": f"{league} {division}",
+                "teams": [{k: v for k, v in team.items() if k != "_results"} for team in rows],
+            }
+        )
+
+    public_teams = [{k: v for k, v in team.items() if k != "_results"} for team in teams.values()]
+    public_teams.sort(key=lambda t: (-t["win_pct"], -t["wins"], t["losses"], t["name"]))
+    leader = public_teams[0] if public_teams else None
+    hottest = sorted(
+        public_teams,
+        key=lambda t: (
+            -int(t["streak"][1:]) if t["streak"].startswith("W") else 0,
+            -t["win_pct"],
+            t["name"],
+        ),
+    )[0] if public_teams else None
+    return {
+        "season": season,
+        "last_updated_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "summary": {
+            "teams": len(public_teams),
+            "completed_games": sum(t["wins"] for t in public_teams),
+            "leader": leader,
+            "hottest": hottest,
+        },
+        "divisions": divisions,
+        "teams": public_teams,
+    }
+
+
+@app.get("/api/teams")
+def get_teams(user: dict = Depends(require_approved_user)):
+    try:
+        games_df = DB.get_games_df(season=ACTIVE_SEASON)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return _build_team_overview(games_df, season=ACTIVE_SEASON)
 
 
 # ---------------------------------------------------------------------------
