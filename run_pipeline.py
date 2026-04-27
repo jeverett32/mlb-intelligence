@@ -3,7 +3,7 @@ run_pipeline.py — MLB betting pipeline orchestrator.
 Runs from the project root. Loops automatically, executing the full pipeline
 15 minutes before each scheduled game window.
 
-Games starting within 30 minutes of each other are treated as a batch:
+Games starting within 15 minutes of each other are treated as a batch:
   - fetch_data + fetch_balance run ONCE for the whole batch
   - predict + place_bet run IN PARALLEL for each game
 
@@ -48,8 +48,10 @@ MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
 # How many minutes before game start to trigger the pipeline
 LEAD_MINUTES = 15
 
-# Games starting within this window of the earliest game are batched together
-BATCH_WINDOW_MINUTES = 30
+# Games starting within this cushion of the earliest game are batched together.
+# This protects tight slates from compute delays without running later games
+# too far before their own first pitch.
+BATCH_WINDOW_MINUTES = 15
 
 # Don't process games that start less than this many minutes from now
 MIN_GAME_TIME_MINUTES = 10

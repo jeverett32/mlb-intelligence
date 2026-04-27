@@ -27,6 +27,10 @@ print(df.tail(5))
 
 Push to GitHub → GitHub Actions runner deploys to app LXC automatically. No manual SSH needed for deploys.
 
+## Git workflow
+
+Commit frequently after tested, coherent checkpoints so deployable fixes do not sit uncommitted.
+
 ## Key entry points
 
 | File | Purpose |

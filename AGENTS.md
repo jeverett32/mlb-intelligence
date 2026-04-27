@@ -40,6 +40,10 @@ Check `.env.example` for variable names.
 
 Push to GitHub → runner deploys automatically. No manual SSH needed for deploys.
 
+## Git workflow
+
+Commit frequently after tested, coherent checkpoints so deployable fixes do not sit uncommitted.
+
 ## SSH debugging
 
 `homelab.py` connects **directly to each LXC** via SSH — no Proxmox/pct involved.

@@ -29,6 +29,10 @@ This applies to: `*.csv`, `*.parquet`, and any file in `data/` or `1_fetch_data/
 - The Kalshi private key is `kalshi-key.pem`. Never read or output its contents.
 - `.env.example` is the safe reference template — read that instead if you need to know the variable names.
 
+## Git workflow
+
+- Commit frequently after tested, coherent checkpoints so deployable fixes do not sit uncommitted.
+
 ## Project structure
 
 ```

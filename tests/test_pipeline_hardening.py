@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+
 import pandas as pd
 
 import db
+import run_pipeline
 from bet import place_bet
 from fetch.fetch_data import _align_odds_api_dates
 
@@ -100,6 +103,30 @@ class _FakeConnection:
         self.closed = True
 
 
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        now = cls(2026, 4, 27, 19, 55, tzinfo=timezone.utc)
+        if tz is None:
+            return now.replace(tzinfo=None)
+        return now.astimezone(tz)
+
+
+def _upcoming_games(*times: str) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "game_pk": idx,
+                "game_date": "2026-04-27",
+                "game_time_utc": game_time,
+                "home_team": f"HOME{idx}",
+                "away_team": f"AWAY{idx}",
+            }
+            for idx, game_time in enumerate(times, start=1)
+        ]
+    )
+
+
 def test_kalshi_market_matching_fails_closed_without_team_suffix(monkeypatch):
     markets = [
         {
@@ -122,6 +149,34 @@ def test_kalshi_market_matching_fails_closed_without_team_suffix(monkeypatch):
 
     assert ticker is None
     assert market is None
+
+
+def test_next_batch_does_not_pull_later_game_too_early(monkeypatch):
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_upcoming_needing_prediction",
+        lambda season: _upcoming_games("2026-04-27 20:10", "2026-04-27 20:40"),
+    )
+
+    batch, run_at = run_pipeline.get_next_batch()
+
+    assert [game["game_pk"] for game in batch] == [1]
+    assert run_at == datetime(2026, 4, 27, 19, 55, tzinfo=timezone.utc)
+
+
+def test_next_batch_keeps_tight_starts_together(monkeypatch):
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_upcoming_needing_prediction",
+        lambda season: _upcoming_games("2026-04-27 20:10", "2026-04-27 20:25"),
+    )
+
+    batch, run_at = run_pipeline.get_next_batch()
+
+    assert [game["game_pk"] for game in batch] == [1, 2]
+    assert run_at == datetime(2026, 4, 27, 19, 55, tzinfo=timezone.utc)
 
 
 def test_backfill_paper_orders_uses_rolling_bankroll(monkeypatch):
