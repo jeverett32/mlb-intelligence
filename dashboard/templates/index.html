@@ -2001,20 +2001,19 @@ function renderOverview() {
 }
 
 function getGameLocalDate(game) {
-  if (!game.game_time_utc) return null;
-  const d = new Date(game.game_time_utc);
-  if (!isFinite(d)) return null;
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: currentTimezone(),
-  });
-  const parts = fmt.formatToParts(d);
-  const year = parts.find(p => p.type === 'year').value;
-  const month = parts.find(p => p.type === 'month').value;
-  const day = parts.find(p => p.type === 'day').value;
-  return `${year}-${month}-${day}`;
+  if (game.game_time_utc) {
+    const d = new Date(game.game_time_utc);
+    if (isFinite(d)) {
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        timeZone: currentTimezone(),
+      });
+      const parts = fmt.formatToParts(d);
+      return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}-${parts.find(p => p.type === 'day').value}`;
+    }
+  }
+  if (game.game_date) return String(game.game_date).slice(0, 10);
+  return null;
 }
 
 function getTodayTomorrowDates() {
@@ -2028,18 +2027,12 @@ function getTodayTomorrowDates() {
   });
 
   const todayParts = fmt.formatToParts(now);
-  const todayYear = todayParts.find(p => p.type === 'year').value;
-  const todayMonth = todayParts.find(p => p.type === 'month').value;
-  const todayDay = todayParts.find(p => p.type === 'day').value;
-  const today = `${todayYear}-${todayMonth}-${todayDay}`;
+  const today = `${todayParts.find(p => p.type === 'year').value}-${todayParts.find(p => p.type === 'month').value}-${todayParts.find(p => p.type === 'day').value}`;
 
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowParts = fmt.formatToParts(tomorrow);
-  const tomorrowYear = tomorrowParts.find(p => p.type === 'year').value;
-  const tomorrowMonth = tomorrowParts.find(p => p.type === 'month').value;
-  const tomorrowDay = tomorrowParts.find(p => p.type === 'day').value;
-  const tomorrowStr = `${tomorrowYear}-${tomorrowMonth}-${tomorrowDay}`;
+  const tmrw = new Date(now);
+  tmrw.setDate(tmrw.getDate() + 1);
+  const tmrwParts = fmt.formatToParts(tmrw);
+  const tomorrow = `${tmrwParts.find(p => p.type === 'year').value}-${tmrwParts.find(p => p.type === 'month').value}-${tmrwParts.find(p => p.type === 'day').value}`;
 
   return { today, tomorrow };
 }
