@@ -1981,14 +1981,9 @@ function openExplainGlossaryModal() {
       const desc = dict[k] || "No glossary entry yet for this feature. (We can add one.)";
       const label = humanizeFeatureName(k);
       return `
-        <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="flex:0 0 auto;">
-            <code style="display:inline-block;color:var(--text-primary);font-size:0.72rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;white-space:nowrap;">${k}</code>
-          </div>
-          <div style="min-width:0;">
-            <div style="font-weight:700;font-size:0.82rem;color:var(--text-primary);">${label}</div>
-            <div style="color:var(--text-secondary);font-size:0.82rem;line-height:1.4;">${desc}</div>
-          </div>
+        <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="font-weight:700;font-size:0.86rem;color:var(--text-primary);" title="${k}">${label}</div>
+          <div style="color:var(--text-secondary);font-size:0.84rem;line-height:1.45;margin-top:4px;">${desc}</div>
         </div>
       `;
     }).join('');
