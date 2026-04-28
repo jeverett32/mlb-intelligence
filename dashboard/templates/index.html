@@ -1895,7 +1895,7 @@ function humanizeFeatureName(name) {
     win_pct_W_DIFF: 'Win% (home − away)',
     pitcher_handedness_diff: 'SP handedness (home − away; L=1)',
     sharp_move_flag: 'Sharp move flag',
-    sharp_x_fip: 'Sharp flag × SP FIP (away − home)',
+    sharp_x_fip: 'Sharp flag x SP FIP (away - home)',
     early_season_flag: 'Early season flag',
     home_games_played: 'Home games played',
     away_games_played: 'Away games played',
@@ -1951,6 +1951,7 @@ async function loadExplainabilityInto(targetEl, gamePk) {
     }
     const ex = data.explanation;
     const recomputed = ex.recomputed === true;
+    const plain = String(ex.plain_text || '').trim();
     const contrib = ex.contributions || {};
     const pos = contrib.top_positive || [];
     const neg = contrib.top_negative || [];
@@ -1986,6 +1987,7 @@ async function loadExplainabilityInto(targetEl, gamePk) {
         </div>
         <span class="explain-sub">${subtitle}</span>
       </div>
+      ${plain ? `<div class="panel-note" style="margin-bottom:12px;white-space:pre-wrap;">${plain}</div>` : ``}
       <div class="explain-grid">
         ${pos.length ? pos.map(r => rowHtml(r, 'var(--success)')).join('') : ''}
         ${neg.length ? neg.map(r => rowHtml(r, 'var(--danger)')).join('') : ''}

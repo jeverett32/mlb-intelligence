@@ -120,7 +120,7 @@ def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray)
             "win_pct_W_DIFF": "Win% (home − away)",
             "pitcher_handedness_diff": "SP handedness (home − away; L=1)",
             "sharp_move_flag": "Sharp move flag",
-            "sharp_x_fip": "Sharp flag × SP FIP (away − home)",
+            "sharp_x_fip": "Sharp flag x SP FIP (away - home)",
             "early_season_flag": "Early season flag",
             "home_games_played": "Home games played",
             "away_games_played": "Away games played",
@@ -168,6 +168,42 @@ def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray)
         "top_positive": top_pos,
         "top_negative": top_neg,
     }
+
+
+def _build_plaintext_explanation(explanation: dict) -> str:
+    """
+    Build a short plaintext summary from top contributions.
+    ASCII-only output to avoid DB encoding pitfalls.
+    """
+    if not explanation:
+        return ""
+    side = str(explanation.get("bet_side") or "").lower()
+    side_label = "HOME" if side == "home" else ("AWAY" if side == "away" else "N/A")
+    contrib = explanation.get("contributions") or {}
+    pos = contrib.get("top_positive") or []
+    neg = contrib.get("top_negative") or []
+
+    def _names(rows: list[dict], n: int = 3) -> list[str]:
+        out = []
+        for r in rows[:n]:
+            lbl = str(r.get("label") or r.get("feature") or "").strip() or "?"
+            lbl = lbl.replace("—", "-")
+            out.append(lbl)
+        return out
+
+    for_list = _names(pos, 3)
+    against_list = _names(neg, 2)
+
+    lines = []
+    lines.append(f"Signal: {side_label}.")
+    if for_list:
+        lines.append("Biggest drivers FOR this side: " + "; ".join(for_list) + ".")
+    if against_list:
+        lines.append("Biggest drivers AGAINST this side: " + "; ".join(against_list) + ".")
+    if explanation.get("recomputed") is True:
+        lines.append("Note: recomputed later using current pipeline code/data; may differ from original-day explanation.")
+    lines.append("Contributions are logistic-regression log-odds components (post-impute/scale), ranked by magnitude.")
+    return " ".join(lines)[:900]
 
 
 def explain_one(
@@ -249,8 +285,10 @@ def explain_one(
         "recomputed": bool(recomputed),
         "recomputed_reason": (recomputed_reason or "")[:200],
         "recomputed_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat() if recomputed else None,
+        "plain_text": "",
         "version": 2,
     }
+    explanation["plain_text"] = _build_plaintext_explanation(explanation)
     if write_db:
         DB.init_bets_explainability()
         DB.update_bet_explanation(game_pk, explanation)
@@ -642,8 +680,10 @@ def predict_one(game_pk: str, shared: dict) -> dict:
                         "recomputed": False,
                         "recomputed_reason": "",
                         "recomputed_at_utc": None,
+                        "plain_text": "",
                         "version": 1,
                     }
+                    explanation["plain_text"] = _build_plaintext_explanation(explanation)
                     DB.update_bet_explanation(game_pk, explanation)
     except Exception:
         # Explainability is best-effort; prediction + DB write should still succeed.
