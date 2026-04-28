@@ -261,6 +261,11 @@ def privacy_page():
     return _render_template("privacy.html")
 
 
+@app.get("/api-docs", response_class=HTMLResponse)
+def api_docs_page():
+    return _render_template("api-docs.html")
+
+
 @app.post("/login")
 @limiter.limit("10/minute")
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):

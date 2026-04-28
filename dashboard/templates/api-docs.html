@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Self-custody Signal API setup guide for MLB Intelligence." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
+  <title>Signal API Docs — MLB Intelligence</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
+  </script>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425h">
+  <script src="/static/js/public-site.js?v=20260425b" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <style>
+    .docs-main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 52px 0 88px;
+    }
+    .docs-hero {
+      max-width: 760px;
+      margin-bottom: 36px;
+    }
+    .docs-hero h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.4rem, 5vw, 4rem);
+      line-height: 1.02;
+      margin: 10px 0 16px;
+    }
+    .docs-hero p,
+    .docs-section p,
+    .docs-section li {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+    .docs-section {
+      padding: 30px 0;
+      border-top: 1px solid var(--border);
+    }
+    .docs-section h2 {
+      font-size: 1.35rem;
+      margin-bottom: 12px;
+    }
+    .docs-section h3 {
+      font-size: 1rem;
+      margin: 22px 0 8px;
+    }
+    .docs-section ol,
+    .docs-section ul {
+      display: grid;
+      gap: 10px;
+      padding-left: 22px;
+      margin: 12px 0;
+    }
+    .docs-code {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      margin: 14px 0;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font: 0.88rem/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: pre;
+    }
+    .docs-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.92rem;
+    }
+    .docs-table th,
+    .docs-table td {
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    .docs-table th {
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .docs-callout {
+      margin-top: 16px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+    }
+    .docs-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    @media (max-width: 640px) {
+      .docs-main { padding: 34px 0 64px; }
+      .docs-table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body class="contact-page">
+  <div class="ps-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="MLB Intelligence home">
+        <img src="/static/favicon.svg" alt="" />
+        <span>MLB Intelligence</span>
+      </a>
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+        <span class="nav-toggle-icon"></span>
+      </button>
+      <nav class="nav-links" id="site-nav" aria-label="Primary">
+        <a href="/public">Public analytics</a>
+        <a href="/contact">Contact</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </header>
+
+    <main class="docs-main">
+      <section class="docs-hero" data-reveal>
+        <span class="eyebrow">Signal API</span>
+        <h1>Run self-custody betting from your own machine.</h1>
+        <p>
+          The recommended hands-off setup is still connecting Kalshi inside the app, because the server can run continuously.
+          The Signal API is optional for users who prefer to keep Kalshi credentials only on their own computer or VPS.
+        </p>
+        <div class="docs-actions">
+          <a class="btn-primary" href="/settings">Create API Token</a>
+          <a class="btn-secondary" href="https://github.com/jeverett32/mlb-pipeline/blob/main/scripts/run_signal_follower.py" target="_blank" rel="noreferrer">View Script</a>
+        </div>
+      </section>
+
+      <section class="docs-section" data-reveal>
+        <h2>How it works</h2>
+        <ol>
+          <li>Create an API token in <strong>Settings → API</strong>.</li>
+          <li>Run the follower script on a machine you control.</li>
+          <li>The script polls MLB Intelligence for model signals.</li>
+          <li>The script places orders directly with Kalshi using your local key file.</li>
+          <li>The script syncs order and balance updates back to the dashboard.</li>
+        </ol>
+        <div class="docs-callout">
+          <p>Your Kalshi private key stays on your machine. The tradeoff is uptime: if your machine is off, asleep, or disconnected, it cannot place bets.</p>
+        </div>
+      </section>
+
+      <section class="docs-section" data-reveal>
+        <h2>Requirements</h2>
+        <ul>
+          <li>Python 3.10 or newer.</li>
+          <li>Project dependencies installed with <code>uv sync</code>.</li>
+          <li>Kalshi API key ID in <code>KALSHI_KEY_ID</code>.</li>
+          <li>Kalshi private key PEM path in <code>KALSHI_KEY_PATH</code>.</li>
+          <li>Signal API token from <strong>Settings → API</strong>.</li>
+        </ul>
+      </section>
+
+      <section class="docs-section" data-reveal>
+        <h2>Setup</h2>
+        <h3>1. Clone and install</h3>
+        <code class="docs-code">git clone https://github.com/jeverett32/mlb-pipeline.git
+cd mlb-pipeline
+uv sync</code>
+
+        <h3>2. Create environment file</h3>
+        <code class="docs-code">MLBI_API_BASE_URL=https://your-mlb-intelligence-domain
+MLBI_API_TOKEN=your-token-from-settings
+KALSHI_KEY_ID=your-kalshi-key-id
+KALSHI_KEY_PATH=/absolute/path/to/kalshi-key.pem
+KALSHI_ENV=prod</code>
+
+        <h3>3. Test with a dry run</h3>
+        <code class="docs-code">uv run python scripts/run_signal_follower.py --once --dry-run</code>
+
+        <h3>4. Run live once</h3>
+        <code class="docs-code">uv run python scripts/run_signal_follower.py --once</code>
+
+        <h3>5. Run continuously</h3>
+        <code class="docs-code">uv run python scripts/run_signal_follower.py</code>
+      </section>
+
+      <section class="docs-section" data-reveal>
+        <h2>API endpoints</h2>
+        <table class="docs-table">
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>GET /api/signals/upcoming</code></td>
+              <td>Read current model signals for upcoming games.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/client/orders</code></td>
+              <td>Sync local execution result back to the dashboard.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/client/balance</code></td>
+              <td>Sync Kalshi balance snapshot from local machine.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/client/heartbeat</code></td>
+              <td>Confirm follower script can authenticate and reach the server.</td>
+            </tr>
+          </tbody>
+        </table>
+        <code class="docs-code">Authorization: Bearer your-token-from-settings</code>
+      </section>
+
+      <section class="docs-section" data-reveal>
+        <h2>Running as a service</h2>
+        <p>For reliable execution, run the script on a machine that stays online. A small VPS or always-on home server works better than a laptop.</p>
+        <code class="docs-code">[Unit]
+Description=MLB Intelligence signal follower
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/mlb-pipeline
+EnvironmentFile=/opt/mlb-pipeline/.env
+ExecStart=/opt/mlb-pipeline/.venv/bin/python scripts/run_signal_follower.py
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target</code>
+      </section>
+    </main>
+
+    <footer class="public-footer">
+      <span>Self-custody execution, optional.</span>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/settings">Settings</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/contact">Contact</a>
+      </nav>
+    </footer>
+  </div>
+</body>
+</html>
