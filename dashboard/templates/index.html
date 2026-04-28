@@ -1694,11 +1694,29 @@
   <div class="fi-modal">
     <div class="fi-modal-header">
       <span>Signal Explainability</span>
-      <button class="action-button" type="button" onclick="closeExplainModal()" style="font-size:0.8rem;padding:6px 12px;background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);">
+      <div style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="action-button" type="button" onclick="openExplainGlossaryModal()" style="font-size:0.8rem;padding:6px 12px;background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);">
+          Glossary
+        </button>
+        <button class="action-button" type="button" onclick="closeExplainModal()" style="font-size:0.8rem;padding:6px 12px;background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);">
+          Close
+        </button>
+      </div>
+    </div>
+    <div class="fi-modal-body" id="explain-modal-body"></div>
+  </div>
+</div>
+
+<!-- Explainability Feature Glossary modal -->
+<div id="explain-glossary-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeExplainGlossaryModal()">
+  <div class="fi-modal" style="max-width:780px;">
+    <div class="fi-modal-header">
+      <span>Feature Glossary</span>
+      <button class="action-button" type="button" onclick="closeExplainGlossaryModal()" style="font-size:0.8rem;padding:6px 12px;background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);">
         Close
       </button>
     </div>
-    <div class="fi-modal-body" id="explain-modal-body"></div>
+    <div class="fi-modal-body" id="explain-glossary-body" style="min-height:0;"></div>
   </div>
 </div>
 
@@ -1941,6 +1959,85 @@ function closeExplainModal() {
   document.body.style.overflow = '';
 }
 
+const FEATURE_GLOSSARY = {
+  // Market
+  market_implied_prob: "Closing market-implied home win probability derived from moneylines.",
+  home_implied_prob: "Closing market-implied home win probability (from odds).",
+  away_implied_prob: "Closing market-implied away win probability (from odds).",
+  open_home_implied: "Opening home win probability before line movement.",
+  line_move_delta: "Close minus open implied probability (positive means money moved toward home).",
+  sharp_move_flag: "1 if abs(line_move_delta) exceeds threshold (sharp action proxy).",
+
+  // Pitcher
+  sp_fip_DIFF: "Starting pitcher FIP difference (away - home). Positive implies home SP edge.",
+  sp_era_DIFF: "Starting pitcher ERA difference (away - home).",
+  sp_k9_DIFF: "Starting pitcher K/9 difference (home - away).",
+  sp_bb9_DIFF: "Starting pitcher BB/9 difference (away - home).",
+  pitcher_handedness_diff: "Home SP lefty flag minus away SP lefty flag.",
+
+  // Batting / team quality
+  wrc_plus_DIFF: "wRC+ difference (home - away). 100 is league average.",
+  woba_DIFF: "wOBA difference (home - away).",
+  avg_DIFF: "Batting average difference (home - away).",
+  obp_DIFF: "On-base percentage difference (home - away).",
+  slg_DIFF: "Slugging percentage difference (home - away).",
+  k_pct_DIFF: "Strikeout rate difference (away - home). Positive implies home strikes out less.",
+  bb_pct_DIFF: "Walk rate difference (home - away).",
+  hr_per_9_DIFF: "HR/9 difference (away - home). Positive implies home allows fewer HR.",
+
+  // Rolling / form
+  win_pct_W_DIFF: "Rolling win percentage difference (home - away) over the main window.",
+  run_diff_avg_W_DIFF: "Rolling average run differential difference (home - away).",
+  runs_scored_avg_W_DIFF: "Rolling average runs scored difference (home - away).",
+  runs_allowed_avg_W_DIFF: "Rolling average runs allowed difference (home - away).",
+  season_win_pct_DIFF: "Season-to-date win percentage difference (home - away).",
+  streak_DIFF: "Streak difference (home - away). Positive implies home on better streak.",
+  momentum_DIFF: "Short-term minus long-term trend difference (home vs away).",
+
+  // Flags / interactions
+  early_season_flag: "1 early in season when rolling stats are less reliable.",
+  sharp_x_fip: "Interaction: sharp_move_flag times sp_fip_DIFF.",
+};
+
+let _lastExplainFeatureKeys = [];
+
+function openExplainGlossaryModal() {
+  const overlay = document.getElementById('explain-glossary-modal');
+  const body = document.getElementById('explain-glossary-body');
+  if (!overlay || !body) return;
+
+  const keys = (_lastExplainFeatureKeys || []).slice(0, 40);
+  if (!keys.length) {
+    body.innerHTML = '<div class="panel-note">No features loaded yet. Open an explanation first.</div>';
+  } else {
+    body.innerHTML = keys.map(k => {
+      const desc = FEATURE_GLOSSARY[k] || "No glossary entry yet for this feature. (We can add one.)";
+      const label = humanizeFeatureName(k);
+      return `
+        <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="flex:0 0 auto;">
+            <code style="display:inline-block;color:var(--text-primary);font-size:0.72rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;white-space:nowrap;">${k}</code>
+          </div>
+          <div style="min-width:0;">
+            <div style="font-weight:700;font-size:0.82rem;color:var(--text-primary);">${label}</div>
+            <div style="color:var(--text-secondary);font-size:0.82rem;line-height:1.4;">${desc}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeExplainGlossaryModal() {
+  const overlay = document.getElementById('explain-glossary-modal');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 async function loadExplainabilityInto(targetEl, gamePk) {
   try {
     const res = await fetch(`/api/bet-explanation?game_pk=${encodeURIComponent(gamePk)}`);
@@ -1955,6 +2052,7 @@ async function loadExplainabilityInto(targetEl, gamePk) {
     const contrib = ex.contributions || {};
     const pos = contrib.top_positive || [];
     const neg = contrib.top_negative || [];
+    _lastExplainFeatureKeys = [...new Set([...pos, ...neg].map(r => String(r.feature || '').trim()).filter(Boolean))];
     const all = [...pos, ...neg];
     const maxAbs = Math.max(1e-9, ...all.map(r => Math.abs(Number(r.value || 0))));
 
@@ -2794,6 +2892,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeExplainModal();
+      if (e.key === 'Escape') closeExplainGlossaryModal();
     });
 
     const savedTheme = localStorage.getItem('theme') || 'auto';
