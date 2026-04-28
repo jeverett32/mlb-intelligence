@@ -43,7 +43,7 @@ class PredictError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Explainability (Logistic Regression) — no LLM, no SHAP.
+# Explainability (Logistic Regression) - no LLM, no SHAP.
 # We compute per-feature contributions in log-odds space using:
 #   logit = intercept + sum_j coef_j * x_scaled_j
 # where x_scaled is post-impute + post-standardize.
@@ -85,6 +85,12 @@ def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray)
     intercept = float(np.asarray(mdl.intercept_).reshape(-1)[0])
     contrib = (coef * x_sc.reshape(-1)).astype(float)
 
+    stats = getattr(imp, "statistics_", None)
+    if stats is not None and len(feature_names) != len(contrib):
+        survived = np.isfinite(np.asarray(stats))
+        if len(survived) == len(feature_names) and int(survived.sum()) == len(contrib):
+            feature_names = [f for f, keep in zip(feature_names, survived) if keep]
+
     if len(contrib) != len(feature_names):
         return None
 
@@ -95,30 +101,30 @@ def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray)
     def _humanize_feature(name: str) -> str:
         n = (name or "").strip()
         if not n:
-            return "—"
+            return "-"
         SPECIAL = {
             "market_implied_prob": "Market implied prob (home)",
             "home_implied_prob": "Market implied prob (home)",
             "away_implied_prob": "Market implied prob (away)",
             "edge": "Edge",
             "bet_frac": "Recommended stake (fraction)",
-            "momentum_DIFF": "Momentum (home − away)",
-            "season_win_pct_DIFF": "Season win% (home − away)",
-            "streak_DIFF": "Streak (home − away)",
-            "sp_fip_DIFF": "SP FIP (away − home)",
-            "sp_era_DIFF": "SP ERA (away − home)",
-            "sp_k9_DIFF": "SP K/9 (home − away)",
-            "sp_bb9_DIFF": "SP BB/9 (away − home)",
-            "wrc_plus_DIFF": "wRC+ (home − away)",
-            "woba_DIFF": "wOBA (home − away)",
-            "k_pct_DIFF": "K% (away − home)",
-            "bb_pct_DIFF": "BB% (home − away)",
-            "hr_per_9_DIFF": "HR/9 (away − home)",
-            "run_diff_avg_W_DIFF": "Avg run diff (home − away)",
-            "runs_scored_avg_W_DIFF": "Avg runs scored (home − away)",
-            "runs_allowed_avg_W_DIFF": "Avg runs allowed (home − away)",
-            "win_pct_W_DIFF": "Win% (home − away)",
-            "pitcher_handedness_diff": "SP handedness (home − away; L=1)",
+            "momentum_DIFF": "Momentum (home - away)",
+            "season_win_pct_DIFF": "Season win% (home - away)",
+            "streak_DIFF": "Streak (home - away)",
+            "sp_fip_DIFF": "SP FIP (away - home)",
+            "sp_era_DIFF": "SP ERA (away - home)",
+            "sp_k9_DIFF": "SP K/9 (home - away)",
+            "sp_bb9_DIFF": "SP BB/9 (away - home)",
+            "wrc_plus_DIFF": "wRC+ (home - away)",
+            "woba_DIFF": "wOBA (home - away)",
+            "k_pct_DIFF": "K% (away - home)",
+            "bb_pct_DIFF": "BB% (home - away)",
+            "hr_per_9_DIFF": "HR/9 (away - home)",
+            "run_diff_avg_W_DIFF": "Avg run diff (home - away)",
+            "runs_scored_avg_W_DIFF": "Avg runs scored (home - away)",
+            "runs_allowed_avg_W_DIFF": "Avg runs allowed (home - away)",
+            "win_pct_W_DIFF": "Win% (home - away)",
+            "pitcher_handedness_diff": "SP handedness (home - away; L=1)",
             "sharp_move_flag": "Sharp move flag",
             "sharp_x_fip": "Sharp flag x SP FIP (away - home)",
             "early_season_flag": "Early season flag",
@@ -187,7 +193,7 @@ def _build_plaintext_explanation(explanation: dict) -> str:
         out = []
         for r in rows[:n]:
             lbl = str(r.get("label") or r.get("feature") or "").strip() or "?"
-            lbl = lbl.replace("—", "-")
+            lbl = lbl.replace("-", "-")
             out.append(lbl)
         return out
 
@@ -394,7 +400,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Shared preparation — load data, engineer features, train model(s).
+# Shared preparation - load data, engineer features, train model(s).
 # Returns a cache of fitted artifacts + only the target rows (not full df_feat).
 # ---------------------------------------------------------------------------
 
@@ -428,7 +434,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     Load data, engineer features, train models. Returns a cache dict:
         clf, early_clf, imputer, active_feats, early_feats,
         target_rows: {game_pk_str: one-row DataFrame}.
-    The full df_feat is not retained — only rows for the requested game_pks.
+    The full df_feat is not retained - only rows for the requested game_pks.
     """
     game_pks = [str(pk) for pk in game_pks]
     print("  Loading historical data...")
@@ -497,7 +503,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     else:
         raise PredictError(f"Unknown MODEL: {T.MODEL!r}")
 
-    # Fit ensemble imputer once — consumed by the ensemble LR branch at predict time.
+    # Fit ensemble imputer once - consumed by the ensemble LR branch at predict time.
     imputer = None
     if T.MODEL in ("ensemble_avg", "ensemble_stack"):
         imputer = SimpleImputer(strategy="median").fit(X_tr_reg)
@@ -716,7 +722,7 @@ def predict_one(game_pk: str, shared: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# CLI entry — single game, builds shared cache for just that game.
+# CLI entry - single game, builds shared cache for just that game.
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
