@@ -261,7 +261,12 @@ def privacy_page():
     return _render_template("privacy.html")
 
 
-@app.get("/api-docs", response_class=HTMLResponse)
+@app.get("/api-docs")
+def legacy_api_docs_page():
+    return RedirectResponse("/docs/api", status_code=301)
+
+
+@app.get("/docs/api", response_class=HTMLResponse)
 def api_docs_page():
     return _render_template("api-docs.html")
 
