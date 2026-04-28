@@ -1,9 +1,7 @@
 """
-Fetch current Kalshi account balance and insert a row into the balance table.
-Run from project root: uv run fetch/fetch_balance.py
+Fetch current Kalshi account balance and insert a row into the user_balance table.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -19,7 +17,7 @@ def fetch_balance_for_account(
     key_id: str,
     key_path: str,
     kalshi_env: str,
-    email: str | None = None,
+    email: str,
 ) -> int:
     try:
         key_id, private_key = load_credentials(key_id=key_id, key_path=key_path)
@@ -41,9 +39,8 @@ def fetch_balance_for_account(
     except RuntimeError:
         raise
     except Exception as e:
-        # Transient: timeout, connection error, 5xx, JSON shape change, etc.
         print(f"  WARNING: Kalshi balance fetch failed (transient): {e}")
-        last = DB.get_last_user_balance_cents(email) if email else DB.get_last_balance_cents()
+        last = DB.get_last_user_balance_cents(email)
         if last is not None:
             print(f"  Using last known balance: {last} cents")
             return last
@@ -52,22 +49,5 @@ def fetch_balance_for_account(
         )
 
     print(f"  Kalshi balance: ${balance_cents / 100:.2f} ({balance_cents} cents)")
-    if email:
-        DB.insert_user_balance(email, balance_cents)
-    else:
-        DB.insert_balance(balance_cents)
+    DB.insert_user_balance(email, balance_cents)
     return balance_cents
-
-
-def fetch_balance() -> int:
-    """Fetch balance from the legacy env-configured Kalshi account."""
-    return fetch_balance_for_account(
-        key_id=os.environ.get("KALSHI_KEY_ID", ""),
-        key_path=os.environ.get("KALSHI_KEY_PATH", "kalshi-key.pem"),
-        kalshi_env=os.environ.get("KALSHI_ENV", "prod"),
-        email=None,
-    )
-
-
-if __name__ == "__main__":
-    fetch_balance()

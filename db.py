@@ -805,7 +805,6 @@ def is_live_betting() -> bool:
 BROWSABLE_TABLES = {
     "games",
     "bets",
-    "balance",
     "settings",
     "users",
     "sessions",

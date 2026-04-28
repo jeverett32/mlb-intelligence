@@ -442,38 +442,6 @@ def _upsert_paper_result(email: str, game_pk: str, row: dict, result: dict, pape
     )
 
 
-def place_bet(game_pk: str) -> dict:
-    """Legacy single-account placement path using env-configured Kalshi credentials."""
-    row = DB.get_bet(game_pk)
-    if row is None:
-        raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
-    original_bet_frac = float(row.get("bet_frac") or 0)
-    bet_side = str(row.get("bet_side") or "none").strip().lower()
-    if original_bet_frac <= 0 or bet_side == "none":
-        print("No bet indicated — skipping.")
-        return {"game_pk": str(game_pk), "status": "skipped_no_bet"}
-    balance_cents = DB.get_last_balance_cents()
-    if balance_cents is None:
-        raise PlaceBetError("No balance in DB. Run fetch/fetch_balance.py first.")
-    result = _execute_bet_row(
-        row,
-        key_id=os.environ.get("KALSHI_KEY_ID", ""),
-        key_path=os.environ.get("KALSHI_KEY_PATH", "kalshi-key.pem"),
-        kalshi_env=os.environ.get("KALSHI_ENV", "prod"),
-        balance_cents=balance_cents,
-        dry_run=not DB.is_live_betting(),
-    )
-    if result.get("status") == "filled":
-        DB.update_bet_order(
-            game_pk,
-            result["order_id"],
-            result["fill_cost"],
-            result["contracts"],
-        )
-        print("  Filled order recorded in bets table (legacy).")
-    return result
-
-
 def _execution_mode_for_email(email: str) -> str:
     try:
         mode = DB.get_user_setting(email, "execution_mode", "server_managed")
@@ -593,8 +561,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--game_pk", required=True, type=str, help="MLB Stats API game_pk"
     )
+    parser.add_argument(
+        "--email", required=True, type=str, help="User email for bet placement"
+    )
     args = parser.parse_args()
     try:
-        place_bet(args.game_pk)
+        place_user_bet(args.email, args.game_pk)
     except PlaceBetError as e:
         sys.exit(f"ERROR: {e}")
