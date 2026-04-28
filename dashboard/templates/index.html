@@ -1982,6 +1982,38 @@ function getAbbreviations() {
   };
 }
 
+function expandAbbreviationsInText(text) {
+  let s = String(text || "");
+  if (!s) return s;
+
+  // Replace common stat abbreviations with plain-English expansions.
+  // Keep it simple and readable; not meant to be a perfect glossary engine.
+  const repl = [
+    ["wRC+", "weighted runs created plus (100 = league average; higher is better)"],
+    ["wOBA", "weighted on-base average (higher is better)"],
+    ["xFIP", "expected FIP (like FIP but normalizes HR rate; lower is better)"],
+    ["WHIP", "walks + hits per inning pitched (lower is better)"],
+    ["FIP", "fielding independent pitching (uses K/BB/HR; lower is better)"],
+    ["ERA", "earned run average (runs allowed per 9 innings; lower is better)"],
+    ["K/9", "strikeouts per 9 innings (higher is better for pitchers)"],
+    ["BB/9", "walks per 9 innings (lower is better for pitchers)"],
+    ["HR/9", "home runs per 9 innings (lower is better for pitchers)"],
+    ["OBP", "on-base percentage (higher is better)"],
+    ["SLG", "slugging percentage (higher is better)"],
+    ["WAR", "wins above replacement (higher is better)"],
+    ["OWAR", "offensive WAR (higher is better)"],
+  ];
+
+  // Replace longer tokens first to avoid partial overlaps (e.g. WAR inside OWAR).
+  repl.sort((a, b) => b[0].length - a[0].length);
+  for (const [abbr, expanded] of repl) {
+    // Word-ish boundary: avoid changing parts of larger identifiers.
+    const re = new RegExp(`(^|[^A-Za-z0-9+/])${abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9+/]|$)`, "g");
+    s = s.replace(re, `$1${expanded}$2`);
+  }
+  return s;
+}
+
 let _lastExplainFeatureKeys = [];
 
 function openExplainGlossaryModal() {
@@ -1993,23 +2025,10 @@ function openExplainGlossaryModal() {
   if (!keys.length) {
     body.innerHTML = '<div class="panel-note">No features loaded yet. Open an explanation first.</div>';
   } else {
-    const abbr = getAbbreviations();
-    const abbrEntries = Object.entries(abbr);
-    const abbrHtml = abbrEntries.length ? `
-      <div style="margin-bottom:16px;">
-        <div style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Abbreviations</div>
-        ${abbrEntries.map(([k, v]) => `
-          <div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
-            <div style="flex:0 0 auto;min-width:70px;font-weight:800;color:var(--text-primary);">${k}</div>
-            <div style="color:var(--text-secondary);font-size:0.84rem;line-height:1.45;">${v}</div>
-          </div>
-        `).join('')}
-      </div>
-    ` : '';
-
     const featureHtml = keys.map(k => {
       const dict = getFeatureGlossary();
-      const desc = dict[k] || "No glossary entry yet for this feature. (We can add one.)";
+      const rawDesc = dict[k] || "No glossary entry yet for this feature. (We can add one.)";
+      const desc = expandAbbreviationsInText(rawDesc);
       const label = humanizeFeatureName(k);
       return `
         <div style="padding:10px 0;border-bottom:1px solid var(--border);">
@@ -2019,8 +2038,8 @@ function openExplainGlossaryModal() {
       `;
     }).join('');
 
-    body.innerHTML = abbrHtml + `
-      <div style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin:8px 0 10px;">Features in this explanation</div>
+    body.innerHTML = `
+      <div style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Features in this explanation</div>
     ` + featureHtml;
   }
 
