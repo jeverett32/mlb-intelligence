@@ -527,6 +527,19 @@
         <section class="settings-section">
           <div class="settings-section-title">Signal API</div>
           <p>Use this key for the optional self-custody follower script. It can read model signals and sync local execution results, but cannot place bets through this app.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="execution-mode-select">Execution Mode</label>
+            <select class="settings-input" id="execution-mode-select">
+              <option value="server_managed">Server-managed: app places live bets</option>
+              <option value="self_custody">Self-custody: local script places live bets</option>
+              <option value="paper_only">Paper only: no live execution</option>
+            </select>
+            <div class="settings-hint" style="margin-top:6px">Use self-custody mode before running the local script with live execution enabled.</div>
+          </div>
+          <div class="settings-actions">
+            <button class="settings-action" type="button" onclick="saveExecutionMode()">Save Execution Mode</button>
+          </div>
+          <div class="settings-feedback" id="execution-mode-feedback"></div>
           <div class="api-key-panel">
             <label class="settings-label" for="api-token-secret">API Key</label>
             <div class="api-key-control">
@@ -634,6 +647,21 @@
       document.getElementById('global-toggle-status').classList.toggle('live', on);
       feedback('global-live-feedback', on ? 'Global live enabled.' : 'Global live disabled.', on);
     } catch { feedback('global-live-feedback', 'Update failed.', false); }
+  }
+
+  async function saveExecutionMode() {
+    const mode = document.getElementById('execution-mode-select').value;
+    try {
+      await api('POST', '/api/settings/execution_mode', { value: mode });
+      const copy = mode === 'self_custody'
+        ? 'Saved. Server-side live execution is disabled for this user.'
+        : mode === 'paper_only'
+          ? 'Saved. Live execution is disabled for this user.'
+          : 'Saved. Server-managed live execution is enabled when live betting toggles are on.';
+      feedback('execution-mode-feedback', copy, true);
+    } catch (e) {
+      feedback('execution-mode-feedback', e?.detail || 'Save failed.', false);
+    }
   }
 
   async function connectKalshi() {
@@ -781,6 +809,8 @@
       if (me.is_admin) {
         document.getElementById('admin-tab-btn').style.display = '';
       }
+
+      document.getElementById('execution-mode-select').value = settings.execution_mode || 'server_managed';
 
       // Kalshi account
       if (account && account.connected) {

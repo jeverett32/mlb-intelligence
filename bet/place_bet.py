@@ -479,6 +479,9 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     user = DB.get_user(email)
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_unapproved"}
+    execution_mode = DB.get_user_setting(email, "execution_mode", "server_managed")
+    if execution_mode == "self_custody":
+        return {"game_pk": str(game_pk), "email": email, "status": "skipped_self_custody", "mode": "self_custody"}
     account = DB.get_kalshi_account(email)
     if not account or not account.get("is_active"):
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_no_account"}
@@ -514,6 +517,9 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             "error": str(exc),
         }
     _upsert_paper_result(email, game_pk, row, paper_result, paper_bankroll)
+
+    if execution_mode == "paper_only":
+        return {**paper_result, "email": email, "mode": "paper"}
 
     live_enabled = DB.is_global_live_betting() and DB.is_user_live_betting(email)
     if not live_enabled or paper_result.get("status", "").startswith("skipped_no_"):

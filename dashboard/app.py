@@ -547,6 +547,7 @@ def get_settings(user: dict = Depends(require_approved_user)):
         "global_live_betting": DB.is_global_live_betting(),
         "can_manage_global_live_betting": bool(user["is_admin"]),
         "effective_live_betting": DB.is_global_live_betting() and DB.is_user_live_betting(user["email"]),
+        "execution_mode": DB.get_user_setting(user["email"], "execution_mode", "server_managed"),
         "self_custody": {
             "last_seen_at": last_seen or None,
             "kalshi_env": DB.get_user_setting(user["email"], "self_custody_kalshi_env", ""),
@@ -560,7 +561,7 @@ def get_settings(user: dict = Depends(require_approved_user)):
 def update_setting(
     key: str, payload: SettingPayload, user: dict = Depends(require_approved_user)
 ):
-    allowed = {"live_betting", "dashboard_timezone"}
+    allowed = {"live_betting", "dashboard_timezone", "execution_mode"}
     if key not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
     if key == "dashboard_timezone":
@@ -568,6 +569,8 @@ def update_setting(
             ZoneInfo(payload.value)
         except Exception as e:
             raise HTTPException(status_code=400, detail="Invalid IANA timezone") from e
+    if key == "execution_mode" and payload.value not in {"server_managed", "self_custody", "paper_only"}:
+        raise HTTPException(status_code=400, detail="Invalid execution mode")
     DB.set_user_setting(user["email"], key, payload.value)
     return {"key": key, "value": payload.value}
 
