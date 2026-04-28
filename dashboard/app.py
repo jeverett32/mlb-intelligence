@@ -636,8 +636,8 @@ def get_bets(
         def calc_pnl(row):
             if row.get("result") is None or row.get("bet_dollars") is None:
                 return None
-            won = (row["result"] is True and row["bet_side"] == "home") or (
-                row["result"] is False and row["bet_side"] == "away"
+            won = (bool(row["result"]) and row["bet_side"] == "home") or (
+                not bool(row["result"]) and row["bet_side"] == "away"
             )
             bd = float(row["bet_dollars"] or 0)
             n_contracts = row.get("n_contracts")
