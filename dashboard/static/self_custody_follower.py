@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 # CONFIG - edit these values.
 # ---------------------------------------------------------------------------
 
-MLBI_API_BASE_URL = "https://your-mlb-intelligence-domain"
+MLBI_API_BASE_URL = "https://mlb.johnreverett.com"
 MLBI_API_TOKEN = "paste-your-api-token"
 
 KALSHI_KEY_ID = "paste-your-kalshi-key-id"
