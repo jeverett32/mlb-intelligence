@@ -1229,8 +1229,9 @@ def get_balance(user: dict = Depends(require_approved_user)):
     if df.empty:
         return {"history": [], "current_dollars": 0.0}
     current_dollars = float(df.iloc[-1]["balance_dollars"])
+    daily_df = DB.get_user_balance_daily_history(user["email"])
     return {
-        "history": _live_order_bankroll_history(user["email"], current_dollars),
+        "history": _safe_records(daily_df),
         "current_dollars": current_dollars,
     }
 

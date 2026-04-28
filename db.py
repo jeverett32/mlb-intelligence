@@ -1714,6 +1714,27 @@ def get_user_balance_history(email: str) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
 
+def get_user_balance_daily_history(email: str) -> pd.DataFrame:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON ((recorded_at AT TIME ZONE 'UTC')::date)
+                       recorded_at, balance_cents, balance_dollars, source
+                FROM user_balance
+                WHERE email = %s
+                ORDER BY (recorded_at AT TIME ZONE 'UTC')::date, recorded_at, id
+                """,
+                (email,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+
 def get_paper_bankroll_dollars(email: str) -> float:
     # Paper mode is universal (same for every user).
     _ = email
