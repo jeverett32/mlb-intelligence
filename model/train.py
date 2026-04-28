@@ -10,6 +10,7 @@ import math
 import time
 import random
 import warnings
+import sys
 
 os.environ['PYTHONHASHSEED'] = '42'
 warnings.filterwarnings('ignore')
@@ -25,6 +26,9 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 import lightgbm as lgb
 import xgboost as xgb
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import ACTIVE_SEASON, CURRENT_CSV
 
 # ---------------------------------------------------------------------------
 # Hyperparameters — the agent modifies these between experiments
@@ -566,10 +570,40 @@ def build_pitcher_features(df):
     return out
 
 
+def load_training_frame():
+    try:
+        import db
+        hist = db.get_games_df()
+        hist = hist[hist["season"].notna() & (hist["season"].astype(float) < ACTIVE_SEASON)]
+        curr = db.get_games_df(season=ACTIVE_SEASON)
+        if hist.empty or curr.empty:
+            raise ValueError("DB returned empty historical or current rows")
+        all_cols = list(dict.fromkeys(list(hist.columns) + list(curr.columns)))
+        df = pd.concat(
+            [hist.reindex(columns=all_cols), curr.reindex(columns=all_cols)],
+            ignore_index=True,
+        )
+        print("Loading DB games...")
+        print(f"  {len(hist):,} historical rows + {len(curr):,} current rows loaded")
+        return df
+    except Exception as e:
+        print(f"Loading CSV... DB unavailable ({e})")
+        hist = pd.read_csv(CSV_INPUT_PATH, low_memory=False)
+        if os.path.exists(CURRENT_CSV):
+            curr = pd.read_csv(CURRENT_CSV, low_memory=False)
+            all_cols = list(dict.fromkeys(list(hist.columns) + list(curr.columns)))
+            df = pd.concat(
+                [hist.reindex(columns=all_cols), curr.reindex(columns=all_cols)],
+                ignore_index=True,
+            )
+            print(f"  {len(hist):,} historical rows + {len(curr):,} current rows loaded")
+            return df
+        print(f"  {len(hist):,} rows loaded")
+        return hist
+
+
 def load_and_engineer_features():
-    print("Loading CSV...")
-    df = pd.read_csv(CSV_INPUT_PATH, low_memory=False)
-    print(f"  {len(df):,} rows loaded")
+    df = load_training_frame()
 
     df["game_date"] = pd.to_datetime(df["game_date"])
     df["season"]    = df["game_date"].dt.year
@@ -676,8 +710,8 @@ def load_and_engineer_features():
 
     # Early season flag (game count-based)
     df_feat = df_feat.sort_values("game_date").reset_index(drop=True)
-    df_feat["hg"] = df_feat.groupby(["home_team", "season"]).cumcount()
-    df_feat["ag"] = df_feat.groupby(["away_team", "season"]).cumcount()
+    df_feat["hg"] = _gcol(df_feat, "h_games_played")
+    df_feat["ag"] = _gcol(df_feat, "a_games_played")
     df_feat["early_season_flag"] = (
         df_feat[["hg", "ag"]].min(axis=1) < EARLY_SEASON_GAMES).astype(float)
 
@@ -1008,10 +1042,29 @@ def evaluate(probs, y, mkt_probs, is_warmup=None):
     return brier, roi, n_bets
 
 # ---------------------------------------------------------------------------
-# Walk-forward engine — DO NOT MODIFY THIS FUNCTION
+# Walk-forward engine
 # ---------------------------------------------------------------------------
 
-def run_walk_forward(df, active_feats, early_feats):
+def build_metric_folds(df):
+    folds = list(WALK_FORWARD_FOLDS)
+    if "game_date" not in df.columns or df.empty:
+        return folds
+
+    max_date = pd.to_datetime(df["game_date"]).max()
+    if pd.isna(max_date):
+        return folds
+
+    current_year = int(max_date.year)
+    current_start = f"{current_year}-01-01"
+    current_end = (max_date.normalize() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    last_static_end = pd.to_datetime(folds[-1][2]) if folds else pd.Timestamp.min
+    if pd.to_datetime(current_end) > last_static_end:
+        folds.append((current_start, current_start, current_end))
+    return folds
+
+
+def run_walk_forward(df, active_feats, early_feats, folds=None):
+    folds = folds or WALK_FORWARD_FOLDS
     fold_results = []
     last_fi = None
     last_edges = None
@@ -1021,9 +1074,9 @@ def run_walk_forward(df, active_feats, early_feats):
     last_y = None
     last_mkt = None
 
-    for fold_idx, (train_end, val_start, val_end) in enumerate(WALK_FORWARD_FOLDS):
+    for fold_idx, (train_end, val_start, val_end) in enumerate(folds):
         print(f"\n{'='*60}")
-        print(f"Fold {fold_idx+1}/{len(WALK_FORWARD_FOLDS)}: "
+        print(f"Fold {fold_idx+1}/{len(folds)}: "
               f"train < {train_end}  |  val [{val_start}, {val_end})")
 
         if TRAIN_WINDOW_YEARS is not None:
@@ -1100,54 +1153,62 @@ def run_walk_forward(df, active_feats, early_feats):
             # LGB handles NaN natively — use raw arrays not scaled
             X_tr_r = train_df.loc[~early_tr, active_feats].values.astype(np.float32)
             X_vl_r = val_df.loc[~early_vl, active_feats].values.astype(np.float32)
+            X_eval = X_vl_r if len(X_vl_r) else X_tr_r
+            y_eval = y_val[~early_vl.values] if len(X_vl_r) else y_tr_reg
             clf = build_lgb(X_tr_r, y_tr_reg,
-                            val_df.loc[~early_vl, active_feats].values.astype(np.float32),
-                            y_val[~early_vl.values])
+                            X_eval, y_eval)
             p_tr = get_proba(clf, X_tr_r)
-            p_vl = get_proba(clf, X_vl_r)
-            if CALIBRATE:
+            p_vl = get_proba(clf, X_vl_r) if len(X_vl_r) else np.array([])
+            if CALIBRATE and len(p_vl):
                 p_vl = calibrate_probs(p_tr, y_tr_reg, p_vl)
 
         elif MODEL == "xgb":
             X_tr_r = train_df.loc[~early_tr, active_feats].values.astype(np.float32)
             X_vl_r = val_df.loc[~early_vl, active_feats].values.astype(np.float32)
-            clf = build_xgb(X_tr_r, y_tr_reg, X_vl_r, y_val[~early_vl.values])
+            X_eval = X_vl_r if len(X_vl_r) else X_tr_r
+            y_eval = y_val[~early_vl.values] if len(X_vl_r) else y_tr_reg
+            clf = build_xgb(X_tr_r, y_tr_reg, X_eval, y_eval)
             p_tr = get_proba(clf, X_tr_r)
-            p_vl = get_proba(clf, X_vl_r)
-            if CALIBRATE:
+            p_vl = get_proba(clf, X_vl_r) if len(X_vl_r) else np.array([])
+            if CALIBRATE and len(p_vl):
                 p_vl = calibrate_probs(p_tr, y_tr_reg, p_vl)
 
         elif MODEL == "lr":
             clf  = build_lr(X_tr_reg, y_tr_reg)
             p_tr = get_proba(clf, X_tr_reg)
-            p_vl = get_proba(clf, X_vl_reg)
+            p_vl = get_proba(clf, X_vl_reg) if len(X_vl_reg) else np.array([])
 
         elif MODEL == "mlp":
             X_tr_r = train_df.loc[~early_tr, active_feats].values.astype(np.float32)
             X_vl_r = val_df.loc[~early_vl, active_feats].values.astype(np.float32)
-            clf  = build_mlp(X_tr_r, y_tr_reg, X_vl_r, y_val[~early_vl.values])
+            X_eval = X_vl_r if len(X_vl_r) else X_tr_r
+            y_eval = y_val[~early_vl.values] if len(X_vl_r) else y_tr_reg
+            clf  = build_mlp(X_tr_r, y_tr_reg, X_eval, y_eval)
             p_tr = get_proba(clf, X_tr_r)
-            p_vl = get_proba(clf, X_vl_r)
-            if CALIBRATE:
+            p_vl = get_proba(clf, X_vl_r) if len(X_vl_r) else np.array([])
+            if CALIBRATE and len(p_vl):
                 p_vl = calibrate_probs(p_tr, y_tr_reg, p_vl)
 
         elif MODEL in ("ensemble_avg", "ensemble_stack"):
             X_tr_r = train_df.loc[~early_tr, active_feats].values.astype(np.float32)
             X_vl_r = val_df.loc[~early_vl, active_feats].values.astype(np.float32)
 
-            clf_lgb = build_lgb(X_tr_r, y_tr_reg, X_vl_r, y_val[~early_vl.values])
-            clf_xgb = build_xgb(X_tr_r, y_tr_reg, X_vl_r, y_val[~early_vl.values])
+            X_eval = X_vl_r if len(X_vl_r) else X_tr_r
+            y_eval = y_val[~early_vl.values] if len(X_vl_r) else y_tr_reg
+            clf_lgb = build_lgb(X_tr_r, y_tr_reg, X_eval, y_eval)
+            clf_xgb = build_xgb(X_tr_r, y_tr_reg, X_eval, y_eval)
             clf_lr  = build_lr(X_tr_reg, y_tr_reg)
 
             p_lgb_tr = get_proba(clf_lgb, X_tr_r)
             p_xgb_tr = get_proba(clf_xgb, X_tr_r)
             p_lr_tr  = get_proba(clf_lr,  X_tr_reg)
-            p_lgb_vl = get_proba(clf_lgb, X_vl_r)
-            p_xgb_vl = get_proba(clf_xgb, X_vl_r)
-            p_lr_vl  = get_proba(clf_lr,  X_vl_reg)
+            p_lgb_vl = get_proba(clf_lgb, X_vl_r) if len(X_vl_r) else np.array([])
+            p_xgb_vl = get_proba(clf_xgb, X_vl_r) if len(X_vl_r) else np.array([])
+            p_lr_vl  = get_proba(clf_lr,  X_vl_reg) if len(X_vl_reg) else np.array([])
 
-            if CALIBRATE:
+            if CALIBRATE and len(p_lgb_vl):
                 p_lgb_vl = calibrate_probs(p_lgb_tr, y_tr_reg, p_lgb_vl)
+            if CALIBRATE and len(p_xgb_vl):
                 p_xgb_vl = calibrate_probs(p_xgb_tr, y_tr_reg, p_xgb_vl)
 
             if MODEL == "ensemble_avg":
@@ -1177,7 +1238,7 @@ def run_walk_forward(df, active_feats, early_feats):
         brier, roi, n_bets = evaluate(probs_val, y_val, mkt_val, is_warmup=wu_val)
         print(f"  brier={brier:.4f}  roi={roi:.4f}  n_bets={n_bets}")
 
-        if clf is not None and fold_idx == len(WALK_FORWARD_FOLDS) - 1:
+        if clf is not None and fold_idx == len(folds) - 1:
             fi_feats = survived_feats if MODEL in ("lr", "mlp") else active_feats
             print_feature_importance(clf, fi_feats)
             last_fi = extract_feature_importance(clf, fi_feats)
@@ -1210,7 +1271,7 @@ def run_walk_forward(df, active_feats, early_feats):
         for feat in active_feats:
             if feat not in df.columns:
                 continue
-            last_fold = WALK_FORWARD_FOLDS[-1]
+            last_fold = folds[-1]
             val_start, val_end = last_fold[1], last_fold[2]
             val_mask = (df["game_date"] >= val_start) & (df["game_date"] < val_end)
             val_df_last = df[val_mask]
@@ -1256,7 +1317,8 @@ if __name__ == "__main__":
     df = df.dropna(subset=[c for c in req_always if c in df.columns])
     print(f"Rows after dropna (required cols only): {len(df):,}")
 
-    fold_results, extras = run_walk_forward(df, active_feats, early_feats)
+    metric_folds = build_metric_folds(df)
+    fold_results, extras = run_walk_forward(df, active_feats, early_feats, metric_folds)
 
     if fold_results:
         rois       = [r["roi"]    for r in fold_results if not math.isnan(r["roi"])]
@@ -1328,6 +1390,7 @@ if __name__ == "__main__":
                 "kelly_fraction": KELLY_FRACTION,
                 "max_bet_frac": MAX_BET_FRAC,
                 "prob_cap": list(PROB_CAP),
+                "metric_folds": metric_folds,
             },
             "feature_accuracy": extras.get("feature_accuracy", {}),
         }

@@ -382,8 +382,8 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df_feat["sharp_x_fip"]             = df_feat["sharp_move_flag"] * df_feat["sp_fip_DIFF"]
 
     df_feat = df_feat.sort_values("game_date").reset_index(drop=True)
-    df_feat["hg"] = df_feat.groupby(["home_team", "season"]).cumcount()
-    df_feat["ag"] = df_feat.groupby(["away_team", "season"]).cumcount()
+    df_feat["hg"] = T._gcol(df_feat, "h_games_played")
+    df_feat["ag"] = T._gcol(df_feat, "a_games_played")
     df_feat["early_season_flag"] = (
         df_feat[["hg", "ag"]].min(axis=1) < T.EARLY_SEASON_GAMES).astype(float)
     df_feat["home_games_played"] = df_feat["hg"]
