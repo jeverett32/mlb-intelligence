@@ -2,7 +2,7 @@
 """
 migrate_to_postgres.py
 Imports master_mlb.csv and mlb_2026.csv into the games table in PostgreSQL.
-Run from project root: uv run migrate_to_postgres.py
+Run from project root: uv run scripts/migrate_to_postgres.py
 """
 import json
 import os
@@ -12,7 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
 import psycopg2
@@ -124,7 +124,7 @@ def main():
     print("Connecting to PostgreSQL...")
     conn = psycopg2.connect(**DB)
     print("Connected.")
-    data_dir = Path(__file__).parent / "data"
+    data_dir = Path(__file__).resolve().parents[1] / "data"
     for fname in ["master_mlb.csv", "mlb_2026.csv"]:
         path = data_dir / fname
         if not path.exists():
