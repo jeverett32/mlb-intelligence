@@ -806,8 +806,6 @@ BROWSABLE_TABLES = {
     "games",
     "bets",
     "settings",
-    "users",
-    "sessions",
     "app_users",
     "app_sessions",
     "user_settings",
@@ -1012,18 +1010,6 @@ def init_auth_tables():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_email_status ON user_orders (email, status, game_date)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_orders_email_status ON paper_orders (email, status, game_date)")
 
-            cur.execute(
-                f"""
-                INSERT INTO {APP_USERS_TABLE} (
-                    email, password_hash, created_at, updated_at, approval_status, approved_at, is_admin
-                )
-                SELECT u.email, u.password_hash, COALESCE(u.created_at, NOW()), NOW(), 'approved',
-                       COALESCE(u.created_at, NOW()), FALSE
-                FROM users u
-                ON CONFLICT (email) DO NOTHING
-                """
-            )
-
             # Universal paper bankroll pseudo-user (required for FK on paper_orders.email).
             cur.execute(
                 f"""
@@ -1035,15 +1021,6 @@ def init_auth_tables():
                 ON CONFLICT (email) DO NOTHING
                 """,
                 (PAPER_UNIVERSAL_EMAIL, "Universal paper bankroll", "!"),
-            )
-            cur.execute(
-                f"""
-                INSERT INTO {APP_SESSIONS_TABLE} (session_id, email, expires_at, created_at)
-                SELECT s.session_id, s.email, s.expires_at, COALESCE(s.created_at, NOW())
-                FROM sessions s
-                JOIN {APP_USERS_TABLE} u ON u.email = s.email
-                ON CONFLICT (session_id) DO NOTHING
-                """
             )
 
             bootstrap_admin = _norm_email(os.environ.get("MLB_BOOTSTRAP_ADMIN_EMAIL", ""))
