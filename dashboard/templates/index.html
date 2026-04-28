@@ -701,19 +701,14 @@
       visibility: hidden;
     }
     @media (max-width: 600px) {
-      .calendar-bar {
-        flex-wrap: wrap;
-        gap: 6px;
-        padding: 12px 0 16px;
-      }
-      .calendar-month {
-        width: 100%;
-        flex-direction: row;
-        align-items: baseline;
-        gap: 6px;
-      }
-      .cal-days { grid-template-columns: repeat(7, 1fr); }
+      .calendar-bar { gap: 4px; }
+      .calendar-month { min-width: 50px; }
+      .calendar-month span:first-child { font-size: 0.85rem; }
+      .cal-days { grid-template-columns: repeat(7, 34px); }
       .cal-day { padding: 4px 0; }
+      .cal-day-num { font-size: 0.82rem; }
+      .cal-day-label { font-size: 0.6rem; }
+      .cal-arrow { font-size: 1.1rem; padding: 4px; }
     }
 
     .game-cards-grid {
