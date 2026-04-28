@@ -123,11 +123,7 @@
       text-transform: uppercase;
       margin-bottom: 10px;
     }
-    .docs-tree {
-      display: grid;
-      gap: 4px;
-      list-style: none;
-    }
+    .docs-tree { list-style: none; }
     .docs-tree a {
       display: block;
       padding: 7px 8px;
@@ -298,15 +294,12 @@
 <body>
   <header class="docs-header">
     <div class="docs-header-inner">
-      <a class="docs-brand" href="/" aria-label="MLB Intelligence home">
+      <a class="docs-brand" href="/docs/api" aria-label="Documentation home">
         <img src="/static/favicon.svg" alt="" />
-        <span>MLB Intelligence Docs</span>
+        <span>Docs</span>
       </a>
       <nav class="docs-header-nav" aria-label="Docs top navigation">
-        <a href="/docs/api">Docs</a>
-        <a href="/public">Public analytics</a>
-        <a href="/settings">Settings</a>
-        <a href="/login">Log in</a>
+        <a href="/">Home</a>
       </nav>
     </div>
   </header>
@@ -315,12 +308,7 @@
     <aside class="docs-sidebar" aria-label="Documentation navigation">
       <div class="docs-sidebar-title">Documentation</div>
       <ul class="docs-tree">
-        <li><a class="active" href="/docs/api">Signal API</a></li>
-        <li><a href="#overview">Overview</a></li>
-        <li><a href="#requirements">Requirements</a></li>
-        <li><a href="#setup">Setup</a></li>
-        <li><a href="#endpoints">Endpoints</a></li>
-        <li><a href="#service">Service</a></li>
+        <li><a class="active" href="/docs/api">API</a></li>
       </ul>
     </aside>
 
@@ -334,7 +322,8 @@
         </p>
         <div class="docs-actions">
           <a class="btn-primary" href="/settings">Create API Token</a>
-          <a class="btn-secondary" href="https://github.com/jeverett32/mlb-pipeline/blob/main/scripts/run_signal_follower.py" target="_blank" rel="noreferrer">View Script</a>
+          <a class="btn-secondary" href="/static/self_custody_follower.py" download>Download Script</a>
+          <a class="btn-secondary" href="/static/self_custody_follower.py" target="_blank" rel="noreferrer">Open Script</a>
         </div>
       </section>
 
@@ -342,7 +331,7 @@
         <h2>Overview</h2>
         <ol>
           <li>Create an API token in <strong>Settings &gt; API</strong>.</li>
-          <li>Run the follower script on a machine you control.</li>
+          <li>Download the standalone follower script and edit the config variables at the top.</li>
           <li>The script polls MLB Intelligence for model signals.</li>
           <li>The script places orders directly with Kalshi using your local key file.</li>
           <li>The script syncs order and balance updates back to the dashboard.</li>
@@ -356,35 +345,34 @@
         <h2>Requirements</h2>
         <ul>
           <li>Python 3.10 or newer.</li>
-          <li>Project dependencies installed with <code>uv sync</code>.</li>
-          <li>Kalshi API key ID in <code>KALSHI_KEY_ID</code>.</li>
-          <li>Kalshi private key PEM path in <code>KALSHI_KEY_PATH</code>.</li>
+          <li>Python packages: <code>requests</code> and <code>cryptography</code>.</li>
+          <li>Kalshi API key ID.</li>
+          <li>Kalshi private key PEM file saved locally.</li>
           <li>Signal API token from <strong>Settings &gt; API</strong>.</li>
         </ul>
       </section>
 
       <section class="docs-section" id="setup">
         <h2>Setup</h2>
-        <h3>1. Clone and install</h3>
-        <code class="docs-code">git clone https://github.com/jeverett32/mlb-pipeline.git
-cd mlb-pipeline
-uv sync</code>
+        <h3>1. Download the script</h3>
+        <code class="docs-code">curl -O https://your-mlb-intelligence-domain/static/self_custody_follower.py</code>
 
-        <h3>2. Create environment file</h3>
-        <code class="docs-code">MLBI_API_BASE_URL=https://your-mlb-intelligence-domain
-MLBI_API_TOKEN=your-token-from-settings
-KALSHI_KEY_ID=your-kalshi-key-id
-KALSHI_KEY_PATH=/absolute/path/to/kalshi-key.pem
-KALSHI_ENV=prod</code>
+        <h3>2. Install dependencies</h3>
+        <code class="docs-code">python -m pip install requests cryptography</code>
 
-        <h3>3. Test with a dry run</h3>
-        <code class="docs-code">uv run python scripts/run_signal_follower.py --once --dry-run</code>
+        <h3>3. Edit the config block</h3>
+        <code class="docs-code">MLBI_API_BASE_URL = "https://your-mlb-intelligence-domain"
+MLBI_API_TOKEN = "paste-your-api-token"
+KALSHI_KEY_ID = "paste-your-kalshi-key-id"
+KALSHI_KEY_PATH = "kalshi-key.pem"
+KALSHI_ENV = "prod"
+DRY_RUN = True</code>
 
-        <h3>4. Run live once</h3>
-        <code class="docs-code">uv run python scripts/run_signal_follower.py --once</code>
+        <h3>4. Test with dry run enabled</h3>
+        <code class="docs-code">python self_custody_follower.py</code>
 
-        <h3>5. Run continuously</h3>
-        <code class="docs-code">uv run python scripts/run_signal_follower.py</code>
+        <h3>5. Turn on live execution</h3>
+        <p>After the dry run behaves as expected, change <code>DRY_RUN = False</code> and run the script on a machine that stays online.</p>
       </section>
 
       <section class="docs-section" id="endpoints">
@@ -427,8 +415,7 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=/opt/mlb-pipeline
-EnvironmentFile=/opt/mlb-pipeline/.env
-ExecStart=/opt/mlb-pipeline/.venv/bin/python scripts/run_signal_follower.py
+ExecStart=/usr/bin/python /opt/mlb-pipeline/self_custody_follower.py
 Restart=always
 RestartSec=15
 

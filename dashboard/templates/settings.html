@@ -531,8 +531,18 @@
             <label class="settings-label" for="api-token-secret">API Key</label>
             <div class="api-key-control">
               <input class="api-key-input" id="api-token-secret" type="password" readonly value="No API key yet">
-              <button class="api-icon-btn" type="button" onclick="toggleApiToken()" aria-label="Show API key" title="Show API key">Show</button>
-              <button class="api-icon-btn" type="button" onclick="copyApiToken()" aria-label="Copy API key" title="Copy API key">Copy</button>
+              <button class="api-icon-btn" type="button" onclick="toggleApiToken()" aria-label="Show API key" title="Show API key">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+              </button>
+              <button class="api-icon-btn" type="button" onclick="copyApiToken()" aria-label="Copy API key" title="Copy API key">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </button>
             </div>
             <div class="settings-actions">
               <button class="settings-action" type="button" onclick="refreshApiToken()">Refresh Token</button>
