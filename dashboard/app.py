@@ -426,7 +426,10 @@ def index(request: Request):
     user = _get_current_user(request)
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
         return _render_template("landing.html")
-    return _render_template("index.html")
+    effective_live = DB.is_global_live_betting() and DB.is_user_live_betting(user["email"])
+    html = _render_template("index.html")
+    html = html.replace("{{EFFECTIVE_LIVE_BETTING}}", "true" if effective_live else "false")
+    return html
 
 
 @app.get("/home", response_class=HTMLResponse)

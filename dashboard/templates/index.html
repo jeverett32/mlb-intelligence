@@ -1450,7 +1450,10 @@
 </nav>
 <script>
 (function() {
-  var mode = localStorage.getItem('bet_mode') === 'live' ? 'live' : 'paper';
+  var stored = localStorage.getItem('bet_mode');
+  var serverLive = {{EFFECTIVE_LIVE_BETTING}};
+  var mode = stored !== null ? stored : (serverLive ? 'live' : 'paper');
+  if (mode !== 'live') mode = 'paper';
   document.getElementById('mode-' + mode).classList.add('active');
 })();
 </script>
