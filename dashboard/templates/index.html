@@ -911,7 +911,7 @@
     }
     .team-row {
       display: grid;
-      grid-template-columns: minmax(230px, 2fr) 68px 44px 52px 48px 54px minmax(96px, 0.8fr);
+      grid-template-columns: minmax(230px, 2fr) 68px 44px 48px 52px 54px minmax(96px, 0.8fr);
       gap: 8px;
       align-items: center;
       padding: 13px 16px;
@@ -2329,8 +2329,8 @@ function renderDivisionCard(division) {
       </div>
       <div class="team-stat"><strong>${fmtRecord(team.wins, team.losses)}</strong><br><span class="team-sub">${fmtWinPct(team.win_pct)}</span></div>
       <div class="team-stat">${fmtGamesBack(team.games_back)}</div>
-      <div class="team-stat">${team.last_ten_wins}-${team.last_ten_losses}</div>
       <div class="team-stat">${streakBadge(team.streak)}</div>
+      <div class="team-stat">${team.last_ten_wins}-${team.last_ten_losses}</div>
       <div class="team-stat" style="color:${Number(team.run_diff || 0) >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtRunDiff(team.run_diff)}</div>
       <div>${renderTeamNext(team)}</div>
     </div>
@@ -2345,8 +2345,8 @@ function renderDivisionCard(division) {
         <div>Team</div>
         <div>Record</div>
         <div>GB</div>
-        <div>L10</div>
         <div>Strk</div>
+        <div>L10</div>
         <div>Diff</div>
         <div>Next</div>
       </div>
