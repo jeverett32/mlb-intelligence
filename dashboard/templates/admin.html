@@ -980,6 +980,24 @@ function getFeatureDict() {
   return window.FEATURE_DICT || {};
 }
 
+function getAbbreviations() {
+  // Prefer shared glossary file; fall back to a minimal built-in set.
+  return window.FEATURE_ABBREVIATIONS || {
+    ERA: "Earned Run Average — runs allowed per 9 innings (lower is better).",
+    WHIP: "Walks + Hits per Inning Pitched — baserunners allowed per inning (lower is better).",
+    FIP: "Fielding Independent Pitching — estimate using K/BB/HR (lower is better).",
+    xFIP: "Expected FIP — like FIP but normalizes HR rate (lower is better).",
+    "K/9": "Strikeouts per 9 innings (higher is better for pitchers).",
+    "BB/9": "Walks per 9 innings (lower is better for pitchers).",
+    "HR/9": "Home runs per 9 innings (lower is better for pitchers).",
+    wOBA: "Weighted On-Base Average — offensive value per PA (higher is better).",
+    "wRC+": "Weighted Runs Created Plus — 100 = league avg; higher is better.",
+    WAR: "Wins Above Replacement — value above replacement level (higher is better).",
+    OBP: "On-base percentage (higher is better).",
+    SLG: "Slugging percentage (higher is better).",
+  };
+}
+
 function openFeatureDictModal() {
   const body = document.getElementById('feat-dict-body');
   const categories = [
@@ -1023,10 +1041,10 @@ function openAbbrevModal() {
   const overlay = document.getElementById('abbr-modal');
   const body = document.getElementById('abbr-body');
   if (!overlay || !body) return;
-  const abbr = window.FEATURE_ABBREVIATIONS || {};
+  const abbr = getAbbreviations();
   const entries = Object.entries(abbr);
   if (!entries.length) {
-    body.innerHTML = '<div class="empty">No abbreviations loaded yet.</div>';
+    body.innerHTML = '<div class="empty">No abbreviations available.</div>';
   } else {
     body.innerHTML = entries.map(([k, v]) => `
       <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
