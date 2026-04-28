@@ -47,7 +47,7 @@ EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
 
 # How many minutes before game start to trigger the pipeline
-LEAD_MINUTES = 15
+LEAD_MINUTES = 10
 
 # Skip games once first pitch has passed. If the ideal 15-minute lead was
 # missed because an earlier run took too long, run the game immediately.

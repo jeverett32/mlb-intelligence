@@ -162,7 +162,7 @@ def test_next_batch_does_not_pull_distinct_start_slot_too_early(monkeypatch):
     batch, run_at = run_pipeline.get_next_batch()
 
     assert [game["game_pk"] for game in batch] == [1]
-    assert run_at == datetime(2026, 4, 27, 19, 55, tzinfo=timezone.utc)
+    assert run_at == datetime(2026, 4, 27, 20, 0, tzinfo=timezone.utc)
 
 
 def test_next_batch_keeps_same_start_slot_together(monkeypatch):
@@ -176,7 +176,7 @@ def test_next_batch_keeps_same_start_slot_together(monkeypatch):
     batch, run_at = run_pipeline.get_next_batch()
 
     assert [game["game_pk"] for game in batch] == [1, 2]
-    assert run_at == datetime(2026, 4, 27, 19, 55, tzinfo=timezone.utc)
+    assert run_at == datetime(2026, 4, 27, 20, 0, tzinfo=timezone.utc)
 
 
 def test_next_batch_runs_late_game_before_first_pitch(monkeypatch):
@@ -190,7 +190,7 @@ def test_next_batch_runs_late_game_before_first_pitch(monkeypatch):
     batch, run_at = run_pipeline.get_next_batch()
 
     assert [game["game_pk"] for game in batch] == [1]
-    assert run_at == datetime(2026, 4, 27, 19, 45, tzinfo=timezone.utc)
+    assert run_at == datetime(2026, 4, 27, 19, 50, tzinfo=timezone.utc)
 
 
 def test_backfill_paper_orders_uses_rolling_bankroll(monkeypatch):
