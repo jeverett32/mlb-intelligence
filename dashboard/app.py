@@ -661,6 +661,57 @@ def update_admin_setting(
     return {"key": key, "value": payload.value}
 
 
+@app.post("/api/admin/pipeline-action")
+@limiter.limit("5/minute")
+def run_pipeline_action(
+    request: Request, payload: dict, user: dict = Depends(require_admin)
+):
+    action = payload.get("action")
+    allowed = {"settle_games", "refresh_schedule", "refresh_balance"}
+    if action not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+
+    project_root = str(Path(__file__).parent.parent)
+
+    if action == "settle_games":
+        try:
+            from settle_games import settle_completed_games
+            settled = settle_completed_games()
+            return {"ok": True, "message": f"Settled {settled} game(s)."}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    elif action == "refresh_schedule":
+        try:
+            result = subprocess.run(
+                [sys.executable, "fetch/fetch_data.py"],
+                cwd=project_root,
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                return {"ok": True, "message": "Schedule refreshed."}
+            return {"ok": False, "message": result.stderr[:500] or "Fetch failed."}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "message": "Timed out after 120s."}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    elif action == "refresh_balance":
+        try:
+            account = DB.get_kalshi_account(user["email"])
+            if not account or not account.get("is_active"):
+                return {"ok": False, "message": "No active Kalshi account linked."}
+            balance = fetch_balance_for_account(
+                key_id=account["key_id"],
+                key_path=account["key_path"],
+                kalshi_env=account["kalshi_env"],
+                email=user["email"],
+            )
+            return {"ok": True, "message": f"Balance: ${balance / 100:.2f}"}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+
 @app.get("/api/me")
 def get_me(user: dict = Depends(require_approved_user)):
     return {

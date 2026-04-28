@@ -79,3 +79,21 @@ window.FEATURE_DICT = {
   pythagorean_short_DIFF: "Short-window pythagorean win% difference (home − away)",
 };
 
+// Common baseball abbreviations used throughout feature labels/descriptions.
+// Keep this short + beginner-friendly.
+window.FEATURE_ABBREVIATIONS = {
+  ERA: "Earned Run Average — runs allowed per 9 innings (lower is better).",
+  WHIP: "Walks + Hits per Inning Pitched — baserunners allowed per inning (lower is better).",
+  FIP: "Fielding Independent Pitching — pitcher run prevention estimate using K/BB/HR (lower is better).",
+  xFIP: "Expected FIP — like FIP but normalizes HR rate (lower is better).",
+  "K/9": "Strikeouts per 9 innings (higher is better for pitchers).",
+  "BB/9": "Walks per 9 innings (lower is better for pitchers).",
+  "HR/9": "Home runs allowed per 9 innings (lower is better for pitchers).",
+  wOBA: "Weighted On-Base Average — overall offensive value per plate appearance (higher is better).",
+  "wRC+": "Weighted Runs Created Plus — offense indexed to league average (100 = avg; higher is better).",
+  WAR: "Wins Above Replacement — overall value above a replacement-level player (higher is better).",
+  OWAR: "Offensive WAR — WAR from batting/base running (higher is better).",
+  OBP: "On-base percentage — how often a hitter reaches base (higher is better).",
+  SLG: "Slugging percentage — power/hit quality measure (higher is better).",
+};
+

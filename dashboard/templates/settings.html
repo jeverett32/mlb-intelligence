@@ -587,6 +587,37 @@
             <a class="admin-redirect-btn" href="/admin">Open Admin →</a>
           </div>
         </section>
+
+        <section class="settings-section">
+          <div class="settings-section-title">Pipeline Actions</div>
+          <p>Manually trigger pipeline operations. These run in the foreground — wait for a result before clicking again.</p>
+
+          <div class="admin-redirect-row">
+            <div>
+              <div class="admin-redirect-label">Settle Games</div>
+              <div class="admin-redirect-copy">Fetch final scores and settle completed games + bets.</div>
+            </div>
+            <button class="admin-redirect-btn" onclick="runPipelineAction('settle_games', this)">Run</button>
+          </div>
+
+          <div class="admin-redirect-row">
+            <div>
+              <div class="admin-redirect-label">Refresh Schedule</div>
+              <div class="admin-redirect-copy">Re-fetch today's MLB schedule and game times.</div>
+            </div>
+            <button class="admin-redirect-btn" onclick="runPipelineAction('refresh_schedule', this)">Run</button>
+          </div>
+
+          <div class="admin-redirect-row">
+            <div>
+              <div class="admin-redirect-label">Refresh Balance</div>
+              <div class="admin-redirect-copy">Pull latest Kalshi account balance.</div>
+            </div>
+            <button class="admin-redirect-btn" onclick="runPipelineAction('refresh_balance', this)">Run</button>
+          </div>
+
+          <div id="pipeline-action-feedback" style="margin-top:12px;font-size:0.82rem"></div>
+        </section>
       </div>
 
     </div>
@@ -641,6 +672,25 @@
       document.getElementById('toggle-status').classList.toggle('live', on);
       feedback('live-feedback', on ? 'Live betting enabled.' : 'Live betting disabled.', on);
     } catch { feedback('live-feedback', 'Update failed.', false); }
+  }
+
+  async function runPipelineAction(action, btn) {
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    const fb = document.getElementById('pipeline-action-feedback');
+    fb.textContent = '';
+    try {
+      const res = await api('POST', '/api/admin/pipeline-action', { action });
+      fb.textContent = res.message;
+      fb.style.color = res.ok ? 'var(--success)' : 'var(--danger)';
+    } catch (e) {
+      fb.textContent = e?.detail || 'Request failed.';
+      fb.style.color = 'var(--danger)';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
   }
 
   async function toggleGlobalLive() {
