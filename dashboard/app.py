@@ -58,6 +58,18 @@ class _CachedStatic(StaticFiles):
 app.mount("/static", _CachedStatic(directory=str(STATIC_DIR)), name="static")
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if COOKIE_SECURE:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 class CalibrationPoint(BaseModel):
     predicted: float
     actual: float
@@ -240,6 +252,11 @@ def pending_page():
 @app.get("/contact", response_class=HTMLResponse)
 def contact_page():
     return _render_template("contact.html")
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page():
+    return _render_template("privacy.html")
 
 
 @app.post("/login")

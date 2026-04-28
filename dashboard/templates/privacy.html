@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Privacy and security practices for MLB Intelligence." />
+  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
+  <title>Privacy &amp; Security — MLB Intelligence</title>
+  <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
+  </script>
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260425h">
+  <script src="/static/js/public-site.js?v=20260425b" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+</head>
+<body class="contact-page">
+  <div class="ps-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="MLB Intelligence home">
+        <img src="/static/favicon.svg" alt="" />
+        <span>MLB Intelligence</span>
+      </a>
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+        <span class="nav-toggle-icon"></span>
+      </button>
+      <nav class="nav-links" id="site-nav" aria-label="Primary">
+        <a href="/public">Public analytics</a>
+        <a href="/contact">Contact</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </header>
+
+    <main class="contact-main">
+      <section class="contact-hero" data-reveal>
+        <span class="eyebrow">Privacy &amp; Security</span>
+        <h1>How we protect your data.</h1>
+        <p>
+          MLB Intelligence is a small, independently operated platform. We collect only what's necessary
+          to run the service and take concrete steps to protect every piece of information you provide.
+        </p>
+      </section>
+
+      <section class="contact-grid" data-reveal>
+        <article class="contact-card">
+          <span class="contact-kicker">Authentication</span>
+          <h2>Password security</h2>
+          <p>
+            Passwords are never stored in plain text. Every password is hashed using <strong>bcrypt</strong> with
+            a unique per-user salt before it touches the database. Even in the event of a database breach,
+            passwords cannot be recovered from the stored hashes.
+          </p>
+        </article>
+
+        <article class="contact-card">
+          <span class="contact-kicker">Encryption</span>
+          <h2>API keys encrypted at rest</h2>
+          <p>
+            Sensitive credentials like Kalshi API keys are encrypted using <strong>Fernet (AES-128-CBC)</strong>
+            before being written to the database. Keys are decrypted only in application memory when needed
+            for API calls and are never logged, cached, or exposed through any endpoint.
+          </p>
+        </article>
+
+        <article class="contact-card">
+          <span class="contact-kicker">Sessions</span>
+          <h2>Secure session management</h2>
+          <p>
+            Sessions use cryptographically random 256-bit tokens. Cookies are set with <strong>HttpOnly</strong>,
+            <strong>SameSite=Lax</strong>, and <strong>Secure</strong> flags (when served over HTTPS).
+            Sessions expire automatically and stale sessions are purged on every server restart.
+          </p>
+        </article>
+
+        <article class="contact-card">
+          <span class="contact-kicker">Transport</span>
+          <h2>HTTPS &amp; security headers</h2>
+          <p>
+            All traffic is served over HTTPS via Cloudflare Tunnel with HSTS enforced. Responses include
+            security headers: <strong>X-Content-Type-Options</strong>, <strong>X-Frame-Options: DENY</strong>,
+            <strong>Referrer-Policy</strong>, and a restrictive <strong>Permissions-Policy</strong> that disables
+            camera, microphone, and geolocation access.
+          </p>
+        </article>
+
+        <article class="contact-card">
+          <span class="contact-kicker">Rate Limiting</span>
+          <h2>Brute-force protection</h2>
+          <p>
+            Login and registration endpoints are rate-limited to prevent credential stuffing and brute-force attacks.
+            API endpoints have per-IP rate limits. Repeated failed attempts are throttled automatically.
+          </p>
+        </article>
+
+        <article class="contact-card">
+          <span class="contact-kicker">Access Control</span>
+          <h2>Approval-based access</h2>
+          <p>
+            New accounts require manual admin approval before accessing the private dashboard.
+            Admin-only endpoints are protected by role checks at every layer. Private key files on the
+            server are restricted to owner-only read permissions (mode 600).
+          </p>
+        </article>
+      </section>
+
+      <section class="contact-form-panel" data-reveal>
+        <div>
+          <span class="eyebrow">Data collection</span>
+          <h2>What we store and why.</h2>
+        </div>
+        <div class="topic-grid">
+          <div><strong>Account info</strong><span>Email, name, and hashed password for authentication. No data is sold or shared with third parties.</span></div>
+          <div><strong>Kalshi credentials</strong><span>API key ID and private key file, encrypted at rest, used solely to place bets on your behalf when you enable live betting.</span></div>
+          <div><strong>Session metadata</strong><span>IP address and user agent stored per session for security auditing. Purged when sessions expire.</span></div>
+          <div><strong>No tracking</strong><span>No analytics scripts, no third-party trackers, no advertising pixels. We don't use cookies for anything other than authentication.</span></div>
+        </div>
+      </section>
+
+      <section class="contact-about" data-reveal>
+        <div>
+          <span class="eyebrow">Questions</span>
+          <h2>Something not covered here?</h2>
+          <p>
+            If you have questions about how your data is handled, want to request data deletion, or
+            want to report a security concern, reach out directly.
+          </p>
+        </div>
+        <div class="contact-actions">
+          <a class="btn-primary" href="mailto:john.everett32@gmail.com?subject=Privacy%20question">Contact Us</a>
+          <a class="btn-secondary" href="/public">View Public Analytics</a>
+        </div>
+      </section>
+    </main>
+    <footer class="public-footer">
+      <span>Your data, protected.</span>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/contact">Contact</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/login">Log in</a>
+      </nav>
+    </footer>
+  </div>
+</body>
+</html>
