@@ -155,6 +155,7 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
             )
 
     DB.backfill_user_order_results()
+    DB.backfill_paper_order_results()
 
     print(f"\nDone. Settled {settled_count}/{len(rows)} game(s).")
     return settled_count
