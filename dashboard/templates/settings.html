@@ -559,7 +559,10 @@
               </button>
             </div>
             <div class="settings-actions">
-              <button class="settings-action" type="button" onclick="refreshApiToken()">Refresh Token</button>
+              <button class="settings-action" type="button" onclick="refreshApiToken()">Rotate Token</button>
+            </div>
+            <div class="settings-hint" style="margin-top:8px">
+              Rotating revokes your previous token immediately. Update any running script to avoid <code>401</code> errors.
             </div>
           </div>
           <div class="settings-feedback" id="api-token-feedback"></div>
@@ -735,7 +738,7 @@
       currentApiTokenMasked = maskApiToken(currentApiToken);
       apiTokenVisible = false;
       renderApiToken([created]);
-      feedback('api-token-feedback', 'Token refreshed. Copy it now; full value is available until you leave this page.', true);
+      feedback('api-token-feedback', 'Token rotated. Copy it now; full value is available until you leave this page.', true);
     } catch (e) {
       feedback('api-token-feedback', e?.detail || 'Token refresh failed.', false);
     }
