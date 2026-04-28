@@ -1582,6 +1582,27 @@ def get_admin_errors(user: dict = Depends(require_admin)):
                     lines.append(f"[{service}] {line}")
         except Exception:
             pass
+
+    try:
+        resp = requests.get(
+            "https://api.github.com/repos/jeverett32/mlb-pipeline/actions/runs",
+            params={"per_page": 15, "branch": "main"},
+            timeout=10,
+        )
+        if resp.ok:
+            for run in resp.json().get("workflow_runs", []):
+                conclusion = run.get("conclusion") or run.get("status")
+                ts = run.get("created_at", "")[:19].replace("T", " ")
+                name = run.get("name", "workflow")
+                sha = run.get("head_sha", "")[:7]
+                msg = run.get("head_commit", {}).get("message", "").split("\n")[0][:80]
+                if conclusion in ("failure", "cancelled", "timed_out"):
+                    lines.insert(0, f"[github-actions] {ts} {name} {conclusion} ({sha} {msg})")
+                elif conclusion == "success":
+                    lines.insert(0, f"[github-actions] {ts} {name} ✓ ({sha} {msg})")
+    except Exception:
+        pass
+
     return {"lines": lines}
 
 
