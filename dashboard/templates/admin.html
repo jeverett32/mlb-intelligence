@@ -962,7 +962,9 @@ function closeFiModal() {
   document.body.style.overflow = '';
 }
 
-const FEATURE_DICT = window.FEATURE_DICT || {};
+function getFeatureDict() {
+  return window.FEATURE_DICT || {};
+}
 
 function openFeatureDictModal() {
   const body = document.getElementById('feat-dict-body');
@@ -980,7 +982,7 @@ function openFeatureDictModal() {
   const used = new Set();
   let html = '';
   for (const cat of categories) {
-    const entries = Object.entries(FEATURE_DICT).filter(([k]) =>
+    const entries = Object.entries(getFeatureDict()).filter(([k]) =>
       cat.prefix.some(p => k.startsWith(p)) && !used.has(k)
     );
     entries.forEach(([k]) => used.add(k));

@@ -1961,7 +1961,9 @@ function closeExplainModal() {
   document.body.style.overflow = '';
 }
 
-const FEATURE_GLOSSARY = window.FEATURE_DICT || {};
+function getFeatureGlossary() {
+  return window.FEATURE_DICT || {};
+}
 
 let _lastExplainFeatureKeys = [];
 
@@ -1975,7 +1977,8 @@ function openExplainGlossaryModal() {
     body.innerHTML = '<div class="panel-note">No features loaded yet. Open an explanation first.</div>';
   } else {
     body.innerHTML = keys.map(k => {
-      const desc = FEATURE_GLOSSARY[k] || "No glossary entry yet for this feature. (We can add one.)";
+      const dict = getFeatureGlossary();
+      const desc = dict[k] || "No glossary entry yet for this feature. (We can add one.)";
       const label = humanizeFeatureName(k);
       return `
         <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
