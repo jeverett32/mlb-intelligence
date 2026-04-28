@@ -1822,6 +1822,58 @@ function shouldShowExplain(game) {
   return (side === 'home' || side === 'away') && isFinite(frac) && frac > 0;
 }
 
+function humanizeFeatureName(name) {
+  const n0 = String(name || '').trim();
+  if (!n0) return '—';
+  const SPECIAL = {
+    market_implied_prob: 'Market implied prob (home)',
+    home_implied_prob: 'Market implied prob (home)',
+    away_implied_prob: 'Market implied prob (away)',
+    momentum_DIFF: 'Momentum (home − away)',
+    season_win_pct_DIFF: 'Season win% (home − away)',
+    streak_DIFF: 'Streak (home − away)',
+    sp_fip_DIFF: 'SP FIP (away − home)',
+    sp_era_DIFF: 'SP ERA (away − home)',
+    sp_k9_DIFF: 'SP K/9 (home − away)',
+    sp_bb9_DIFF: 'SP BB/9 (away − home)',
+    wrc_plus_DIFF: 'wRC+ (home − away)',
+    woba_DIFF: 'wOBA (home − away)',
+    k_pct_DIFF: 'K% (away − home)',
+    bb_pct_DIFF: 'BB% (home − away)',
+    hr_per_9_DIFF: 'HR/9 (away − home)',
+    run_diff_avg_W_DIFF: 'Avg run diff (home − away)',
+    runs_scored_avg_W_DIFF: 'Avg runs scored (home − away)',
+    runs_allowed_avg_W_DIFF: 'Avg runs allowed (home − away)',
+    win_pct_W_DIFF: 'Win% (home − away)',
+    pitcher_handedness_diff: 'SP handedness (home − away; L=1)',
+    sharp_move_flag: 'Sharp move flag',
+    sharp_x_fip: 'Sharp flag × SP FIP (away − home)',
+    early_season_flag: 'Early season flag',
+    home_games_played: 'Home games played',
+    away_games_played: 'Away games played',
+  };
+  if (SPECIAL[n0]) return SPECIAL[n0];
+  let n = n0;
+  if (n.endsWith('_DIFF')) n = n.slice(0, -5) + ' (diff)';
+  n = n.replace(/_lag1\b/g, ' (lag 1)');
+  n = n.replace(/_pct\b/g, '%');
+  n = n.replace(/_per_9\b/g, '/9');
+  n = n.replace(/_/g, ' ');
+  return n
+    .split(/\s+/)
+    .map(tok => {
+      const t = tok.trim();
+      if (!t) return t;
+      if (['ERA','FIP','WHIP'].includes(t.toUpperCase())) return t.toUpperCase();
+      const low = t.toLowerCase();
+      if (low === 'woba') return 'wOBA';
+      if (low === 'wrc+') return 'wRC+';
+      if (low === 'xfip') return 'xFIP';
+      return t[0].toUpperCase() + t.slice(1);
+    })
+    .join(' ');
+}
+
 async function toggleExplain(gamePk) {
   const panel = document.getElementById('explain-' + gamePk);
   if (!panel) return;
@@ -1851,7 +1903,7 @@ async function toggleExplain(gamePk) {
     function rowHtml(r, color) {
       const v = Number(r.value || 0);
       const pct = Math.min(100, Math.round(Math.abs(v) / maxAbs * 100));
-      const label = String(r.feature || '—');
+      const label = String(r.label || humanizeFeatureName(r.feature) || '—');
       return `
         <div class="explain-row">
           <div class="explain-feature" title="${label}">${label}</div>

@@ -91,7 +91,71 @@ def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray)
     # Raw (uncalibrated) prob from the LR layer. Note: final output may be isotonic-calibrated.
     raw_prob = float(1.0 / (1.0 + np.exp(-logit)))
 
-    items = [{"feature": feature_names[i], "value": float(contrib[i])} for i in range(len(feature_names))]
+    def _humanize_feature(name: str) -> str:
+        n = (name or "").strip()
+        if not n:
+            return "—"
+        SPECIAL = {
+            "market_implied_prob": "Market implied prob (home)",
+            "home_implied_prob": "Market implied prob (home)",
+            "away_implied_prob": "Market implied prob (away)",
+            "edge": "Edge",
+            "bet_frac": "Recommended stake (fraction)",
+            "momentum_DIFF": "Momentum (home − away)",
+            "season_win_pct_DIFF": "Season win% (home − away)",
+            "streak_DIFF": "Streak (home − away)",
+            "sp_fip_DIFF": "SP FIP (away − home)",
+            "sp_era_DIFF": "SP ERA (away − home)",
+            "sp_k9_DIFF": "SP K/9 (home − away)",
+            "sp_bb9_DIFF": "SP BB/9 (away − home)",
+            "wrc_plus_DIFF": "wRC+ (home − away)",
+            "woba_DIFF": "wOBA (home − away)",
+            "k_pct_DIFF": "K% (away − home)",
+            "bb_pct_DIFF": "BB% (home − away)",
+            "hr_per_9_DIFF": "HR/9 (away − home)",
+            "run_diff_avg_W_DIFF": "Avg run diff (home − away)",
+            "runs_scored_avg_W_DIFF": "Avg runs scored (home − away)",
+            "runs_allowed_avg_W_DIFF": "Avg runs allowed (home − away)",
+            "win_pct_W_DIFF": "Win% (home − away)",
+            "pitcher_handedness_diff": "SP handedness (home − away; L=1)",
+            "sharp_move_flag": "Sharp move flag",
+            "sharp_x_fip": "Sharp flag × SP FIP (away − home)",
+            "early_season_flag": "Early season flag",
+            "home_games_played": "Home games played",
+            "away_games_played": "Away games played",
+        }
+        if n in SPECIAL:
+            return SPECIAL[n]
+
+        # Generic transformations.
+        # Common suffixes.
+        if n.endswith("_DIFF"):
+            base = n[:-5]
+            n = f"{base} (diff)"
+        n = n.replace("_lag1", " (lag 1)")
+        n = n.replace("_pct", "%")
+        n = n.replace("_per_9", "/9")
+        n = n.replace("_", " ")
+
+        # Preserve known acronyms.
+        for a in ("wOBA", "wRC+", "xFIP", "FIP", "ERA", "WHIP", "K/9", "BB/9", "HR/9"):
+            pass
+
+        # Title-case but keep all-caps tokens as-is.
+        parts = []
+        for tok in n.split():
+            if tok.upper() in {"ERA", "FIP", "WHIP"}:
+                parts.append(tok.upper())
+            elif tok.lower() in {"woba", "wrc+", "xfip"}:
+                parts.append({"woba": "wOBA", "wrc+": "wRC+", "xfip": "xFIP"}[tok.lower()])
+            else:
+                parts.append(tok[:1].upper() + tok[1:])
+        return " ".join(parts)
+
+    items = [
+        {"feature": feature_names[i], "label": _humanize_feature(feature_names[i]), "value": float(contrib[i])}
+        for i in range(len(feature_names))
+    ]
     items.sort(key=lambda r: r["value"], reverse=True)
     top_pos = [r for r in items if r["value"] > 0][:6]
     top_neg = sorted([r for r in items if r["value"] < 0], key=lambda r: r["value"])[:6]
