@@ -97,18 +97,19 @@
       line-height: 1.1;
     }
     .back-link {
+      display: block;
+      width: 100%;
+      text-align: left;
       font-size: 0.82rem;
       color: var(--text-secondary);
       text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 10px 16px 0;
+      padding: 10px 12px;
       border: none;
+      border-radius: var(--radius-md);
       background: none;
-      transition: color 0.15s;
+      transition: color 0.15s, background 0.15s;
     }
-    .back-link:hover { color: var(--text-primary); }
+    .back-link:hover { color: var(--text-primary); background: var(--bg-card); }
 
     .settings-wrap {
       max-width: 860px;
@@ -118,7 +119,6 @@
 
     .settings-layout {
       display: flex;
-      flex-wrap: wrap;
       gap: 0;
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -126,11 +126,6 @@
       box-shadow: var(--shadow-sm);
       overflow: hidden;
       min-height: 480px;
-    }
-    .settings-layout > .back-link {
-      width: 100%;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 10px;
     }
     .settings-sidenav {
       width: 180px;
@@ -324,8 +319,8 @@
     <h1>Settings</h1>
   </div>
   <div class="settings-layout">
-    <a class="back-link" href="/">← Back</a>
     <nav class="settings-sidenav" aria-label="Settings sections">
+      <a class="back-link" href="/">← Back</a>
       <button class="active" onclick="showTab('general', this)">General</button>
       <button onclick="showTab('betting', this)">Betting</button>
       <button onclick="showTab('kalshi', this)">Kalshi</button>
