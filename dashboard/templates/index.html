@@ -815,6 +815,76 @@
       white-space: nowrap;
     }
 
+    .explain-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: transform 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
+      flex: 0 0 auto;
+    }
+    .explain-btn:hover,
+    .explain-btn:focus-visible {
+      transform: translateY(-1px);
+      border-color: var(--accent-light);
+      filter: brightness(1.04);
+      outline: none;
+    }
+    .explain-btn svg { width: 16px; height: 16px; stroke: currentColor; }
+
+    .explain-panel {
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+      padding: 12px 18px 14px;
+      display: none;
+    }
+    .explain-panel.open { display: block; }
+    .explain-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .explain-title strong {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+    .explain-sub { font-size: 0.78rem; color: var(--text-muted); }
+    .explain-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .explain-row { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 10px; align-items: center; }
+    .explain-feature {
+      color: var(--text-primary);
+      font-size: 0.82rem;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .explain-barwrap {
+      height: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .explain-bar { height: 100%; width: 0%; background: var(--accent); }
+    .explain-val {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
     .teams-spotlight {
       display: grid;
       grid-template-columns: 1.2fr 0.8fr;
@@ -1745,6 +1815,74 @@ function betStatus(game) {
   if (game.predicted_prob != null) return badge('No Bet', 'gray');
   return badge('Pending', 'gray');
 }
+
+function shouldShowExplain(game) {
+  const side = game.bet_side;
+  const frac = Number(game.bet_frac || 0);
+  return (side === 'home' || side === 'away') && isFinite(frac) && frac > 0;
+}
+
+async function toggleExplain(gamePk) {
+  const panel = document.getElementById('explain-' + gamePk);
+  if (!panel) return;
+  const isOpen = panel.classList.contains('open');
+  if (isOpen) {
+    panel.classList.remove('open');
+    return;
+  }
+  panel.classList.add('open');
+  if (panel.dataset.loaded === '1') return;
+  panel.innerHTML = '<div class="panel-note">Loading explanation…</div>';
+  try {
+    const res = await fetch(`/api/bet-explanation?game_pk=${encodeURIComponent(gamePk)}`);
+    const data = await res.json();
+    if (!data.available || !data.explanation) {
+      panel.innerHTML = '<div class="panel-note">No explanation available yet for this signal.</div>';
+      panel.dataset.loaded = '1';
+      return;
+    }
+    const ex = data.explanation;
+    const contrib = ex.contributions || {};
+    const pos = contrib.top_positive || [];
+    const neg = contrib.top_negative || [];
+    const all = [...pos, ...neg];
+    const maxAbs = Math.max(1e-9, ...all.map(r => Math.abs(Number(r.value || 0))));
+
+    function rowHtml(r, color) {
+      const v = Number(r.value || 0);
+      const pct = Math.min(100, Math.round(Math.abs(v) / maxAbs * 100));
+      const label = String(r.feature || '—');
+      return `
+        <div class="explain-row">
+          <div class="explain-feature" title="${label}">${label}</div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+            <div class="explain-barwrap" style="flex:1;">
+              <div class="explain-bar" style="width:${pct}%;background:${color};"></div>
+            </div>
+            <div class="explain-val">${(v >= 0 ? '+' : '') + v.toFixed(3)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    const side = ex.bet_side === 'away' ? 'Away' : 'Home';
+    const subtitle = `Top drivers for ${side} signal (log-odds contributions).`;
+    panel.innerHTML = `
+      <div class="explain-title">
+        <strong>Explainability</strong>
+        <span class="explain-sub">${subtitle}</span>
+      </div>
+      <div class="explain-grid">
+        ${pos.length ? pos.map(r => rowHtml(r, 'var(--success)')).join('') : ''}
+        ${neg.length ? neg.map(r => rowHtml(r, 'var(--danger)')).join('') : ''}
+      </div>
+    `;
+    panel.dataset.loaded = '1';
+  } catch (e) {
+    panel.innerHTML = '<div class="panel-note">Failed to load explanation.</div>';
+  }
+}
+
 function edgeText(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
   const n = Number(v) * 100;
@@ -2259,6 +2397,15 @@ function renderGameCards(games) {
       ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
       : '';
     const statusLine = finished ? '<div style="text-align:center;padding-top:2px"><span class="game-card-final">Final</span></div>' : '';
+    const explainBtn = shouldShowExplain(g)
+      ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="toggleExplain('${String(g.game_pk)}')">
+           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+             <path d="M4 19V5"></path>
+             <path d="M7 15l4-4 3 3 6-6"></path>
+             <path d="M20 7v6h-6"></path>
+           </svg>
+         </button>`
+      : '';
 
     return `
       <div class="game-card">
@@ -2286,10 +2433,14 @@ function renderGameCards(games) {
           <div class="game-card-detail">Market <strong>${fmtPct(g.home_implied_prob)}</strong></div>
           <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
           <div class="game-card-side">
-            <span>${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}</span>
+            <span style="display:inline-flex;align-items:center;gap:8px;">
+              ${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}
+              ${explainBtn}
+            </span>
             <span>${betStatus(g)}</span>
           </div>
         </div>
+        <div class="explain-panel" id="explain-${String(g.game_pk)}" data-loaded="0"></div>
       </div>`;
   }).join('');
 }

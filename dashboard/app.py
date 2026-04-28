@@ -6,6 +6,7 @@ Run from project root: uv run uvicorn dashboard.app:app --host 0.0.0.0 --port 80
 """
 
 import html
+import json
 import math
 import os
 import subprocess
@@ -186,6 +187,10 @@ def _safe_next_path(value: str = "") -> str:
 
 # Ensure auth tables exist on startup, then purge expired sessions
 DB.init_auth_tables()
+try:
+    DB.init_bets_explainability()
+except Exception as _e:
+    print(f"Explainability column init failed: {_e}")
 try:
     _purged = DB.purge_expired_sessions()
     if _purged:
@@ -795,6 +800,27 @@ def get_upcoming_signals(
         "signals": [_build_signal_payload(row) for row in rows],
         "count": len(rows),
         "reader_email": user["email"],
+    }
+
+
+@app.get("/api/bet-explanation")
+def get_bet_explanation(
+    game_pk: str,
+    user: dict = Depends(require_approved_user),
+):
+    row = DB.get_bet(game_pk)
+    if not row:
+        raise HTTPException(status_code=404, detail="Game not found")
+    explanation = row.get("explanation")
+    if isinstance(explanation, str):
+        try:
+            explanation = json.loads(explanation)
+        except Exception:
+            explanation = None
+    return {
+        "game_pk": str(game_pk),
+        "available": explanation is not None,
+        "explanation": explanation,
     }
 
 

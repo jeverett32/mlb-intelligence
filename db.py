@@ -550,6 +550,36 @@ def update_bet_prediction(game_pk, predicted_prob, edge, bet_side, bet_frac, mar
         conn.close()
 
 
+def update_bet_explanation(game_pk, explanation: dict | None) -> None:
+    """Set bets.explanation JSON payload for a game_pk (best-effort)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE bets
+                SET explanation = %s,
+                    updated_at = NOW()
+                WHERE game_pk = %s
+                """,
+                (json.dumps(explanation) if explanation is not None else None, int(game_pk)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_bets_explainability() -> None:
+    """Ensure the bets table has explainability columns."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS explanation JSONB")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def update_bet_order(game_pk, kalshi_order_id, bet_dollars, n_contracts):
     conn = get_connection()
     try:

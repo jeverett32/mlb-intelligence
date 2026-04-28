@@ -42,6 +42,70 @@ class PredictError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
+# Explainability (Logistic Regression) — no LLM, no SHAP.
+# We compute per-feature contributions in log-odds space using:
+#   logit = intercept + sum_j coef_j * x_scaled_j
+# where x_scaled is post-impute + post-standardize.
+# For away-side signals we negate contributions (away win == not home win).
+# ---------------------------------------------------------------------------
+
+def _extract_lr_pipeline_for_explainability(clf):
+    """
+    Return a fitted sklearn Pipeline with steps: imp, scl, mdl (LogisticRegression),
+    or None if the classifier shape isn't supported.
+    """
+    # Early specialist is a plain Pipeline.
+    if hasattr(clf, "named_steps"):
+        return clf
+    # Regular-season LR is wrapped in CalibratedClassifierCV; take one estimator as a representative.
+    calibrated = getattr(clf, "calibrated_classifiers_", None)
+    if calibrated:
+        est = getattr(calibrated[0], "estimator", None)
+        if est is not None and hasattr(est, "named_steps"):
+            return est
+    return None
+
+
+def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray) -> dict | None:
+    try:
+        imp = pipe.named_steps.get("imp")
+        scl = pipe.named_steps.get("scl")
+        mdl = pipe.named_steps.get("mdl")
+    except Exception:
+        return None
+    if imp is None or scl is None or mdl is None:
+        return None
+    if not hasattr(mdl, "coef_") or not hasattr(mdl, "intercept_"):
+        return None
+
+    x_imp = imp.transform(x_raw)
+    x_sc = scl.transform(x_imp)
+    coef = np.asarray(mdl.coef_).reshape(-1)
+    intercept = float(np.asarray(mdl.intercept_).reshape(-1)[0])
+    contrib = (coef * x_sc.reshape(-1)).astype(float)
+
+    if len(contrib) != len(feature_names):
+        return None
+
+    logit = float(intercept + float(np.sum(contrib)))
+    # Raw (uncalibrated) prob from the LR layer. Note: final output may be isotonic-calibrated.
+    raw_prob = float(1.0 / (1.0 + np.exp(-logit)))
+
+    items = [{"feature": feature_names[i], "value": float(contrib[i])} for i in range(len(feature_names))]
+    items.sort(key=lambda r: r["value"], reverse=True)
+    top_pos = [r for r in items if r["value"] > 0][:6]
+    top_neg = sorted([r for r in items if r["value"] < 0], key=lambda r: r["value"])[:6]
+
+    return {
+        "type": "lr_logodds_contrib",
+        "raw_logit_home": logit,
+        "raw_prob_home": raw_prob,
+        "top_positive": top_pos,
+        "top_negative": top_neg,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Feature engineering (same logic as train.py but accepts a pre-loaded df)
 # ---------------------------------------------------------------------------
 
@@ -383,6 +447,53 @@ def predict_one(game_pk: str, shared: dict) -> dict:
         else:
             bet_frac, bet_side, edge = 0.0, "none", max(edge_home, edge_away)
 
+    # Explainability: store top LR contributions for bet signals.
+    explanation = None
+    try:
+        if bet_side in {"home", "away"} and float(bet_frac or 0.0) > 0:
+            DB.init_bets_explainability()
+            if is_early and early_clf is not None:
+                pipe = _extract_lr_pipeline_for_explainability(early_clf)
+                feats = early_feats
+                x_raw = target_df[early_feats].values.astype(np.float32)
+            else:
+                pipe = _extract_lr_pipeline_for_explainability(clf)
+                feats = active_feats
+                x_raw = X_target
+
+            if pipe is not None and feats:
+                base = _lr_feature_contributions(pipe, feats, x_raw)
+                if base is not None:
+                    if bet_side == "away":
+                        # Away win attribution is the negation of home win log-odds contributions.
+                        base = dict(base)
+                        old_pos = list(base.get("top_positive", []) or [])
+                        old_neg = list(base.get("top_negative", []) or [])
+                        base["raw_logit_side"] = -float(base.get("raw_logit_home", 0.0))
+                        base["raw_prob_side"] = float(1.0 - float(base.get("raw_prob_home", 0.5)))
+                        base["top_positive"] = [{"feature": r["feature"], "value": float(-r["value"])} for r in old_neg]
+                        base["top_negative"] = [{"feature": r["feature"], "value": float(-r["value"])} for r in old_pos]
+                    else:
+                        base["raw_logit_side"] = float(base.get("raw_logit_home", 0.0))
+                        base["raw_prob_side"] = float(base.get("raw_prob_home", 0.5))
+
+                    explanation = {
+                        "game_pk": game_pk,
+                        "bet_side": bet_side,
+                        "model": str(T.MODEL),
+                        "is_early_specialist": bool(is_early and early_clf is not None),
+                        "predicted_prob_home": float(prob),
+                        "market_implied_prob_home": (float(mkt_prob_raw) if not pd.isna(mkt_prob_raw) else None),
+                        "edge": float(edge) if edge is not None and edge == edge else None,
+                        "bet_frac": float(bet_frac or 0.0),
+                        "contributions": base,
+                        "version": 1,
+                    }
+                    DB.update_bet_explanation(game_pk, explanation)
+    except Exception:
+        # Explainability is best-effort; prediction + DB write should still succeed.
+        explanation = None
+
     print(f"\n{'='*50}")
     print(f"  Model prob (home win): {prob:.4f}")
     print(f"  Market implied prob:   {float(mkt_prob_raw) if not pd.isna(mkt_prob_raw) else 'N/A'}")
@@ -405,6 +516,7 @@ def predict_one(game_pk: str, shared: dict) -> dict:
         "edge":     edge_val,
         "bet_side": bet_side,
         "bet_frac": bet_frac,
+        "explanation": explanation,
     }
 
 
