@@ -9,11 +9,14 @@ Runs from project root:
 
 import argparse
 from collections import defaultdict
+import sys
+from pathlib import Path
 
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import db as DB
-from model import predict as P
+import model.predict as P
 
 
 def _load_candidates(since: str | None, limit: int, only_signals: bool) -> pd.DataFrame:
@@ -43,7 +46,7 @@ def _load_candidates(since: str | None, limit: int, only_signals: bool) -> pd.Da
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
-            cols = [d.name for d in cur.description]
+            cols = [d[0] for d in cur.description]
     return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame()
 
 
