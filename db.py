@@ -20,9 +20,34 @@ from psycopg2 import pool as _pg_pool
 from psycopg2.extras import RealDictCursor, execute_values
 from dotenv import load_dotenv
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from config import ACTIVE_SEASON
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Field-level encryption for sensitive credentials (Kalshi API keys, etc.)
+# Set ENCRYPTION_KEY in .env — generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# ---------------------------------------------------------------------------
+_ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
+_fernet = Fernet(_ENCRYPTION_KEY.encode()) if _ENCRYPTION_KEY else None
+_ENCRYPTED_PREFIX = "enc:"
+
+
+def encrypt_field(plaintext: str) -> str:
+    if not _fernet or not plaintext:
+        return plaintext
+    return _ENCRYPTED_PREFIX + _fernet.encrypt(plaintext.encode()).decode()
+
+
+def decrypt_field(stored: str) -> str:
+    if not _fernet or not stored or not stored.startswith(_ENCRYPTED_PREFIX):
+        return stored
+    try:
+        return _fernet.decrypt(stored[len(_ENCRYPTED_PREFIX):].encode()).decode()
+    except InvalidToken:
+        return stored
 
 # ---------------------------------------------------------------------------
 # Direct columns that map 1:1 between the games DataFrame and the DB table.
@@ -1385,7 +1410,7 @@ def upsert_kalshi_account(
                 (
                     email,
                     label,
-                    key_id.strip(),
+                    encrypt_field(key_id.strip()),
                     key_path,
                     kalshi_env.strip().lower() or "prod",
                     bool(is_active),
@@ -1415,7 +1440,11 @@ def get_kalshi_account(email: str) -> dict | None:
                 (email,),
             )
             row = cur.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            d = dict(row)
+            d["key_id"] = decrypt_field(d["key_id"])
+            return d
     finally:
         conn.close()
 
@@ -1446,7 +1475,10 @@ def list_approved_users_with_accounts() -> list[dict]:
                 ORDER BY u.email
                 """
             )
-            return [dict(row) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
+            for r in rows:
+                r["key_id"] = decrypt_field(r["key_id"])
+            return rows
     finally:
         conn.close()
 
@@ -2184,6 +2216,30 @@ def get_training_runs(limit: int = 50) -> list[dict]:
 def get_latest_training_run() -> dict | None:
     runs = get_training_runs(limit=1)
     return runs[0] if runs else None
+
+
+def migrate_encrypt_kalshi_keys() -> int:
+    """One-time migration: encrypt any plaintext key_id values in kalshi_accounts."""
+    if not _fernet:
+        print("ENCRYPTION_KEY not set — skipping migration.")
+        return 0
+    conn = get_connection()
+    count = 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT email, key_id FROM kalshi_accounts")
+            for email, key_id in cur.fetchall():
+                if key_id and not key_id.startswith(_ENCRYPTED_PREFIX):
+                    cur.execute(
+                        "UPDATE kalshi_accounts SET key_id = %s, updated_at = NOW() WHERE email = %s",
+                        (encrypt_field(key_id), email),
+                    )
+                    count += 1
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"Encrypted {count} kalshi key_id(s).")
+    return count
 
 
 def ping() -> bool:
