@@ -1965,6 +1965,23 @@ function getFeatureGlossary() {
   return window.FEATURE_DICT || {};
 }
 
+function getAbbreviations() {
+  return window.FEATURE_ABBREVIATIONS || {
+    ERA: "Earned Run Average — runs allowed per 9 innings (lower is better).",
+    WHIP: "Walks + Hits per Inning Pitched — baserunners allowed per inning (lower is better).",
+    FIP: "Fielding Independent Pitching — estimate using K/BB/HR (lower is better).",
+    xFIP: "Expected FIP — like FIP but normalizes HR rate (lower is better).",
+    "K/9": "Strikeouts per 9 innings (higher is better for pitchers).",
+    "BB/9": "Walks per 9 innings (lower is better for pitchers).",
+    "HR/9": "Home runs allowed per 9 innings (lower is better for pitchers).",
+    wOBA: "Weighted On-Base Average — offensive value per PA (higher is better).",
+    "wRC+": "Weighted Runs Created Plus — 100 = league avg; higher is better.",
+    WAR: "Wins Above Replacement — value above replacement level (higher is better).",
+    OBP: "On-base percentage (higher is better).",
+    SLG: "Slugging percentage (higher is better).",
+  };
+}
+
 let _lastExplainFeatureKeys = [];
 
 function openExplainGlossaryModal() {
@@ -1976,7 +1993,7 @@ function openExplainGlossaryModal() {
   if (!keys.length) {
     body.innerHTML = '<div class="panel-note">No features loaded yet. Open an explanation first.</div>';
   } else {
-    const abbr = window.FEATURE_ABBREVIATIONS || {};
+    const abbr = getAbbreviations();
     const abbrEntries = Object.entries(abbr);
     const abbrHtml = abbrEntries.length ? `
       <div style="margin-bottom:16px;">
