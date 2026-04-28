@@ -84,17 +84,6 @@
       min-height: 100vh;
     }
 
-    .page-header {
-      background: var(--bg-card);
-      border-bottom: 1px solid var(--border);
-      padding: 0 32px;
-      height: 56px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      box-shadow: var(--shadow-sm);
-    }
-
     .settings-page-title {
       margin-bottom: 18px;
       padding: 0 2px;
@@ -114,13 +103,12 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 6px 12px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: var(--bg-elevated);
-      transition: color 0.15s, border-color 0.15s;
+      padding: 10px 16px 0;
+      border: none;
+      background: none;
+      transition: color 0.15s;
     }
-    .back-link:hover { color: var(--text-primary); border-color: var(--accent-light); }
+    .back-link:hover { color: var(--text-primary); }
 
     .settings-wrap {
       max-width: 860px;
@@ -130,6 +118,7 @@
 
     .settings-layout {
       display: flex;
+      flex-wrap: wrap;
       gap: 0;
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -137,6 +126,11 @@
       box-shadow: var(--shadow-sm);
       overflow: hidden;
       min-height: 480px;
+    }
+    .settings-layout > .back-link {
+      width: 100%;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
     }
     .settings-sidenav {
       width: 180px;
@@ -325,15 +319,12 @@
 </head>
 <body>
 
-<header class="page-header">
-  <a class="back-link" href="/">← Back to Dashboard</a>
-</header>
-
 <div class="settings-wrap">
   <div class="settings-page-title">
     <h1>Settings</h1>
   </div>
   <div class="settings-layout">
+    <a class="back-link" href="/">← Back</a>
     <nav class="settings-sidenav" aria-label="Settings sections">
       <button class="active" onclick="showTab('general', this)">General</button>
       <button onclick="showTab('betting', this)">Betting</button>
