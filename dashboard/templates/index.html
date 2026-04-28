@@ -160,12 +160,13 @@
       border-bottom: 1px solid var(--border);
       padding: 0 32px;
       display: flex;
+      align-items: center;
       gap: 4px;
       overflow-x: auto;
       scrollbar-width: none;
     }
     nav::-webkit-scrollbar { display: none; }
-    nav button {
+    nav > button {
       background: none;
       border: none;
       color: var(--text-secondary);
@@ -179,7 +180,7 @@
       white-space: nowrap;
       flex: 0 0 auto;
     }
-    nav button::after {
+    nav > button::after {
       content: '';
       position: absolute;
       bottom: 0;
@@ -190,21 +191,18 @@
       transition: all 0.3s ease;
       transform: translateX(-50%);
     }
-    nav button:hover { color: var(--text-primary); }
-    nav button:hover::after { width: 60%; }
-    nav button.active {
+    nav > button:hover { color: var(--text-primary); }
+    nav > button:hover::after { width: 60%; }
+    nav > button.active {
       color: var(--text-primary);
       font-weight: 600;
     }
-    nav button.active::after { width: 80%; background: var(--accent); }
+    nav > button.active::after { width: 80%; background: var(--accent); }
 
     .mode-bar {
-      background: var(--bg-card);
-      border-bottom: 1px solid var(--border);
-      padding: 10px 32px;
+      margin-left: auto;
       display: flex;
       align-items: center;
-      justify-content: flex-end;
       gap: 10px;
     }
     .mode-label {
@@ -1359,7 +1357,7 @@
       .settings-button svg { width: 16px; height: 16px; }
       nav { padding: 0 14px; }
       nav button { padding: 14px 14px; font-size: 0.75rem; }
-      .mode-bar { padding: 8px 14px; justify-content: space-between; }
+      .mode-bar { gap: 6px; }
       main { padding: 14px; }
       .hero-card h2,
       .page-title h1 { font-size: 1.7rem; }
@@ -1442,15 +1440,14 @@
   <button data-page="teams" onclick="showPage('teams', this)">Teams</button>
   <button data-page="bets" onclick="showPage('bets', this)">Bets</button>
   <button data-page="performance" onclick="showPage('performance', this)">Performance</button>
-</nav>
-
-<div class="mode-bar">
-  <span class="mode-label">Bet View</span>
-  <div class="mode-toggle" role="group" aria-label="Bet view mode">
-    <button id="mode-paper" type="button" onclick="setBetMode('paper')">Paper</button>
-    <button id="mode-live" type="button" onclick="setBetMode('live')">Live</button>
+  <div class="mode-bar">
+    <span class="mode-label">Bet View</span>
+    <div class="mode-toggle" role="group" aria-label="Bet view mode">
+      <button id="mode-paper" type="button" onclick="setBetMode('paper')">Paper</button>
+      <button id="mode-live" type="button" onclick="setBetMode('live')">Live</button>
+    </div>
   </div>
-</div>
+</nav>
 
 <main id="main-content">
   <div id="page-overview" class="page active">
