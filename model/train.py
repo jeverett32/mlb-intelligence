@@ -1061,11 +1061,13 @@ def run_walk_forward(df, active_feats, early_feats):
         wu_val   = early_vl.values.astype(bool)
 
         # Scale (fit on train only — after imputation for non-tree models)
+        imp_outer   = SimpleImputer(strategy="median")
         scaler      = StandardScaler()
-        X_train_sc  = scaler.fit_transform(
-            SimpleImputer(strategy="median").fit_transform(X_train))
-        X_val_sc    = scaler.transform(
-            SimpleImputer(strategy="median").fit(X_train).transform(X_val))
+        X_train_sc  = scaler.fit_transform(imp_outer.fit_transform(X_train))
+        imp_outer2  = SimpleImputer(strategy="median").fit(X_train)
+        X_val_sc    = scaler.transform(imp_outer2.transform(X_val))
+        survived_mask = np.isfinite(imp_outer.statistics_)
+        survived_feats = [f for f, s in zip(active_feats, survived_mask) if s]
 
         probs_val   = np.zeros(len(val_df))
         probs_train = np.zeros(len(train_df))
@@ -1176,8 +1178,9 @@ def run_walk_forward(df, active_feats, early_feats):
         print(f"  brier={brier:.4f}  roi={roi:.4f}  n_bets={n_bets}")
 
         if clf is not None and fold_idx == len(WALK_FORWARD_FOLDS) - 1:
-            print_feature_importance(clf, active_feats)
-            last_fi = extract_feature_importance(clf, active_feats)
+            fi_feats = survived_feats if MODEL in ("lr", "mlp") else active_feats
+            print_feature_importance(clf, fi_feats)
+            last_fi = extract_feature_importance(clf, fi_feats)
             last_edges = (np.clip(probs_val, PROB_CAP[0], PROB_CAP[1]) - mkt_val).tolist()
             last_train_rows = len(train_df)
             last_val_rows = len(val_df)
