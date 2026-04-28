@@ -608,8 +608,11 @@
 
     <div class="panel">
       <div class="panel-header">
-        Feature Accuracy Breakdown (Latest Run)
-        <span class="info-icon" tabindex="0" aria-label="Feature Accuracy info" data-tooltip="Splits validation games into two buckets per feature (above/below median) and measures model accuracy in each. A large gap between High and Low means the model is more reliable when that feature has a strong signal — e.g., big pitcher quality gaps produce more predictable games. Sorted by gap size.">i</span>
+        <span>Feature Accuracy Breakdown (Latest Run)</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          <span class="info-icon" tabindex="0" aria-label="Feature Accuracy info" data-tooltip="Splits validation games into two buckets per feature (above/below median) and measures model accuracy in each. A large gap between High and Low means the model is more reliable when that feature has a strong signal — e.g., big pitcher quality gaps produce more predictable games. Sorted by gap size.">i</span>
+          <button class="btn secondary" onclick="openFeatureDictModal()" style="font-size:0.72rem;padding:4px 10px;">? Glossary</button>
+        </span>
       </div>
       <div class="feat-accuracy-grid" id="feat-accuracy-body">
         <div class="empty">Loading...</div>
@@ -644,6 +647,17 @@
         <button class="btn secondary" onclick="closeFiModal()" style="font-size:0.8rem;padding:4px 12px;">Close</button>
       </div>
       <div class="fi-modal-body"><canvas id="chart-fi-modal"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Feature Glossary modal -->
+  <div id="feat-dict-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeFeatureDictModal()">
+    <div class="fi-modal" style="max-width:700px;">
+      <div class="fi-modal-header">
+        <span>Feature Glossary</span>
+        <button class="btn secondary" onclick="closeFeatureDictModal()" style="font-size:0.8rem;padding:4px 12px;">Close</button>
+      </div>
+      <div class="fi-modal-body" style="overflow-y:auto;padding:20px;min-height:0;" id="feat-dict-body"></div>
     </div>
   </div>
 
@@ -944,6 +958,124 @@ function openFiModal() {
 
 function closeFiModal() {
   document.getElementById('fi-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+const FEATURE_DICT = {
+  // Market
+  market_implied_prob: "Closing market-implied home win probability from Kalshi odds",
+  open_home_implied: "Opening home win probability before line movement",
+  line_move_delta: "Closing minus opening implied probability — positive means money moved toward home (sharp signal)",
+  sharp_move_flag: "Binary: 1 if |line_move_delta| ≥ 3% (indicates sharp bettor action)",
+  total_move_delta: "Over/under line movement from open to close",
+  // Pitcher quality
+  sp_fip_DIFF: "Starting pitcher FIP difference (away − home). Positive = home SP better",
+  sp_era_DIFF: "Starting pitcher ERA difference (away − home)",
+  sp_k9_DIFF: "Starting pitcher K/9 difference (home − away)",
+  sp_bb9_DIFF: "Starting pitcher BB/9 difference (away − home). Positive = home SP walks fewer",
+  sp_whip_DIFF: "Starting pitcher WHIP difference (away − home)",
+  rolling_k9_DIFF: "Recent rolling K/9 difference (home − away)",
+  rolling_era_DIFF: "Recent rolling ERA difference (away − home)",
+  rolling_whip_DIFF: "Recent rolling WHIP difference (away − home)",
+  rookie_DIFF: "Rookie flag difference (away − home). Positive = home pitcher more experienced",
+  sp_rest_DIFF: "Starting pitcher rest days difference (home − away)",
+  // Batting (FanGraphs)
+  wrc_plus_DIFF: "Weighted Runs Created Plus difference (home − away). 100 = league average",
+  woba_DIFF: "Weighted On-Base Average difference (home − away)",
+  avg_DIFF: "Batting average difference (home − away)",
+  obp_DIFF: "On-base percentage difference (home − away)",
+  slg_DIFF: "Slugging percentage difference (home − away)",
+  k_pct_DIFF: "Strikeout rate difference (away − home). Positive = home strikes out less",
+  bb_pct_DIFF: "Walk rate difference (home − away)",
+  k_per_9_DIFF: "Team K/9 difference (away − home)",
+  bb_per_9_DIFF: "Team BB/9 difference (home − away)",
+  hr_per_9_DIFF: "HR/9 difference (away − home). Positive = home allows fewer HRs",
+  era_DIFF: "Team ERA difference (away − home)",
+  fip_DIFF: "Team FIP difference (away − home)",
+  owar_DIFF: "Offensive WAR difference (home − away)",
+  war_DIFF: "Total WAR difference (home − away)",
+  // Handedness
+  pitcher_handedness_diff: "Home pitcher is lefty minus away pitcher is lefty",
+  home_pitcher_is_lefty: "Binary: 1 if home starting pitcher throws left-handed",
+  away_pitcher_is_lefty: "Binary: 1 if away starting pitcher throws left-handed",
+  // Rolling form
+  win_pct_W_DIFF: "Rolling win% difference over best window (home − away)",
+  run_diff_avg_W_DIFF: "Rolling run differential average difference (home − away)",
+  run_diff_std_W_DIFF: "Rolling run differential consistency difference (home − away)",
+  runs_scored_avg_W_DIFF: "Rolling runs scored average difference (home − away)",
+  runs_allowed_avg_W_DIFF: "Rolling runs allowed average difference (home − away)",
+  // Season-to-date
+  season_win_pct_DIFF: "Season win% difference (home − away)",
+  season_run_diff_avg_DIFF: "Season run differential average difference (home − away)",
+  // Streak
+  streak_DIFF: "Win streak difference (home − away). Positive = home on better streak",
+  // Weather / venue
+  temp_c: "Game-time temperature in Celsius",
+  wind_speed_kmh: "Wind speed in km/h",
+  wind_dir_sin: "Sine of wind direction (circular encoding)",
+  wind_dir_cos: "Cosine of wind direction (circular encoding)",
+  park_factor: "Ballpark run-scoring factor. Above 1 = hitter-friendly",
+  is_night_game: "Binary: 1 if game starts after 5 PM local time",
+  // Schedule context
+  home_rest_days: "Days since home team's last game",
+  away_rest_days: "Days since away team's last game",
+  rest_days_DIFF: "Rest days difference (home − away)",
+  is_series_finale: "Binary: 1 if final game of the series",
+  early_season_flag: "Binary: 1 if either team has played fewer than 15 games",
+  // Calendar
+  month: "Month of the season (1–12)",
+  days_since_asb: "Days since All-Star break (0 before/during break)",
+  day_of_week: "Day of week (0=Mon, 6=Sun) — captures travel/fatigue patterns",
+  post_rule_change: "Binary: 1 if season ≥ 2023 (pitch clock, shift ban, bigger bases)",
+  post_dh_era: "Binary: 1 if season ≥ 2022 (universal DH)",
+  covid_era: "Binary: 1 if 2020 season (60 games, no fans, unusual stats)",
+  // Interactions
+  sharp_x_fip: "Interaction: sharp_move_flag × sp_fip_DIFF",
+  momentum_DIFF: "Short-term vs long-term win% trend difference between teams",
+  // Pythagorean / luck
+  luck_DIFF: "Over/underperformance vs expected win% (actual − pythagorean) difference",
+  pythagorean_DIFF: "Expected win% from run scoring efficiency difference (home − away)",
+  luck_x_momentum: "Interaction: lucky teams trending up may be due for regression",
+  park_x_pythagorean: "Interaction: park factor amplifies pythagorean edge",
+  pythagorean_short_DIFF: "Short-window pythagorean win% difference (home − away)",
+};
+
+function openFeatureDictModal() {
+  const body = document.getElementById('feat-dict-body');
+  const categories = [
+    { title: 'Market', prefix: ['market_', 'open_home', 'line_move', 'sharp_move', 'total_move'] },
+    { title: 'Pitcher Quality', prefix: ['sp_', 'rolling_k9', 'rolling_era', 'rolling_whip', 'rookie_'] },
+    { title: 'Batting (FanGraphs)', prefix: ['wrc_', 'woba_', 'avg_', 'obp_', 'slg_', 'k_pct', 'bb_pct', 'k_per', 'bb_per', 'hr_per', 'era_', 'fip_', 'owar_', 'war_'] },
+    { title: 'Handedness', prefix: ['pitcher_hand', 'home_pitcher_is', 'away_pitcher_is'] },
+    { title: 'Rolling Form', prefix: ['win_pct_W', 'run_diff_avg_W', 'run_diff_std_W', 'runs_scored', 'runs_allowed'] },
+    { title: 'Season & Streak', prefix: ['season_', 'streak_'] },
+    { title: 'Weather & Venue', prefix: ['temp_', 'wind_', 'park_factor', 'is_night'] },
+    { title: 'Schedule & Calendar', prefix: ['home_rest', 'away_rest', 'rest_days', 'is_series', 'early_season', 'month', 'days_since', 'day_of', 'post_', 'covid_'] },
+    { title: 'Interactions & Pythagorean', prefix: ['sharp_x', 'momentum', 'luck_', 'pythagorean', 'park_x'] },
+  ];
+  const used = new Set();
+  let html = '';
+  for (const cat of categories) {
+    const entries = Object.entries(FEATURE_DICT).filter(([k]) =>
+      cat.prefix.some(p => k.startsWith(p)) && !used.has(k)
+    );
+    entries.forEach(([k]) => used.add(k));
+    if (!entries.length) continue;
+    html += `<div style="margin-bottom:16px;">
+      <div style="font-weight:700;font-size:0.82rem;color:var(--accent);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;">${cat.title}</div>
+      ${entries.map(([k, v]) => `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:0.78rem;">
+        <code style="flex:0 0 auto;color:var(--text-primary);font-size:0.72rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;white-space:nowrap;">${k}</code>
+        <span style="color:var(--text-secondary);">${v}</span>
+      </div>`).join('')}
+    </div>`;
+  }
+  body.innerHTML = html;
+  document.getElementById('feat-dict-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeFeatureDictModal() {
+  document.getElementById('feat-dict-modal').classList.remove('open');
   document.body.style.overflow = '';
 }
 
