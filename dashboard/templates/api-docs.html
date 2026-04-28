@@ -11,6 +11,22 @@
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 1rem;
+      z-index: 9999;
+      padding: 0.75rem 1.25rem;
+      background: var(--bg);
+      color: var(--fg);
+      border: 2px solid var(--accent);
+      border-radius: 6px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .skip-link:focus {
+      top: 1rem;
+    }
     @font-face {
       font-family: 'DM Sans';
       font-style: normal;
@@ -292,6 +308,7 @@
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
   <header class="docs-header">
     <div class="docs-header-inner">
       <a class="docs-brand" href="/docs/api" aria-label="Documentation home">
@@ -312,7 +329,7 @@
       </ul>
     </aside>
 
-    <main class="docs-content">
+    <main id="main-content" class="docs-content">
       <section>
         <span class="docs-kicker">Signal API</span>
         <h1 class="docs-title">Run self-custody betting from your own machine.</h1>

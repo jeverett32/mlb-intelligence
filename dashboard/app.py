@@ -26,8 +26,9 @@ import numpy as np
 import pandas as pd
 import requests
 from fastapi import FastAPI, HTTPException, Request, Form, Depends
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -36,7 +37,9 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 app = FastAPI(title="MLB Intelligence", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
+app.add_middleware(GZipMiddleware, minimum_size=500)
 SIGNAL_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
+BASE_URL = os.environ.get("MLB_BASE_URL", "https://mlbintelligence.com")
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -68,6 +71,16 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'"
+    )
     if COOKIE_SECURE:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -246,7 +259,7 @@ def login_page(request: Request, error: str = "", next: str = ""):
     user = _get_current_user(request)
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
         return RedirectResponse(next_path, status_code=302)
-    error_html = f'<div class="error-banner">{html.escape(error)}</div>' if error else ""
+    error_html = f'<div class="error-banner" role="alert">{html.escape(error)}</div>' if error else ""
     next_input = f'<input type="hidden" name="next" value="{html.escape(next_path)}">' if next_path != "/" else ""
     return (
         _render_template("login.html")
@@ -260,7 +273,7 @@ def register_page(request: Request, error: str = ""):
     user = _get_current_user(request)
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
         return RedirectResponse("/", status_code=302)
-    error_html = f'<div class="error-banner">{html.escape(error)}</div>' if error else ""
+    error_html = f'<div class="error-banner" role="alert">{html.escape(error)}</div>' if error else ""
     return _render_template("register.html").replace("{{ERROR_BANNER}}", error_html)
 
 
@@ -277,6 +290,33 @@ def contact_page():
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy_page():
     return _render_template("privacy.html")
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt():
+    return (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /admin\n"
+        "Disallow: /settings\n"
+        "Disallow: /api/\n"
+        f"\nSitemap: {BASE_URL}/sitemap.xml\n"
+    )
+
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    pages = ["/", "/home", "/public", "/privacy", "/contact", "/docs/api"]
+    urls = "\n".join(
+        f"  <url><loc>{BASE_URL}{p}</loc></url>" for p in pages
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}\n"
+        "</urlset>"
+    )
+    return Response(content=xml, media_type="application/xml")
 
 
 @app.get("/api-docs")

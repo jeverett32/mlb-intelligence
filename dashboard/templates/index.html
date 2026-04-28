@@ -10,7 +10,8 @@
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/playfair-display-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/dashboard.css">
-  <script src="/static/chart.umd.min.js" defer></script>
+  <script src="/static/chart.umd.min.js" defer integrity="sha384-9nhczxUqK87bcKHh20fSQcTGD4qq5GhayNYSYWqwBkINBhOfQLg/P5HG5lF1urn4"></script>
+  <script src="/static/js/feature_glossary.js" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
     :root, :root[data-theme="light"] {
@@ -1415,6 +1416,7 @@
   </style>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 
 <header class="top-bar">
   <div class="top-bar-left">
@@ -1450,7 +1452,7 @@
   </div>
 </div>
 
-<main>
+<main id="main-content">
   <div id="page-overview" class="page active">
     <div class="hero-grid">
       <section class="hero-card">
@@ -1959,45 +1961,7 @@ function closeExplainModal() {
   document.body.style.overflow = '';
 }
 
-const FEATURE_GLOSSARY = {
-  // Market
-  market_implied_prob: "Closing market-implied home win probability derived from moneylines.",
-  home_implied_prob: "Closing market-implied home win probability (from odds).",
-  away_implied_prob: "Closing market-implied away win probability (from odds).",
-  open_home_implied: "Opening home win probability before line movement.",
-  line_move_delta: "Close minus open implied probability (positive means money moved toward home).",
-  sharp_move_flag: "1 if abs(line_move_delta) exceeds threshold (sharp action proxy).",
-
-  // Pitcher
-  sp_fip_DIFF: "Starting pitcher FIP difference (away - home). Positive implies home SP edge.",
-  sp_era_DIFF: "Starting pitcher ERA difference (away - home).",
-  sp_k9_DIFF: "Starting pitcher K/9 difference (home - away).",
-  sp_bb9_DIFF: "Starting pitcher BB/9 difference (away - home).",
-  pitcher_handedness_diff: "Home SP lefty flag minus away SP lefty flag.",
-
-  // Batting / team quality
-  wrc_plus_DIFF: "wRC+ difference (home - away). 100 is league average.",
-  woba_DIFF: "wOBA difference (home - away).",
-  avg_DIFF: "Batting average difference (home - away).",
-  obp_DIFF: "On-base percentage difference (home - away).",
-  slg_DIFF: "Slugging percentage difference (home - away).",
-  k_pct_DIFF: "Strikeout rate difference (away - home). Positive implies home strikes out less.",
-  bb_pct_DIFF: "Walk rate difference (home - away).",
-  hr_per_9_DIFF: "HR/9 difference (away - home). Positive implies home allows fewer HR.",
-
-  // Rolling / form
-  win_pct_W_DIFF: "Rolling win percentage difference (home - away) over the main window.",
-  run_diff_avg_W_DIFF: "Rolling average run differential difference (home - away).",
-  runs_scored_avg_W_DIFF: "Rolling average runs scored difference (home - away).",
-  runs_allowed_avg_W_DIFF: "Rolling average runs allowed difference (home - away).",
-  season_win_pct_DIFF: "Season-to-date win percentage difference (home - away).",
-  streak_DIFF: "Streak difference (home - away). Positive implies home on better streak.",
-  momentum_DIFF: "Short-term minus long-term trend difference (home vs away).",
-
-  // Flags / interactions
-  early_season_flag: "1 early in season when rolling stats are less reliable.",
-  sharp_x_fip: "Interaction: sharp_move_flag times sp_fip_DIFF.",
-};
+const FEATURE_GLOSSARY = window.FEATURE_DICT || {};
 
 let _lastExplainFeatureKeys = [];
 

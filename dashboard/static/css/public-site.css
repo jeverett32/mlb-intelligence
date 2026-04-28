@@ -2,6 +2,24 @@
    landing (/), public analytics (/public), login, and register.
    dashboard.css covers private-app primitives; this file covers public ones. */
 
+/* ── Skip Link ─────────────────────────────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 1rem;
+}
+
 /* ── Fonts ──────────────────────────────────────────────────────────────── */
 @font-face {
   font-family: 'DM Sans';
