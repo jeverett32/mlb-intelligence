@@ -701,7 +701,19 @@
       visibility: hidden;
     }
     @media (max-width: 600px) {
-      .cal-days { grid-template-columns: repeat(7, 40px); }
+      .calendar-bar {
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 12px 0 16px;
+      }
+      .calendar-month {
+        width: 100%;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
+      }
+      .cal-days { grid-template-columns: repeat(7, 1fr); }
+      .cal-day { padding: 4px 0; }
     }
 
     .game-cards-grid {
