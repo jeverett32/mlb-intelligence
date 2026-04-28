@@ -1443,11 +1443,17 @@
   <div class="mode-bar">
     <span class="mode-label">Bet View</span>
     <div class="mode-toggle" role="group" aria-label="Bet view mode">
-      <button id="mode-paper" type="button" class="active" onclick="setBetMode('paper')">Paper</button>
+      <button id="mode-paper" type="button" onclick="setBetMode('paper')">Paper</button>
       <button id="mode-live" type="button" onclick="setBetMode('live')">Live</button>
     </div>
   </div>
 </nav>
+<script>
+(function() {
+  var mode = localStorage.getItem('bet_mode') === 'live' ? 'live' : 'paper';
+  document.getElementById('mode-' + mode).classList.add('active');
+})();
+</script>
 
 <main id="main-content">
   <div id="page-overview" class="page active">

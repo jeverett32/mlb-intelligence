@@ -765,50 +765,6 @@ def get_model_picks() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# balance table
-# ---------------------------------------------------------------------------
-
-def insert_balance(balance_cents: int):
-    balance_dollars = balance_cents / 100.0
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO balance (recorded_at, balance_cents, balance_dollars) VALUES (%s, %s, %s)",
-                (datetime.now(timezone.utc), balance_cents, balance_dollars),
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def get_last_balance_cents() -> int | None:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT balance_cents FROM balance ORDER BY recorded_at DESC LIMIT 1"
-            )
-            row = cur.fetchone()
-            return row[0] if row else None
-    finally:
-        conn.close()
-
-
-def get_balance_history() -> pd.DataFrame:
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                "SELECT recorded_at, balance_cents, balance_dollars FROM balance ORDER BY recorded_at"
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
-    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
-
-
-# ---------------------------------------------------------------------------
 # settings table
 # ---------------------------------------------------------------------------
 
