@@ -1949,6 +1949,7 @@ async function loadExplainabilityInto(targetEl, gamePk) {
       return;
     }
     const ex = data.explanation;
+    const recomputed = ex.recomputed === true;
     const contrib = ex.contributions || {};
     const pos = contrib.top_positive || [];
     const neg = contrib.top_negative || [];
@@ -1976,7 +1977,12 @@ async function loadExplainabilityInto(targetEl, gamePk) {
     const subtitle = `Top drivers for ${side} signal (log-odds contributions).`;
     targetEl.innerHTML = `
       <div class="explain-title">
-        <strong>Explainability</strong>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong>Explainability</strong>
+          ${recomputed ? `<span class="badge gold">Recomputed</span>
+            <span class="info-icon" tabindex="0" aria-label="Recomputed info" data-tooltip="Recomputed means this explanation was generated later using the current pipeline code/data. It may not exactly match what the model would have shown on the original bet date if features, data, or training logic changed.">i</span>`
+          : ``}
+        </div>
         <span class="explain-sub">${subtitle}</span>
       </div>
       <div class="explain-grid">

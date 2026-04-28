@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import warnings
+from datetime import datetime, timezone
 
 os.environ.setdefault("PYTHONHASHSEED", "42")
 # Keep BLAS / OpenMP single-threaded so concurrent workers don't oversubscribe.
@@ -167,6 +168,93 @@ def _lr_feature_contributions(pipe, feature_names: list[str], x_raw: np.ndarray)
         "top_positive": top_pos,
         "top_negative": top_neg,
     }
+
+
+def explain_one(
+    game_pk: str,
+    shared: dict,
+    *,
+    predicted_prob_home: float | None,
+    market_implied_prob_home: float | None,
+    edge: float | None,
+    bet_side: str,
+    bet_frac: float,
+    recomputed: bool = False,
+    recomputed_reason: str = "",
+    write_db: bool = True,
+) -> dict | None:
+    """
+    Compute and store explainability for a specific bet signal without re-running prediction logic.
+    Returns explanation dict or None if not applicable/available.
+    """
+    game_pk = str(game_pk)
+    if bet_side not in {"home", "away"} or float(bet_frac or 0.0) <= 0:
+        return None
+
+    target_df = shared["target_rows"].get(game_pk)
+    if target_df is None:
+        return None
+
+    clf = shared["clf"]
+    early_clf = shared["early_clf"]
+    active_feats = shared["active_feats"]
+    early_feats = shared["early_feats"]
+
+    is_early = False
+    if T.EARLY_CUTOFF is not None:
+        hgp = float(target_df["home_games_played"].iloc[0]) if "home_games_played" in target_df else 999
+        agp = float(target_df["away_games_played"].iloc[0]) if "away_games_played" in target_df else 999
+        is_early = (hgp < T.EARLY_CUTOFF) or (agp < T.EARLY_CUTOFF)
+
+    if is_early and early_clf is not None:
+        pipe = _extract_lr_pipeline_for_explainability(early_clf)
+        feats = early_feats
+        x_raw = target_df[early_feats].values.astype(np.float32)
+        is_early_specialist = True
+    else:
+        pipe = _extract_lr_pipeline_for_explainability(clf)
+        feats = active_feats
+        x_raw = target_df[active_feats].values.astype(np.float32)
+        is_early_specialist = False
+
+    if pipe is None or not feats:
+        return None
+
+    base = _lr_feature_contributions(pipe, feats, x_raw)
+    if base is None:
+        return None
+
+    if bet_side == "away":
+        old_pos = list(base.get("top_positive", []) or [])
+        old_neg = list(base.get("top_negative", []) or [])
+        base = dict(base)
+        base["raw_logit_side"] = -float(base.get("raw_logit_home", 0.0))
+        base["raw_prob_side"] = float(1.0 - float(base.get("raw_prob_home", 0.5)))
+        base["top_positive"] = [{"feature": r.get("feature"), "label": r.get("label"), "value": float(-r["value"])} for r in old_neg]
+        base["top_negative"] = [{"feature": r.get("feature"), "label": r.get("label"), "value": float(-r["value"])} for r in old_pos]
+    else:
+        base["raw_logit_side"] = float(base.get("raw_logit_home", 0.0))
+        base["raw_prob_side"] = float(base.get("raw_prob_home", 0.5))
+
+    explanation = {
+        "game_pk": game_pk,
+        "bet_side": bet_side,
+        "model": str(T.MODEL),
+        "is_early_specialist": bool(is_early_specialist),
+        "predicted_prob_home": float(predicted_prob_home) if predicted_prob_home is not None else None,
+        "market_implied_prob_home": float(market_implied_prob_home) if market_implied_prob_home is not None else None,
+        "edge": float(edge) if edge is not None else None,
+        "bet_frac": float(bet_frac or 0.0),
+        "contributions": base,
+        "recomputed": bool(recomputed),
+        "recomputed_reason": (recomputed_reason or "")[:200],
+        "recomputed_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat() if recomputed else None,
+        "version": 2,
+    }
+    if write_db:
+        DB.init_bets_explainability()
+        DB.update_bet_explanation(game_pk, explanation)
+    return explanation
 
 
 # ---------------------------------------------------------------------------
@@ -551,6 +639,9 @@ def predict_one(game_pk: str, shared: dict) -> dict:
                         "edge": float(edge) if edge is not None and edge == edge else None,
                         "bet_frac": float(bet_frac or 0.0),
                         "contributions": base,
+                        "recomputed": False,
+                        "recomputed_reason": "",
+                        "recomputed_at_utc": None,
                         "version": 1,
                     }
                     DB.update_bet_explanation(game_pk, explanation)
