@@ -979,6 +979,9 @@ def get_bets(
             if won and n_contracts is not None:
                 return round(float(n_contracts) - bd, 2)
             if won:
+                lp = row.get("live_price")
+                if lp and float(lp) > 0:
+                    return round(bd * (1.0 / float(lp) - 1.0), 2)
                 mp = row.get("market_implied_prob")
                 if mp and float(mp) > 0:
                     ratio = (

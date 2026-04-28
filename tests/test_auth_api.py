@@ -266,6 +266,48 @@ def test_paper_bankroll_endpoint_includes_history(monkeypatch, app_module, clien
     assert body["history"][-1]["balance_dollars"] == 10409.09
 
 
+def test_api_bets_computes_pnl_from_live_price_when_missing(monkeypatch, app_module, client):
+    # Regression test: paper/dry-run bets can have live_price but no market_implied_prob
+    # and no n_contracts. Wins should still have profit_loss computed.
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(app_module.DB, "backfill_paper_orders_from_bets", lambda email: 0)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_paper_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "1",
+                    "game_date": "2026-04-01",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "bet_side": "home",
+                    "bet_dollars": 100.0,
+                    "result": True,
+                    "n_contracts": None,
+                    "market_implied_prob": None,
+                    "live_price": 0.5,
+                }
+            ]
+        ),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/bets?mode=paper&status=settled&limit=10")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["bets"][0]["profit_loss"] == 100.0
+
+
 def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):
     now_utc = pd.Timestamp.now(tz="UTC")
     today_started = now_utc - pd.Timedelta(hours=2)

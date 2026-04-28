@@ -838,13 +838,47 @@
     }
     .explain-btn svg { width: 16px; height: 16px; stroke: currentColor; }
 
-    .explain-panel {
-      border-top: 1px solid var(--border);
-      background: var(--bg-elevated);
-      padding: 12px 18px 14px;
+    /* Modal style (matches admin feature-importance popup) */
+    .fi-modal-overlay {
       display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
     }
-    .explain-panel.open { display: block; }
+    .fi-modal-overlay.open { display: flex; }
+    .fi-modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 900px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .fi-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      gap: 12px;
+    }
+    .fi-modal-body {
+      position: relative;
+      flex: 1;
+      padding: 18px 20px 20px;
+      overflow-y: auto;
+      min-height: 240px;
+    }
     .explain-title {
       display: flex;
       align-items: baseline;
@@ -1654,6 +1688,19 @@
 
 </main>
 
+<!-- Explainability modal (matches admin popup pattern) -->
+<div id="explain-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeExplainModal()" data-game-pk="">
+  <div class="fi-modal">
+    <div class="fi-modal-header">
+      <span>Signal Explainability</span>
+      <button class="action-button" type="button" onclick="closeExplainModal()" style="font-size:0.8rem;padding:6px 12px;background:var(--bg-elevated);color:var(--text-secondary);border:1px solid var(--border);">
+        Close
+      </button>
+    </div>
+    <div class="fi-modal-body" id="explain-modal-body"></div>
+  </div>
+</div>
+
 <script>
 let betsOffset = 0;
 let BETS_LIMIT = 5;
@@ -1874,23 +1921,31 @@ function humanizeFeatureName(name) {
     .join(' ');
 }
 
-async function toggleExplain(gamePk) {
-  const panel = document.getElementById('explain-' + gamePk);
-  if (!panel) return;
-  const isOpen = panel.classList.contains('open');
-  if (isOpen) {
-    panel.classList.remove('open');
-    return;
-  }
-  panel.classList.add('open');
-  if (panel.dataset.loaded === '1') return;
-  panel.innerHTML = '<div class="panel-note">Loading explanation…</div>';
+function openExplainModal(gamePk) {
+  const overlay = document.getElementById('explain-modal');
+  const body = document.getElementById('explain-modal-body');
+  if (!overlay || !body) return;
+  overlay.dataset.gamePk = String(gamePk);
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  body.innerHTML = '<div class="panel-note">Loading explanation…</div>';
+  loadExplainabilityInto(body, gamePk);
+}
+
+function closeExplainModal() {
+  const overlay = document.getElementById('explain-modal');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.dataset.gamePk = '';
+  document.body.style.overflow = '';
+}
+
+async function loadExplainabilityInto(targetEl, gamePk) {
   try {
     const res = await fetch(`/api/bet-explanation?game_pk=${encodeURIComponent(gamePk)}`);
     const data = await res.json();
     if (!data.available || !data.explanation) {
-      panel.innerHTML = '<div class="panel-note">No explanation available yet for this signal.</div>';
-      panel.dataset.loaded = '1';
+      targetEl.innerHTML = '<div class="panel-note">No explanation available yet for this signal.</div>';
       return;
     }
     const ex = data.explanation;
@@ -1919,7 +1974,7 @@ async function toggleExplain(gamePk) {
 
     const side = ex.bet_side === 'away' ? 'Away' : 'Home';
     const subtitle = `Top drivers for ${side} signal (log-odds contributions).`;
-    panel.innerHTML = `
+    targetEl.innerHTML = `
       <div class="explain-title">
         <strong>Explainability</strong>
         <span class="explain-sub">${subtitle}</span>
@@ -1929,9 +1984,8 @@ async function toggleExplain(gamePk) {
         ${neg.length ? neg.map(r => rowHtml(r, 'var(--danger)')).join('') : ''}
       </div>
     `;
-    panel.dataset.loaded = '1';
   } catch (e) {
-    panel.innerHTML = '<div class="panel-note">Failed to load explanation.</div>';
+    targetEl.innerHTML = '<div class="panel-note">Failed to load explanation.</div>';
   }
 }
 
@@ -2450,7 +2504,7 @@ function renderGameCards(games) {
       : '';
     const statusLine = finished ? '<div style="text-align:center;padding-top:2px"><span class="game-card-final">Final</span></div>' : '';
     const explainBtn = shouldShowExplain(g)
-      ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="toggleExplain('${String(g.game_pk)}')">
+      ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
              <path d="M4 19V5"></path>
              <path d="M7 15l4-4 3 3 6-6"></path>
@@ -2492,7 +2546,6 @@ function renderGameCards(games) {
             <span>${betStatus(g)}</span>
           </div>
         </div>
-        <div class="explain-panel" id="explain-${String(g.game_pk)}" data-loaded="0"></div>
       </div>`;
   }).join('');
 }
@@ -2730,6 +2783,10 @@ async function loadAll() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeExplainModal();
+    });
+
     const savedTheme = localStorage.getItem('theme') || 'auto';
     document.documentElement.setAttribute('data-theme', savedTheme);
 
