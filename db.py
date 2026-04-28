@@ -574,6 +574,19 @@ def init_bets_explainability() -> None:
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            # First check if the column already exists so non-owner roles can proceed.
+            cur.execute(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'bets'
+                  AND column_name = 'explanation'
+                LIMIT 1
+                """
+            )
+            if cur.fetchone():
+                return
             cur.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS explanation JSONB")
         conn.commit()
     finally:
