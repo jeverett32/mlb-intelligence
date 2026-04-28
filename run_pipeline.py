@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent / "model"))
 sys.path.insert(0, str(Path(__file__).parent / "bet"))
 from model import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
+from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
@@ -389,6 +390,19 @@ def settle_completed_games():
         DB.backfill_paper_order_results()
     except Exception as e:
         print(f"  Paper order backfill failed: {e}")
+
+    for user in DB.list_approved_users_with_accounts():
+        try:
+            account = DB.get_kalshi_account(user["email"])
+            if account and account.get("is_active"):
+                fetch_balance_for_account(
+                    key_id=account["key_id"],
+                    key_path=account["key_path"],
+                    kalshi_env=account["kalshi_env"],
+                    email=user["email"],
+                )
+        except Exception as e:
+            print(f"  Balance refresh failed for {user['email']}: {e}")
 
 
 # ---------------------------------------------------------------------------
