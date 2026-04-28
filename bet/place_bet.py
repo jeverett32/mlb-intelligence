@@ -474,12 +474,20 @@ def place_bet(game_pk: str) -> dict:
     return result
 
 
+def _execution_mode_for_email(email: str) -> str:
+    try:
+        mode = DB.get_user_setting(email, "execution_mode", "server_managed")
+    except Exception:
+        return "server_managed"
+    return mode if mode in {"server_managed", "self_custody", "paper_only"} else "server_managed"
+
+
 def place_user_bet(email: str, game_pk: str) -> dict:
     email = email.strip().lower()
     user = DB.get_user(email)
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_unapproved"}
-    execution_mode = DB.get_user_setting(email, "execution_mode", "server_managed")
+    execution_mode = _execution_mode_for_email(email)
     if execution_mode == "self_custody":
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_self_custody", "mode": "self_custody"}
     account = DB.get_kalshi_account(email)

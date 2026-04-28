@@ -177,6 +177,13 @@ def _write_secret_file(path: Path, pem_text: str) -> None:
     os.chmod(path, 0o600)
 
 
+def _safe_next_path(value: str = "") -> str:
+    value = (value or "").strip()
+    if not value.startswith("/") or value.startswith("//"):
+        return "/"
+    return value
+
+
 # Ensure auth tables exist on startup, then purge expired sessions
 DB.init_auth_tables()
 try:
@@ -228,13 +235,19 @@ def require_admin(user: dict = Depends(require_approved_user)):
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request, error: str = ""):
+def login_page(request: Request, error: str = "", next: str = ""):
     # Already logged in → go to dashboard
+    next_path = _safe_next_path(next)
     user = _get_current_user(request)
     if user and user["approval_status"] == DB.USER_STATUS_APPROVED:
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse(next_path, status_code=302)
     error_html = f'<div class="error-banner">{html.escape(error)}</div>' if error else ""
-    return _render_template("login.html").replace("{{ERROR_BANNER}}", error_html)
+    next_input = f'<input type="hidden" name="next" value="{html.escape(next_path)}">' if next_path != "/" else ""
+    return (
+        _render_template("login.html")
+        .replace("{{ERROR_BANNER}}", error_html)
+        .replace("{{NEXT_INPUT}}", next_input)
+    )
 
 
 @app.get("/register", response_class=HTMLResponse)
@@ -266,6 +279,11 @@ def legacy_api_docs_page():
     return RedirectResponse("/docs/api", status_code=301)
 
 
+@app.get("/docs")
+def docs_index_page():
+    return RedirectResponse("/docs/api", status_code=302)
+
+
 @app.get("/docs/api", response_class=HTMLResponse)
 def api_docs_page():
     return _render_template("api-docs.html")
@@ -273,26 +291,33 @@ def api_docs_page():
 
 @app.post("/login")
 @limiter.limit("10/minute")
-async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+async def login(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form(""),
+):
     email = email.strip().lower()
+    next_path = _safe_next_path(next)
+    next_query = f"&next={quote_plus(next_path)}" if next_path != "/" else ""
     stored_hash = DB.get_user_hash(email)
     if not stored_hash or not _verify_password(password, stored_hash):
         return RedirectResponse(
-            "/login?error=Invalid+email+or+password", status_code=302
+            f"/login?error=Invalid+email+or+password{next_query}", status_code=302
         )
     user = DB.get_user(email)
     status = (user or {}).get("approval_status")
     if status == DB.USER_STATUS_PENDING:
         return RedirectResponse(
-            "/login?error=Account+pending+admin+approval", status_code=302
+            f"/login?error=Account+pending+admin+approval{next_query}", status_code=302
         )
     if status == DB.USER_STATUS_REJECTED:
         return RedirectResponse(
-            "/login?error=Registration+was+rejected.+Contact+an+admin", status_code=302
+            f"/login?error=Registration+was+rejected.+Contact+an+admin{next_query}", status_code=302
         )
     if status == DB.USER_STATUS_DISABLED:
         return RedirectResponse(
-            "/login?error=Account+is+disabled", status_code=302
+            f"/login?error=Account+is+disabled{next_query}", status_code=302
         )
 
     session_id = DB.create_session(
@@ -301,7 +326,7 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
         user_agent=request.headers.get("user-agent", ""),
     )
     DB.mark_user_login(email)
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(next_path, status_code=302)
     response.set_cookie(
         key=COOKIE_NAME,
         value=session_id,
