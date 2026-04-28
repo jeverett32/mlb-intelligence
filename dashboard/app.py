@@ -547,7 +547,7 @@ def require_signal_reader(request: Request):
     if bearer:
         user = DB.get_user_for_api_token(bearer, required_scope="signals:read")
         if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
-            raise HTTPException(status_code=401, detail="Invalid API token")
+            raise HTTPException(status_code=403, detail="Invalid API token")
         return user
     user = _get_current_user(request)
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
@@ -561,7 +561,7 @@ def require_client_writer(request: Request):
         raise HTTPException(status_code=401, detail="Missing API token")
     user = DB.get_user_for_api_token(bearer, required_scope="client:write")
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
-        raise HTTPException(status_code=401, detail="Invalid API token")
+        raise HTTPException(status_code=403, detail="Invalid API token")
     return user
 
 
