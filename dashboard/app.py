@@ -1145,6 +1145,71 @@ def get_open_bets(mode: str = "paper", user: dict = Depends(require_approved_use
 # ---------------------------------------------------------------------------
 
 
+def _order_profit_loss(row: pd.Series) -> float | None:
+    if pd.isna(row.get("result")) or pd.isna(row.get("bet_dollars")):
+        return None
+    won = (bool(row["result"]) and row.get("bet_side") == "home") or (
+        not bool(row["result"]) and row.get("bet_side") == "away"
+    )
+    stake = float(row.get("bet_dollars") or 0)
+    n_contracts = row.get("n_contracts")
+    if won and not pd.isna(n_contracts):
+        return round(float(n_contracts) - stake, 2)
+    if won:
+        live_price = row.get("live_price")
+        if live_price and float(live_price) > 0:
+            return round(stake * (1.0 / float(live_price) - 1.0), 2)
+    if not won:
+        return -stake
+    return None
+
+
+def _live_order_bankroll_history(email: str, current_dollars: float) -> list[dict]:
+    orders = DB.get_user_orders(email)
+    if orders.empty:
+        return []
+    orders = orders.copy()
+    orders["bet_dollars"] = pd.to_numeric(orders.get("bet_dollars"), errors="coerce")
+    statuses = orders.get("status", pd.Series("", index=orders.index)).fillna("").astype(str)
+    orders = orders[(orders["bet_dollars"] > 0) & statuses.isin(LIVE_BET_STATUSES)].copy()
+    if orders.empty:
+        return []
+
+    sort_cols = [col for col in ["game_date", "game_pk"] if col in orders.columns]
+    if sort_cols:
+        orders = orders.sort_values(sort_cols, ascending=True)
+
+    events: list[tuple[pd.Series, float]] = []
+    for _, row in orders.iterrows():
+        if not pd.isna(row.get("result")):
+            effect = row.get("profit_loss")
+            if pd.isna(effect):
+                effect = _order_profit_loss(row)
+        else:
+            effect = -float(row.get("bet_dollars") or 0)
+        if effect is None or pd.isna(effect):
+            continue
+        events.append((row, float(effect)))
+
+    if not events:
+        return []
+
+    running = round(float(current_dollars) - sum(effect for _, effect in events), 2)
+    history = [{"recorded_at": None, "balance_dollars": running, "source": "live_order"}]
+    for row, effect in events:
+        running = round(running + effect, 2)
+        game_pk = row.get("game_pk")
+        history.append(
+            {
+                "recorded_at": row.get("game_date"),
+                "balance_dollars": running,
+                "game_pk": None if pd.isna(game_pk) else str(game_pk),
+                "source": "live_order",
+            }
+        )
+    return history
+
+
 @app.get("/api/balance")
 def get_balance(user: dict = Depends(require_approved_user)):
     df = DB.get_user_balance_history(user["email"])
@@ -1163,9 +1228,10 @@ def get_balance(user: dict = Depends(require_approved_user)):
                 pass
     if df.empty:
         return {"history": [], "current_dollars": 0.0}
+    current_dollars = float(df.iloc[-1]["balance_dollars"])
     return {
-        "history": _safe_records(df),
-        "current_dollars": float(df.iloc[-1]["balance_dollars"]),
+        "history": _live_order_bankroll_history(user["email"], current_dollars),
+        "current_dollars": current_dollars,
     }
 
 
