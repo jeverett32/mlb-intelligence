@@ -910,12 +910,14 @@ def init_auth_tables():
                     label TEXT NOT NULL DEFAULT 'Signal follower',
                     token_hash TEXT NOT NULL UNIQUE,
                     token_prefix TEXT NOT NULL,
+                    token_suffix TEXT NOT NULL DEFAULT '',
                     scopes TEXT NOT NULL DEFAULT 'signals:read,client:write',
                     last_used_at TIMESTAMPTZ,
                     revoked_at TIMESTAMPTZ,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute(f"ALTER TABLE {APP_API_TOKENS_TABLE} ADD COLUMN IF NOT EXISTS token_suffix TEXT NOT NULL DEFAULT ''")
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS user_settings (
                     email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
@@ -1344,21 +1346,41 @@ def delete_session(session_id: str):
         conn.close()
 
 
-def create_api_token(email: str, label: str = "Signal follower", scopes: str = "signals:read,client:write") -> dict:
+def create_api_token(email: str, label: str = "Signal API", scopes: str = "signals:read,client:write") -> dict:
     email = _norm_email(email)
     raw = f"mlbi_{secrets.token_urlsafe(32)}"
     token_hash = _hash_api_token(raw)
     token_prefix = raw[:12]
+    token_suffix = raw[-6:]
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 f"""
-                INSERT INTO {APP_API_TOKENS_TABLE} (email, label, token_hash, token_prefix, scopes)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, email, label, token_prefix, scopes, last_used_at, revoked_at, created_at
+                UPDATE {APP_API_TOKENS_TABLE}
+                SET revoked_at = COALESCE(revoked_at, NOW())
+                WHERE email = %s
+                  AND revoked_at IS NULL
                 """,
-                (email, (label or "Signal follower").strip() or "Signal follower", token_hash, token_prefix, scopes),
+                (email,),
+            )
+            cur.execute(
+                f"""
+                INSERT INTO {APP_API_TOKENS_TABLE} (
+                    email, label, token_hash, token_prefix, token_suffix, scopes
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, email, label, token_prefix, token_suffix, scopes,
+                          last_used_at, revoked_at, created_at
+                """,
+                (
+                    email,
+                    (label or "Signal API").strip() or "Signal API",
+                    token_hash,
+                    token_prefix,
+                    token_suffix,
+                    scopes,
+                ),
             )
             row = dict(cur.fetchone())
         conn.commit()
@@ -1375,7 +1397,8 @@ def list_api_tokens(email: str) -> list[dict]:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 f"""
-                SELECT id, email, label, token_prefix, scopes, last_used_at, revoked_at, created_at
+                SELECT id, email, label, token_prefix, token_suffix, scopes,
+                       last_used_at, revoked_at, created_at
                 FROM {APP_API_TOKENS_TABLE}
                 WHERE email = %s
                   AND revoked_at IS NULL
