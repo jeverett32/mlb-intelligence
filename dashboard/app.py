@@ -33,7 +33,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
-app = FastAPI(title="MLB Intelligence")
+app = FastAPI(title="MLB Intelligence", docs_url=None, redoc_url=None)
 app.state.limiter = limiter
 SIGNAL_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
 
