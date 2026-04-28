@@ -611,7 +611,7 @@
         <span>Feature Accuracy Breakdown (Latest Run)</span>
         <span style="display:inline-flex;align-items:center;gap:6px;">
           <span class="info-icon" tabindex="0" aria-label="Feature Accuracy info" data-tooltip="Splits validation games into two buckets per feature (above/below median) and measures model accuracy in each. A large gap between High and Low means the model is more reliable when that feature has a strong signal — e.g., big pitcher quality gaps produce more predictable games. Sorted by gap size.">i</span>
-          <button class="btn secondary" onclick="openFeatureDictModal()" style="font-size:0.72rem;padding:4px 10px;">? Glossary</button>
+          <button class="btn secondary" onclick="openFeatureDictModal()" style="font-size:0.72rem;padding:4px 10px;">Glossary</button>
         </span>
       </div>
       <div class="feat-accuracy-grid" id="feat-accuracy-body">
@@ -963,7 +963,7 @@ function closeFiModal() {
 
 const FEATURE_DICT = {
   // Market
-  market_implied_prob: "Closing market-implied home win probability from Kalshi odds",
+  market_implied_prob: "Closing market-implied home win probability derived from sportsbook moneylines (DraftKings via SBR/Odds API)",
   open_home_implied: "Opening home win probability before line movement",
   line_move_delta: "Closing minus opening implied probability — positive means money moved toward home (sharp signal)",
   sharp_move_flag: "Binary: 1 if |line_move_delta| ≥ 3% (indicates sharp bettor action)",
