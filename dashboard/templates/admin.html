@@ -325,6 +325,55 @@
       font-style: italic;
     }
 
+    .info-icon {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border: 1px solid var(--accent);
+      border-radius: 50%;
+      color: var(--accent);
+      font-size: 0.62rem;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0;
+      text-transform: none;
+      cursor: help;
+      flex: 0 0 auto;
+    }
+    .info-icon::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 0;
+      top: calc(100% + 8px);
+      transform: translateY(4px);
+      width: min(300px, 72vw);
+      padding: 9px 10px;
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      font-size: 0.72rem;
+      font-weight: 500;
+      line-height: 1.45;
+      letter-spacing: 0;
+      text-transform: none;
+      white-space: normal;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      z-index: 20;
+    }
+    .info-icon:hover::after,
+    .info-icon:focus-visible::after {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -515,7 +564,10 @@
     </div>
 
     <div class="panel">
-      <div class="panel-header">Feature Accuracy Breakdown (Latest Run)</div>
+      <div class="panel-header">
+        Feature Accuracy Breakdown (Latest Run)
+        <span class="info-icon" tabindex="0" aria-label="Feature Accuracy info" data-tooltip="Splits validation games into two buckets per feature (above/below median) and measures model accuracy in each. A large gap between High and Low means the model is more reliable when that feature has a strong signal — e.g., big pitcher quality gaps produce more predictable games. Sorted by gap size.">i</span>
+      </div>
       <div class="feat-accuracy-grid" id="feat-accuracy-body">
         <div class="empty">Loading...</div>
       </div>
