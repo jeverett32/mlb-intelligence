@@ -1281,10 +1281,6 @@ if __name__ == "__main__":
     # Save results
     results_file = "data/results.tsv"
     header = "commit\tval_roi\tval_brier\tstatus\tdescription\n"
-    if not os.path.exists(results_file):
-        with open(results_file, "w") as f:
-            f.write(header)
-
     commit  = os.popen("git rev-parse --short HEAD 2>/dev/null").read().strip() or "HEAD"
     status  = "ok" if not math.isnan(mean_roi) else "fail"
     n_folds = len(fold_results)
@@ -1293,9 +1289,15 @@ if __name__ == "__main__":
                f"threshold={CONFIDENCE_THRESHOLD} feats={len(active_feats)}")
     row = f"{commit}\t{mean_roi:.6f}\t{mean_brier:.6f}\t{status}\t{desc}\n"
 
-    with open(results_file, "a") as f:
-        f.write(row)
-    print(f"Results saved to {results_file}")
+    try:
+        if not os.path.exists(results_file):
+            with open(results_file, "w") as f:
+                f.write(header)
+        with open(results_file, "a") as f:
+            f.write(row)
+        print(f"Results saved to {results_file}")
+    except OSError as e:
+        print(f"WARNING: Could not write {results_file}: {e}")
 
     # Save to DB
     try:

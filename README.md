@@ -27,26 +27,27 @@
 MLB Pipeline predicts MLB game outcomes using ML models and executes trades on [Kalshi](https://kalshi.com):
 
 1. **Data collection** — fetches schedules, odds, weather, pitcher stats, team statistics
-2. **Feature engineering** — builds game-level features from multiple data sources
-3. **Prediction** — LightGBM/XGBoost models produce win probabilities
-4. **Market comparison** — model predictions vs. market odds find edge
-5. **Execution** — places bets on Kalshi (live or dry-run)
-6. **Settlement** — resolves bets post-game, tracks ROI
+2. **Feature engineering** — builds 80+ game-level features from multiple data sources
+3. **Prediction** — Logistic Regression (default), LightGBM, XGBoost, or MLP models
+4. **Early-season specialist** — separate LR model for teams with <25 games played
+5. **Market comparison** — model predictions vs. market odds find edge
+6. **Execution** — places bets on Kalshi (live or dry-run)
+7. **Settlement** — resolves bets post-game, tracks ROI
 
 ## Architecture
 
 - **Dashboard** — FastAPI app serving public analytics + private operator controls (port <REDACTED_PORT>)
 - **Pipeline** — Orchestrator that runs 15 min before each game, executes predictions and bets in parallel
-- **Model** — LightGBM/XGBoost training with walk-forward validation
+- **Model** — Logistic Regression (default) with isotonic calibration, plus LightGBM, XGBoost, MLP, or ensemble options; walk-forward validation
 - **DB** — PostgreSQL for bets, balances, and history
 
 ## Key Components
 
 ```text
 run_pipeline.py     # Main orchestrator — runs prediction + bet pipeline
-dashboard/app.py   # FastAPI dashboard — public analytics, private controls
-model/train.py     # Model training — LightGBM/XGBoost/ensemble
-model/predict.py  # Inference — produces win probabilities
+dashboard/app.py     # FastAPI dashboard — public analytics, private controls
+model/train.py     # Model training — LR/LightGBM/XGBoost/MLP/ensemble + walk-forward
+model/predict.py  # Inference — produces win probabilities + Kelly stake sizing
 bet/place_bet.py  # Bet execution — Kalshi API integration
 db.py             # PostgreSQL access
 fetch/            # Data ingestion — odds, weather, stats
