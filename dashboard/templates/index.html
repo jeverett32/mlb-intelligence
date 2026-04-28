@@ -1450,10 +1450,8 @@
 </nav>
 <script>
 (function() {
-  var stored = localStorage.getItem('bet_mode');
   var serverLive = {{EFFECTIVE_LIVE_BETTING}};
-  var mode = stored !== null ? stored : (serverLive ? 'live' : 'paper');
-  if (mode !== 'live') mode = 'paper';
+  var mode = serverLive ? 'live' : 'paper';
   document.getElementById('mode-' + mode).classList.add('active');
 })();
 </script>
@@ -2238,7 +2236,7 @@ function setChartEmpty(wrapperId, message, canvasId) {
 }
 
 function clearNavSelection() {
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('nav > button[data-page]').forEach(b => b.classList.remove('active'));
 }
 function showPage(page, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -2896,11 +2894,7 @@ async function loadAll() {
   state.currentUser = me;
   state.account = account;
   state.settings = settings;
-  if (localStorage.getItem('bet_mode') === null) {
-    state.betMode = settings.effective_live_betting === true ? 'live' : 'paper';
-  } else {
-    state.betMode = localStorage.getItem('bet_mode') === 'live' ? 'live' : 'paper';
-  }
+  state.betMode = settings.effective_live_betting === true ? 'live' : 'paper';
   state.balance = balance;
   state.paperBankroll = paperBankroll;
   state.upcoming = upcoming;
