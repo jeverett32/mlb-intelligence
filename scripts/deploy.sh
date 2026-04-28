@@ -87,6 +87,43 @@ check_repo_state() {
     return 0
 }
 
+ensure_repo_aligned() {
+    # Best-effort: if we can write git metadata, make the on-disk tree match origin/main.
+    # This prevents "archive deploy" drift where files update but HEAD stays old.
+    if [[ ! -d "${REPO_DIR}/.git" ]]; then
+        log WARN "No .git directory found; cannot align repository metadata"
+        return 0
+    fi
+
+    if ! repair_git_permissions; then
+        log WARN "Git metadata not writable; cannot align HEAD to origin/main"
+        return 0
+    fi
+
+    if ! git -C "$REPO_DIR" fetch origin main; then
+        log WARN "git fetch failed; cannot align HEAD to origin/main"
+        return 0
+    fi
+
+    git -C "$REPO_DIR" reset --hard origin/main || return 1
+
+    # Keep secrets/state on box, but ensure the repo itself is clean.
+    git -C "$REPO_DIR" clean -fd \
+        -e '.env' \
+        -e 'kalshi-key.pem' \
+        -e '.venv/' \
+        -e '.cache/' \
+        -e 'data/' \
+        -e '.pytest_cache/' \
+        -e '__pycache__/' || return 1
+
+    if ! check_repo_state; then
+        return 1
+    fi
+
+    return 0
+}
+
 run_systemctl() {
     sudo "$SYSTEMCTL_BIN" "$@"
 }
@@ -169,6 +206,10 @@ deploy_from_archive() {
     fi
 
     sync_repo_from_archive
+
+    if ! ensure_repo_aligned; then
+        error_exit "Archive deploy left repository dirty or misaligned"
+    fi
 
     log INFO "Syncing dependencies with uv"
     uv sync --quiet || error_exit "Dependency sync failed"
@@ -350,6 +391,11 @@ deploy() {
         rollback
         error_exit "Fast-forward failed and rollback completed"
     }
+
+    if ! ensure_repo_aligned; then
+        rollback
+        error_exit "Post-merge repository verification failed; rolled back"
+    fi
 
     # Sync dependencies
     log INFO "Syncing dependencies with uv"
