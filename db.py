@@ -809,6 +809,7 @@ BROWSABLE_TABLES = {
     "user_balance",
     "user_orders",
     "paper_orders",
+    "model_training_runs",
 }
 
 
