@@ -1011,6 +1011,7 @@ def init_auth_tables():
         conn.commit()
     finally:
         conn.close()
+    init_model_metrics_table()
 
 
 def upsert_user(
@@ -2088,6 +2089,101 @@ def backfill_paper_order_results():
         return count
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Model metrics
+# ---------------------------------------------------------------------------
+
+MODEL_TRAINING_RUNS_TABLE = "model_training_runs"
+
+
+def init_model_metrics_table():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {MODEL_TRAINING_RUNS_TABLE} (
+                    id SERIAL PRIMARY KEY,
+                    trained_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    model_type TEXT NOT NULL,
+                    git_commit TEXT,
+                    num_features INTEGER,
+                    training_rows INTEGER,
+                    val_rows INTEGER,
+                    num_folds INTEGER,
+                    mean_brier DOUBLE PRECISION,
+                    mean_roi DOUBLE PRECISION,
+                    total_bets INTEGER,
+                    duration_seconds DOUBLE PRECISION,
+                    feature_importances JSONB,
+                    fold_results JSONB,
+                    edge_distribution JSONB,
+                    config JSONB,
+                    feature_accuracy JSONB
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_mtr_trained_at
+                ON {MODEL_TRAINING_RUNS_TABLE} (trained_at DESC)
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_training_run(data: dict) -> int:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                INSERT INTO {MODEL_TRAINING_RUNS_TABLE}
+                    (model_type, git_commit, num_features, training_rows, val_rows,
+                     num_folds, mean_brier, mean_roi, total_bets, duration_seconds,
+                     feature_importances, fold_results, edge_distribution, config,
+                     feature_accuracy)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                data.get("model_type"),
+                data.get("git_commit"),
+                data.get("num_features"),
+                data.get("training_rows"),
+                data.get("val_rows"),
+                data.get("num_folds"),
+                data.get("mean_brier"),
+                data.get("mean_roi"),
+                data.get("total_bets"),
+                data.get("duration_seconds"),
+                json.dumps(data.get("feature_importances", {})),
+                json.dumps(data.get("fold_results", [])),
+                json.dumps(data.get("edge_distribution", {})),
+                json.dumps(data.get("config", {})),
+                json.dumps(data.get("feature_accuracy", {})),
+            ))
+            run_id = cur.fetchone()[0]
+        conn.commit()
+        return run_id
+    finally:
+        conn.close()
+
+
+def get_training_runs(limit: int = 50) -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"""
+                SELECT * FROM {MODEL_TRAINING_RUNS_TABLE}
+                ORDER BY trained_at DESC LIMIT %s
+            """, (limit,))
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_latest_training_run() -> dict | None:
+    runs = get_training_runs(limit=1)
+    return runs[0] if runs else None
 
 
 def ping() -> bool:

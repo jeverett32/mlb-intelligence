@@ -911,7 +911,7 @@ def calibrate_probs(probs_train, y_train, probs_val):
     return ir.transform(probs_val)
 
 
-def print_feature_importance(clf, feature_names, top_n=20):
+def extract_feature_importance(clf, feature_names) -> list[dict] | None:
     fi = None
     if hasattr(clf, "feature_importances_"):
         fi = clf.feature_importances_
@@ -919,22 +919,28 @@ def print_feature_importance(clf, feature_names, top_n=20):
         fi = np.abs(clf.coef_[0])
     elif hasattr(clf, "calibrated_classifiers_"):
         try:
-            # CalibratedClassifierCV wrapping a Pipeline — dig to the LR coef
             coefs = [c.estimator[-1].coef_[0] for c in clf.calibrated_classifiers_]
             fi = np.abs(np.mean(coefs, axis=0))
         except Exception:
             pass
+    if fi is None or len(fi) != len(feature_names):
+        return None
+    pairs = sorted(zip(feature_names, fi), key=lambda x: -x[1])
+    return [{"feature": name, "importance": round(float(imp), 6)} for name, imp in pairs]
 
-    if fi is not None and len(fi) == len(feature_names):
-        pairs = sorted(zip(feature_names, fi), key=lambda x: -x[1])
-        print(f"\n  Top-{top_n} feature importances (last fold):")
-        scale = pairs[0][1] + 1e-9
-        for name, imp in pairs[:top_n]:
-            bar = "█" * int(40 * imp / scale)
-            print(f"    {name:<32s} {imp:8.4f}  {bar}")
-        print(f"\n  Bottom-5 (pruning candidates):")
-        for name, imp in pairs[-5:]:
-            print(f"    {name:<32s} {imp:8.4f}")
+
+def print_feature_importance(clf, feature_names, top_n=20):
+    pairs = extract_feature_importance(clf, feature_names)
+    if pairs is None:
+        return
+    print(f"\n  Top-{top_n} feature importances (last fold):")
+    scale = pairs[0]["importance"] + 1e-9
+    for p in pairs[:top_n]:
+        bar = "█" * int(40 * p["importance"] / scale)
+        print(f"    {p['feature']:<32s} {p['importance']:8.4f}  {bar}")
+    print(f"\n  Bottom-5 (pruning candidates):")
+    for p in pairs[-5:]:
+        print(f"    {p['feature']:<32s} {p['importance']:8.4f}")
 
 # ---------------------------------------------------------------------------
 # Betting evaluation — DO NOT MODIFY THIS FUNCTION
@@ -1007,6 +1013,13 @@ def evaluate(probs, y, mkt_probs, is_warmup=None):
 
 def run_walk_forward(df, active_feats, early_feats):
     fold_results = []
+    last_fi = None
+    last_edges = None
+    last_train_rows = None
+    last_val_rows = None
+    last_probs = None
+    last_y = None
+    last_mkt = None
 
     for fold_idx, (train_end, val_start, val_end) in enumerate(WALK_FORWARD_FOLDS):
         print(f"\n{'='*60}")
@@ -1164,13 +1177,57 @@ def run_walk_forward(df, active_feats, early_feats):
 
         if clf is not None and fold_idx == len(WALK_FORWARD_FOLDS) - 1:
             print_feature_importance(clf, active_feats)
+            last_fi = extract_feature_importance(clf, active_feats)
+            last_edges = (np.clip(probs_val, PROB_CAP[0], PROB_CAP[1]) - mkt_val).tolist()
+            last_train_rows = len(train_df)
+            last_val_rows = len(val_df)
+            last_probs = probs_val.copy()
+            last_y = y_val.copy()
+            last_mkt = mkt_val.copy()
 
         fold_results.append({
             "fold": fold_idx + 1, "brier": brier, "roi": roi, "n_bets": n_bets,
             "train_rows": len(train_df), "val_rows": len(val_df),
         })
 
-    return fold_results
+    extras = {}
+    if last_fi is not None:
+        extras["feature_importances"] = last_fi
+    if last_edges is not None:
+        hist, bin_edges = np.histogram(last_edges, bins=40)
+        extras["edge_distribution"] = {
+            "counts": hist.tolist(),
+            "bin_edges": [round(float(b), 4) for b in bin_edges],
+        }
+    if last_train_rows is not None:
+        extras["training_rows"] = last_train_rows
+        extras["val_rows"] = last_val_rows
+    if last_probs is not None:
+        buckets = {}
+        for feat in active_feats:
+            if feat not in df.columns:
+                continue
+            last_fold = WALK_FORWARD_FOLDS[-1]
+            val_start, val_end = last_fold[1], last_fold[2]
+            val_mask = (df["game_date"] >= val_start) & (df["game_date"] < val_end)
+            val_df_last = df[val_mask]
+            if feat in val_df_last.columns and len(val_df_last) == len(last_y):
+                vals = val_df_last[feat].values
+                median = np.nanmedian(vals)
+                high = ~np.isnan(vals) & (vals >= median)
+                low = ~np.isnan(vals) & (vals < median)
+                if high.sum() > 10 and low.sum() > 10:
+                    acc_high = float(np.mean((last_probs[high] > 0.5) == last_y[high]))
+                    acc_low = float(np.mean((last_probs[low] > 0.5) == last_y[low]))
+                    buckets[feat] = {
+                        "high_accuracy": round(acc_high, 4),
+                        "low_accuracy": round(acc_low, 4),
+                        "high_n": int(high.sum()),
+                        "low_n": int(low.sum()),
+                    }
+        extras["feature_accuracy"] = buckets
+
+    return fold_results, extras
 
 # ---------------------------------------------------------------------------
 # Main  (walk-forward validation — run directly: uv run train.py)
@@ -1196,7 +1253,7 @@ if __name__ == "__main__":
     df = df.dropna(subset=[c for c in req_always if c in df.columns])
     print(f"Rows after dropna (required cols only): {len(df):,}")
 
-    fold_results = run_walk_forward(df, active_feats, early_feats)
+    fold_results, extras = run_walk_forward(df, active_feats, early_feats)
 
     if fold_results:
         rois       = [r["roi"]    for r in fold_results if not math.isnan(r["roi"])]
@@ -1236,3 +1293,40 @@ if __name__ == "__main__":
     with open(results_file, "a") as f:
         f.write(row)
     print(f"Results saved to {results_file}")
+
+    # Save to DB
+    try:
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import db
+        duration = time.time() - t_start
+        run_data = {
+            "model_type": MODEL,
+            "git_commit": commit,
+            "num_features": len(active_feats),
+            "training_rows": extras.get("training_rows"),
+            "val_rows": extras.get("val_rows"),
+            "num_folds": n_folds,
+            "mean_brier": mean_brier if not math.isnan(mean_brier) else None,
+            "mean_roi": mean_roi if not math.isnan(mean_roi) else None,
+            "total_bets": total_bets,
+            "duration_seconds": round(duration, 1),
+            "feature_importances": extras.get("feature_importances", []),
+            "fold_results": fold_results,
+            "edge_distribution": extras.get("edge_distribution", {}),
+            "config": {
+                "calibrate": CALIBRATE,
+                "early_cutoff": EARLY_CUTOFF,
+                "best_w": BEST_W,
+                "momentum_w": MOMENTUM_W,
+                "confidence_threshold": CONFIDENCE_THRESHOLD,
+                "kelly_fraction": KELLY_FRACTION,
+                "max_bet_frac": MAX_BET_FRAC,
+                "prob_cap": list(PROB_CAP),
+            },
+            "feature_accuracy": extras.get("feature_accuracy", {}),
+        }
+        run_id = db.save_training_run(run_data)
+        print(f"Training run saved to DB (id={run_id})")
+    except Exception as e:
+        print(f"WARNING: Could not save training run to DB: {e}")

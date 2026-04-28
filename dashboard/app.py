@@ -1640,6 +1640,25 @@ def admin_set_user_admin(
     return updated
 
 
+@app.get("/api/admin/model-metrics")
+def get_admin_model_metrics(user: dict = Depends(require_admin)):
+    runs = DB.get_training_runs(limit=50)
+    for r in runs:
+        if r.get("trained_at"):
+            r["trained_at"] = r["trained_at"].isoformat()
+    return {"runs": runs}
+
+
+@app.get("/api/admin/model-metrics/latest")
+def get_admin_model_metrics_latest(user: dict = Depends(require_admin)):
+    run = DB.get_latest_training_run()
+    if not run:
+        return {"run": None}
+    if run.get("trained_at"):
+        run["trained_at"] = run["trained_at"].isoformat()
+    return {"run": run}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

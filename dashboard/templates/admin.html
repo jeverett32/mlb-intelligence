@@ -6,6 +6,7 @@
   <title>MLB Admin</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/dashboard.css">
+  <script src="/static/chart.umd.min.js" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
     :root, :root[data-theme="light"] {
@@ -324,9 +325,93 @@
       font-style: italic;
     }
 
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      text-align: center;
+    }
+    .metric-card-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .metric-card-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .chart-wrap {
+      position: relative;
+      height: 280px;
+      padding: 16px;
+    }
+    .panel-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .training-history-row {
+      display: grid;
+      grid-template-columns: 80px 80px 1fr 80px 80px 80px 80px 100px;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 0.78rem;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+    }
+    .training-history-row.head {
+      font-weight: 700;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      background: var(--bg-elevated);
+    }
+    .training-history-row:last-child { border-bottom: none; }
+    .feat-accuracy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 8px;
+      padding: 16px;
+    }
+    .feat-acc-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+    }
+    .feat-acc-item .name { font-weight: 600; color: var(--text-primary); }
+    .feat-acc-item .vals { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .disagreements-body { padding: 16px; }
+
+    @media (max-width: 980px) {
+      .panel-row { grid-template-columns: 1fr; }
+      .training-history-row {
+        grid-template-columns: 70px 70px 1fr 70px 70px;
+      }
+      .training-history-row > :nth-child(6),
+      .training-history-row > :nth-child(7),
+      .training-history-row > :nth-child(8) { display: none; }
+    }
     @media (max-width: 768px) {
       .admin-header { padding: 0 16px; }
-      .admin-tabs { padding: 0 16px; }
+      .admin-tabs { padding: 0 16px; overflow-x: auto; }
       main { padding: 16px; }
     }
   </style>
@@ -343,6 +428,7 @@
 <div class="admin-tabs">
   <button class="active" onclick="showTab('access', this)">Access Requests</button>
   <button onclick="showTab('database', this)">Database</button>
+  <button onclick="showTab('model', this)">Model Insights</button>
   <button onclick="showTab('errors', this)">Errors</button>
 </div>
 
@@ -387,6 +473,7 @@
           <option value="kalshi_accounts">kalshi_accounts</option>
           <option value="user_balance">user_balance</option>
           <option value="user_orders">user_orders</option>
+          <option value="model_training_runs">model_training_runs</option>
         </select>
         <span class="row-count" id="db-row-count"></span>
       </div>
@@ -397,6 +484,59 @@
         <button id="db-prev" onclick="dbPage(-1)" disabled>&#8592; Prev</button>
         <span id="db-page-info">Page 1</span>
         <button id="db-next" onclick="dbPage(1)" disabled>Next &#8594;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Insights tab -->
+  <div class="tab-pane" id="tab-model">
+    <div class="metrics-grid" id="model-summary-cards"></div>
+
+    <div class="panel-row">
+      <div class="panel">
+        <div class="panel-header">Feature Importances</div>
+        <div class="chart-wrap"><canvas id="chart-fi"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Edge Distribution</div>
+        <div class="chart-wrap"><canvas id="chart-edge"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel-row">
+      <div class="panel">
+        <div class="panel-header">Training History — Brier Score</div>
+        <div class="chart-wrap"><canvas id="chart-brier-history"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Training History — ROI</div>
+        <div class="chart-wrap"><canvas id="chart-roi-history"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Feature Accuracy Breakdown (Latest Run)</div>
+      <div class="feat-accuracy-grid" id="feat-accuracy-body">
+        <div class="empty">Loading...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span>Training Run History</span>
+      </div>
+      <div class="training-history-row head">
+        <div>Date</div>
+        <div>Model</div>
+        <div>Commit</div>
+        <div>Brier</div>
+        <div>ROI</div>
+        <div>Bets</div>
+        <div>Features</div>
+        <div>Duration</div>
+      </div>
+      <div id="training-history-body">
+        <div class="empty">Loading...</div>
       </div>
     </div>
   </div>
@@ -431,6 +571,7 @@ function showTab(name, btn) {
   if (btn) btn.classList.add('active');
   if (name === 'errors') loadErrors();
   if (name === 'database') loadDbTable();
+  if (name === 'model') loadModelInsights();
 }
 
 function badge(text, cls) {
@@ -544,6 +685,215 @@ async function loadErrors() {
   } catch (e) {
     pre.innerHTML = `<span class="errors-empty">Error: ${e.message}</span>`;
   }
+}
+
+let modelCharts = {};
+function makeModelChart(id, cfg) {
+  const c = document.getElementById(id);
+  if (modelCharts[id]) modelCharts[id].destroy();
+  modelCharts[id] = new Chart(c, cfg);
+}
+
+async function loadModelInsights() {
+  try {
+    const [latestResp, allResp] = await Promise.all([
+      fetch('/api/admin/model-metrics/latest'),
+      fetch('/api/admin/model-metrics'),
+    ]);
+    if (!latestResp.ok || !allResp.ok) return;
+    const { run: latest } = await latestResp.json();
+    const { runs } = await allResp.json();
+    if (!latest) {
+      document.getElementById('model-summary-cards').innerHTML = '<div class="empty" style="grid-column:1/-1">No training runs recorded yet. Re-train the model to populate this tab.</div>';
+      return;
+    }
+    renderModelSummary(latest);
+    renderFeatureImportances(latest);
+    renderEdgeDistribution(latest);
+    renderTrainingHistory(runs);
+    renderFeatureAccuracy(latest);
+    renderHistoryCharts(runs);
+  } catch (e) {
+    document.getElementById('model-summary-cards').innerHTML = `<div class="empty" style="grid-column:1/-1">Error: ${e.message}</div>`;
+  }
+}
+
+function renderModelSummary(run) {
+  const el = document.getElementById('model-summary-cards');
+  const cards = [
+    { label: 'Model', value: (run.model_type || '—').toUpperCase() },
+    { label: 'Brier Score', value: run.mean_brier != null ? run.mean_brier.toFixed(4) : '—' },
+    { label: 'ROI', value: run.mean_roi != null ? (run.mean_roi * 100).toFixed(2) + '%' : '—' },
+    { label: 'Total Bets', value: run.total_bets ?? '—' },
+    { label: 'Features', value: run.num_features ?? '—' },
+    { label: 'Folds', value: run.num_folds ?? '—' },
+    { label: 'Train Rows', value: run.training_rows ? run.training_rows.toLocaleString() : '—' },
+    { label: 'Duration', value: run.duration_seconds ? run.duration_seconds.toFixed(0) + 's' : '—' },
+  ];
+  el.innerHTML = cards.map(c => `
+    <div class="metric-card">
+      <div class="metric-card-label">${c.label}</div>
+      <div class="metric-card-value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+function renderFeatureImportances(run) {
+  const fi = run.feature_importances;
+  if (!fi || !fi.length) return;
+  const top = fi.slice(0, 20);
+  const labels = top.map(f => f.feature).reverse();
+  const values = top.map(f => f.importance).reverse();
+  makeModelChart('chart-fi', {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: 'rgba(224,164,70,0.7)',
+        borderColor: 'rgba(224,164,70,1)',
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(128,128,128,0.1)' }, ticks: { font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } } },
+      }
+    }
+  });
+}
+
+function renderEdgeDistribution(run) {
+  const ed = run.edge_distribution;
+  if (!ed || !ed.counts) return;
+  const labels = ed.bin_edges.slice(0, -1).map((b, i) => {
+    const mid = ((b + ed.bin_edges[i + 1]) / 2 * 100).toFixed(1);
+    return mid + '%';
+  });
+  makeModelChart('chart-edge', {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: ed.counts,
+        backgroundColor: ed.bin_edges.slice(0, -1).map((b, i) => {
+          const mid = (b + ed.bin_edges[i + 1]) / 2;
+          return mid >= 0 ? 'rgba(45,106,79,0.6)' : 'rgba(155,35,53,0.6)';
+        }),
+        borderWidth: 0,
+        borderRadius: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 15 },
+          grid: { display: false },
+        },
+        y: {
+          ticks: { font: { size: 10 } },
+          grid: { color: 'rgba(128,128,128,0.1)' },
+        }
+      }
+    }
+  });
+}
+
+function renderHistoryCharts(runs) {
+  if (runs.length < 2) return;
+  const sorted = [...runs].reverse();
+  const labels = sorted.map(r => r.trained_at ? r.trained_at.slice(0, 10) : '?');
+  const briers = sorted.map(r => r.mean_brier);
+  const rois = sorted.map(r => r.mean_roi != null ? r.mean_roi * 100 : null);
+
+  const lineOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
+      y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.1)' } },
+    }
+  };
+
+  makeModelChart('chart-brier-history', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: briers,
+        borderColor: 'rgba(224,164,70,1)',
+        backgroundColor: 'rgba(224,164,70,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+      }]
+    },
+    options: lineOpts,
+  });
+
+  makeModelChart('chart-roi-history', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: rois,
+        borderColor: 'rgba(45,106,79,1)',
+        backgroundColor: 'rgba(45,106,79,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+      }]
+    },
+    options: lineOpts,
+  });
+}
+
+function renderFeatureAccuracy(run) {
+  const fa = run.feature_accuracy;
+  const el = document.getElementById('feat-accuracy-body');
+  if (!fa || !Object.keys(fa).length) {
+    el.innerHTML = '<div class="empty" style="grid-column:1/-1">No feature accuracy data available.</div>';
+    return;
+  }
+  const entries = Object.entries(fa)
+    .map(([name, v]) => ({ name, diff: Math.abs(v.high_accuracy - v.low_accuracy), ...v }))
+    .sort((a, b) => b.diff - a.diff);
+  el.innerHTML = entries.map(e => `
+    <div class="feat-acc-item">
+      <span class="name">${e.name}</span>
+      <span class="vals">H:${(e.high_accuracy * 100).toFixed(1)}% L:${(e.low_accuracy * 100).toFixed(1)}%</span>
+    </div>
+  `).join('');
+}
+
+function renderTrainingHistory(runs) {
+  const el = document.getElementById('training-history-body');
+  if (!runs.length) {
+    el.innerHTML = '<div class="empty">No training runs yet.</div>';
+    return;
+  }
+  el.innerHTML = runs.map(r => `
+    <div class="training-history-row">
+      <div>${r.trained_at ? r.trained_at.slice(0, 10) : '—'}</div>
+      <div>${(r.model_type || '—').toUpperCase()}</div>
+      <div style="font-family:monospace;font-size:0.72rem">${r.git_commit || '—'}</div>
+      <div>${r.mean_brier != null ? r.mean_brier.toFixed(4) : '—'}</div>
+      <div style="color:${r.mean_roi >= 0 ? 'var(--success)' : 'var(--danger)'}">${r.mean_roi != null ? (r.mean_roi * 100).toFixed(2) + '%' : '—'}</div>
+      <div>${r.total_bets ?? '—'}</div>
+      <div>${r.num_features ?? '—'}</div>
+      <div>${r.duration_seconds ? r.duration_seconds.toFixed(0) + 's' : '—'}</div>
+    </div>
+  `).join('');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
