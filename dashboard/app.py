@@ -23,6 +23,7 @@ from fetch.fetch_balance import fetch_balance_for_account
 import bcrypt as _bcrypt
 import numpy as np
 import pandas as pd
+import requests
 from fastapi import FastAPI, HTTPException, Request, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +35,7 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 app = FastAPI(title="MLB Intelligence")
 app.state.limiter = limiter
+SIGNAL_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -400,6 +402,42 @@ class KalshiAccountPayload(BaseModel):
     kalshi_env: str = "prod"
 
 
+class ApiTokenPayload(BaseModel):
+    label: str = "Signal follower"
+
+
+class ClientBalancePayload(BaseModel):
+    balance_cents: int
+    source: str = "self_custody"
+
+
+class ClientOrderPayload(BaseModel):
+    signal_id: str = ""
+    game_pk: str
+    game_date: str = ""
+    home_team: str = ""
+    away_team: str = ""
+    predicted_prob: float | None = None
+    market_implied_prob: float | None = None
+    edge: float | None = None
+    bet_side: str = "none"
+    bet_frac: float = 0.0
+    bet_dollars: float | None = None
+    n_contracts: int | None = None
+    kalshi_order_id: str | None = None
+    live_price: float | None = None
+    live_edge: float | None = None
+    status: str = "pending"
+    dry_run: bool = False
+    result: bool | None = None
+    profit_loss: float | None = None
+
+
+class ClientHeartbeatPayload(BaseModel):
+    version: str = ""
+    kalshi_env: str = "prod"
+
+
 DEFAULT_TIMEZONE = "America/Denver"
 
 TEAM_INFO = {
@@ -456,6 +494,36 @@ def _get_dashboard_timezone() -> str:
         return DEFAULT_TIMEZONE
 
 
+def _get_bearer_token(request: Request) -> str:
+    auth = request.headers.get("authorization", "").strip()
+    if not auth.lower().startswith("bearer "):
+        return ""
+    return auth[7:].strip()
+
+
+def require_signal_reader(request: Request):
+    bearer = _get_bearer_token(request)
+    if bearer:
+        user = DB.get_user_for_api_token(bearer, required_scope="signals:read")
+        if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
+            raise HTTPException(status_code=401, detail="Invalid API token")
+        return user
+    user = _get_current_user(request)
+    if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+def require_client_writer(request: Request):
+    bearer = _get_bearer_token(request)
+    if not bearer:
+        raise HTTPException(status_code=401, detail="Missing API token")
+    user = DB.get_user_for_api_token(bearer, required_scope="client:write")
+    if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
+        raise HTTPException(status_code=401, detail="Invalid API token")
+    return user
+
+
 @app.get("/api/settings")
 def get_settings(user: dict = Depends(require_approved_user)):
     return {
@@ -504,6 +572,28 @@ def get_me(user: dict = Depends(require_approved_user)):
         "is_admin": bool(user["is_admin"]),
         "approval_status": user["approval_status"],
     }
+
+
+@app.get("/api/account/api-tokens")
+def get_api_tokens(user: dict = Depends(require_approved_user)):
+    return {"tokens": _safe_records(pd.DataFrame(DB.list_api_tokens(user["email"])))}
+
+
+@app.post("/api/account/api-tokens")
+def create_api_token(
+    payload: ApiTokenPayload,
+    user: dict = Depends(require_approved_user),
+):
+    created = DB.create_api_token(user["email"], label=payload.label)
+    return created
+
+
+@app.delete("/api/account/api-tokens/{token_id}")
+def delete_api_token(token_id: int, user: dict = Depends(require_approved_user)):
+    deleted = DB.revoke_api_token(user["email"], token_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="API token not found")
+    return {"ok": True}
 
 
 @app.get("/api/account/kalshi")
@@ -572,9 +662,153 @@ def disconnect_kalshi_account(user: dict = Depends(require_approved_user)):
     return {"connected": False}
 
 
+def _signal_probability(row: dict, column: str) -> float | None:
+    value = row.get(column)
+    if value is None or value == "":
+        return None
+    prob = float(value)
+    if row.get("bet_side") == "away":
+        prob = 1.0 - prob
+    return round(prob, 4)
+
+
+def _signal_expires_at(row: dict) -> str | None:
+    game_time_utc = row.get("game_time_utc")
+    if game_time_utc:
+        try:
+            game_dt = pd.to_datetime(game_time_utc, utc=True)
+            expires = (game_dt - pd.Timedelta(minutes=5)).to_pydatetime()
+            return expires.replace(microsecond=0).isoformat()
+        except Exception:
+            pass
+    game_date = str(row.get("game_date") or "")[:10]
+    if not game_date:
+        return None
+    try:
+        expires = datetime.fromisoformat(f"{game_date}T23:59:59+00:00")
+        return expires.isoformat()
+    except Exception:
+        return None
+
+
+def _build_signal_payload(row: dict) -> dict:
+    model_prob = _signal_probability(row, "predicted_prob")
+    market_prob = _signal_probability(row, "market_implied_prob")
+    max_price = None
+    if model_prob is not None:
+        max_price = round(max(0.01, min(0.99, model_prob - SIGNAL_MIN_EDGE)), 4)
+    updated_at = row.get("updated_at")
+    generated_at = None
+    if updated_at is not None:
+        try:
+            generated_at = pd.to_datetime(updated_at, utc=True).to_pydatetime().replace(microsecond=0).isoformat()
+        except Exception:
+            generated_at = None
+    return {
+        "signal_id": f"mlb-{str(row.get('game_date') or '')[:10]}-{row.get('game_pk')}-v1",
+        "game_pk": str(row.get("game_pk")),
+        "game_date": str(row.get("game_date") or "")[:10],
+        "game_time_utc": _safe_value(row.get("game_time_utc")),
+        "away_team": row.get("away_team"),
+        "home_team": row.get("home_team"),
+        "bet_side": row.get("bet_side"),
+        "predicted_prob": _safe_value(row.get("predicted_prob")),
+        "market_implied_prob": _safe_value(row.get("market_implied_prob")),
+        "edge": _safe_value(row.get("edge")),
+        "recommended_stake_frac": round(float(row.get("bet_frac") or 0.0), 6),
+        "model_side_prob": model_prob,
+        "market_side_prob": market_prob,
+        "max_price": max_price,
+        "min_edge": SIGNAL_MIN_EDGE,
+        "generated_at_utc": generated_at,
+        "expires_at_utc": _signal_expires_at(row),
+        "version": 1,
+    }
+
+
 # ---------------------------------------------------------------------------
 # API — Bets
 # ---------------------------------------------------------------------------
+
+
+@app.get("/api/signals/upcoming")
+def get_upcoming_signals(
+    request: Request,
+    limit: int = 25,
+    user: dict = Depends(require_signal_reader),
+):
+    limit = max(1, min(int(limit), 200))
+    rows = DB.get_upcoming_bet_signals(limit=limit)
+    return {
+        "signals": [_build_signal_payload(row) for row in rows],
+        "count": len(rows),
+        "reader_email": user["email"],
+    }
+
+
+@app.post("/api/client/balance")
+def sync_client_balance(
+    payload: ClientBalancePayload,
+    user: dict = Depends(require_client_writer),
+):
+    DB.insert_user_balance(
+        user["email"],
+        int(payload.balance_cents),
+        source=(payload.source or "self_custody")[:64],
+    )
+    return {
+        "ok": True,
+        "balance_cents": int(payload.balance_cents),
+        "balance_dollars": round(int(payload.balance_cents) / 100.0, 2),
+    }
+
+
+@app.post("/api/client/orders")
+def sync_client_order(
+    payload: ClientOrderPayload,
+    user: dict = Depends(require_client_writer),
+):
+    if payload.bet_side not in {"home", "away", "none"}:
+        raise HTTPException(status_code=400, detail="Invalid bet_side")
+    DB.upsert_user_order(
+        user["email"],
+        payload.game_pk,
+        game_date=payload.game_date,
+        home_team=payload.home_team,
+        away_team=payload.away_team,
+        predicted_prob=payload.predicted_prob,
+        market_implied_prob=payload.market_implied_prob,
+        edge=payload.edge,
+        bet_side=payload.bet_side,
+        bet_frac=payload.bet_frac,
+        bet_dollars=payload.bet_dollars,
+        n_contracts=payload.n_contracts,
+        kalshi_order_id=payload.kalshi_order_id,
+        live_price=payload.live_price,
+        live_edge=payload.live_edge,
+        status=payload.status,
+        dry_run=payload.dry_run,
+        result=payload.result,
+        profit_loss=payload.profit_loss,
+    )
+    try:
+        DB.backfill_user_order_results()
+    except Exception as exc:
+        print(f"Client order result backfill failed: {exc}")
+    return {"ok": True, "game_pk": str(payload.game_pk), "status": payload.status}
+
+
+@app.post("/api/client/heartbeat")
+def sync_client_heartbeat(
+    payload: ClientHeartbeatPayload,
+    user: dict = Depends(require_client_writer),
+):
+    return {
+        "ok": True,
+        "email": user["email"],
+        "server_time_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "kalshi_env": payload.kalshi_env,
+    }
 
 
 ACTIVE_BET_STATUSES = {"filled", "dry_run"}

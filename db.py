@@ -8,6 +8,8 @@ Connection is configured via .env:
 
 import json
 import os
+import hashlib
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -650,6 +652,33 @@ def get_bet(game_pk) -> dict | None:
         conn.close()
 
 
+def get_upcoming_bet_signals(limit: int = 50) -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT b.game_pk, b.game_date, b.home_team, b.away_team,
+                       b.predicted_prob, b.market_implied_prob, b.edge,
+                       b.bet_side, b.bet_frac, b.updated_at,
+                       g.game_time_utc
+                FROM bets b
+                JOIN games g ON g.game_pk = b.game_pk
+                WHERE b.predicted_prob IS NOT NULL
+                  AND COALESCE(b.bet_frac, 0) > 0
+                  AND b.bet_side IN ('home', 'away')
+                  AND g.home_win IS NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+                ORDER BY g.game_date, g.game_time_utc NULLS LAST, b.game_pk
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_all_bets() -> pd.DataFrame:
     conn = get_connection()
     try:
@@ -830,10 +859,15 @@ USER_STATUSES = {
 }
 APP_USERS_TABLE = "app_users"
 APP_SESSIONS_TABLE = "app_sessions"
+APP_API_TOKENS_TABLE = "app_api_tokens"
 
 
 def _norm_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def _hash_api_token(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
 
 
 def init_auth_tables():
@@ -867,6 +901,19 @@ def init_auth_tables():
                     created_by_ip INET,
                     user_agent TEXT,
                     revoked_at TIMESTAMPTZ
+                )
+            """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {APP_API_TOKENS_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    label TEXT NOT NULL DEFAULT 'Signal follower',
+                    token_hash TEXT NOT NULL UNIQUE,
+                    token_prefix TEXT NOT NULL,
+                    scopes TEXT NOT NULL DEFAULT 'signals:read,client:write',
+                    last_used_at TIMESTAMPTZ,
+                    revoked_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
             cur.execute(f"""
@@ -959,6 +1006,7 @@ def init_auth_tables():
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_approval_status ON {APP_USERS_TABLE} (approval_status)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_is_admin ON {APP_USERS_TABLE} (is_admin)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_SESSIONS_TABLE}_email ON {APP_SESSIONS_TABLE} (email)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_API_TOKENS_TABLE}_email ON {APP_API_TOKENS_TABLE} (email)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_balance_email_recorded ON user_balance (email, recorded_at)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_email_status ON user_orders (email, status, game_date)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_orders_email_status ON paper_orders (email, status, game_date)")
@@ -1293,6 +1341,119 @@ def delete_session(session_id: str):
             cur.execute("DELETE FROM app_sessions WHERE session_id = %s", (session_id,))
         conn.commit()
     finally:
+        conn.close()
+
+
+def create_api_token(email: str, label: str = "Signal follower", scopes: str = "signals:read,client:write") -> dict:
+    email = _norm_email(email)
+    raw = f"mlbi_{secrets.token_urlsafe(32)}"
+    token_hash = _hash_api_token(raw)
+    token_prefix = raw[:12]
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {APP_API_TOKENS_TABLE} (email, label, token_hash, token_prefix, scopes)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, email, label, token_prefix, scopes, last_used_at, revoked_at, created_at
+                """,
+                (email, (label or "Signal follower").strip() or "Signal follower", token_hash, token_prefix, scopes),
+            )
+            row = dict(cur.fetchone())
+        conn.commit()
+        row["token"] = raw
+        return row
+    finally:
+        conn.close()
+
+
+def list_api_tokens(email: str) -> list[dict]:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT id, email, label, token_prefix, scopes, last_used_at, revoked_at, created_at
+                FROM {APP_API_TOKENS_TABLE}
+                WHERE email = %s
+                  AND revoked_at IS NULL
+                ORDER BY created_at DESC, id DESC
+                """,
+                (email,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def revoke_api_token(email: str, token_id: int) -> bool:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE {APP_API_TOKENS_TABLE}
+                SET revoked_at = COALESCE(revoked_at, NOW())
+                WHERE email = %s AND id = %s
+                """,
+                (email, int(token_id)),
+            )
+            updated = cur.rowcount > 0
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
+
+
+def get_user_for_api_token(token: str, required_scope: str = "signals:read") -> dict | None:
+    token_hash = _hash_api_token(token)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT u.*
+                FROM {APP_API_TOKENS_TABLE} t
+                JOIN {APP_USERS_TABLE} u ON u.email = t.email
+                WHERE t.token_hash = %s
+                  AND t.revoked_at IS NULL
+                """,
+                (token_hash,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            cur.execute(
+                f"""
+                SELECT scopes
+                FROM {APP_API_TOKENS_TABLE}
+                WHERE token_hash = %s
+                  AND revoked_at IS NULL
+                """,
+                (token_hash,),
+            )
+            scopes_row = cur.fetchone()
+            scopes = {
+                s.strip()
+                for s in str((scopes_row or {}).get("scopes") or "").split(",")
+                if s.strip()
+            }
+            if required_scope and required_scope not in scopes:
+                return None
+            cur.execute(
+                f"""
+                UPDATE {APP_API_TOKENS_TABLE}
+                SET last_used_at = NOW()
+                WHERE token_hash = %s
+                """,
+                (token_hash,),
+            )
+            return dict(row)
+    finally:
+        conn.commit()
         conn.close()
 
 
@@ -1910,6 +2071,8 @@ def upsert_user_order(
     live_edge=None,
     status: str = "pending",
     dry_run: bool = True,
+    result=None,
+    profit_loss=None,
 ):
     email = _norm_email(email)
     conn = get_connection()
@@ -1921,13 +2084,15 @@ def upsert_user_order(
                     email, game_pk, game_date, home_team, away_team,
                     predicted_prob, market_implied_prob, edge,
                     bet_side, bet_frac, bet_dollars, n_contracts,
-                    kalshi_order_id, live_price, live_edge, status, dry_run, updated_at
+                    kalshi_order_id, live_price, live_edge, status, dry_run,
+                    result, profit_loss, updated_at
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, NOW()
+                    %s, %s, %s, %s, %s,
+                    %s, %s, NOW()
                 )
                 ON CONFLICT (email, game_pk) DO UPDATE SET
                     game_date = EXCLUDED.game_date,
@@ -1945,6 +2110,8 @@ def upsert_user_order(
                     live_edge = EXCLUDED.live_edge,
                     status = EXCLUDED.status,
                     dry_run = EXCLUDED.dry_run,
+                    result = COALESCE(EXCLUDED.result, user_orders.result),
+                    profit_loss = COALESCE(EXCLUDED.profit_loss, user_orders.profit_loss),
                     updated_at = NOW()
                 """,
                 (
@@ -1965,6 +2132,8 @@ def upsert_user_order(
                     float(live_edge) if live_edge is not None else None,
                     status,
                     bool(dry_run),
+                    bool(result) if result is not None else None,
+                    float(profit_loss) if profit_loss is not None else None,
                 ),
             )
         conn.commit()

@@ -241,6 +241,45 @@
       min-height: 18px;
       color: var(--text-secondary);
     }
+    .token-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .token-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+    }
+    .token-meta strong {
+      display: block;
+      font-size: 0.88rem;
+      color: var(--text-primary);
+    }
+    .token-meta span {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .token-secret {
+      width: 100%;
+      min-height: 88px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font: inherit;
+      font-size: 0.82rem;
+      resize: vertical;
+    }
 
     /* Toggle */
     .toggle-wrap {
@@ -325,6 +364,7 @@
       <button class="active" onclick="showTab('general', this)">General</button>
       <button onclick="showTab('betting', this)">Betting</button>
       <button onclick="showTab('kalshi', this)">Kalshi</button>
+      <button onclick="showTab('api', this)">API</button>
       <button id="admin-tab-btn" onclick="showTab('admin', this)" style="display:none">Admin</button>
     </nav>
 
@@ -440,6 +480,25 @@
         </section>
       </div>
 
+      <!-- API -->
+      <div class="settings-tab-pane" id="tab-api">
+        <section class="settings-section">
+          <div class="settings-section-title">Signal API</div>
+          <p>Create API tokens for a self-custody follower script. Tokens can read model signals and sync local execution results, but cannot place bets through this app.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="api-token-label">Token Label</label>
+            <input class="settings-input" id="api-token-label" type="text" placeholder="Home VPS follower">
+          </div>
+          <div class="settings-actions">
+            <button class="settings-action" type="button" onclick="createApiToken()">Create Token</button>
+          </div>
+          <div class="settings-feedback" id="api-token-feedback"></div>
+          <div class="settings-hint">Endpoints: <code>/api/signals/upcoming</code>, <code>/api/client/orders</code>, and <code>/api/client/balance</code> with <code>Authorization: Bearer &lt;token&gt;</code>.</div>
+          <textarea class="token-secret" id="api-token-secret" readonly placeholder="New token appears here once after creation."></textarea>
+          <div class="token-list" id="api-token-list"></div>
+        </section>
+      </div>
+
       <!-- Admin -->
       <div class="settings-tab-pane" id="tab-admin">
         <section class="settings-section">
@@ -546,12 +605,76 @@
     } catch { feedback('kalshi-feedback', 'Disconnect failed.', false); }
   }
 
+  function fmtDateTime(value) {
+    if (!value) return 'Never used';
+    try { return new Date(value).toLocaleString(); } catch { return String(value); }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function renderApiTokens(tokens) {
+    const root = document.getElementById('api-token-list');
+    if (!root) return;
+    if (!tokens || !tokens.length) {
+      root.innerHTML = '<div class="settings-hint">No API tokens yet.</div>';
+      return;
+    }
+    root.innerHTML = tokens.map(t => `
+      <div class="token-row">
+        <div class="token-meta">
+          <strong>${escapeHtml(t.label || 'Signal follower')}</strong>
+          <span>${escapeHtml(t.token_prefix || 'mlbi_...')}... · ${escapeHtml(t.scopes || 'signals:read')} · last used ${escapeHtml(fmtDateTime(t.last_used_at))}</span>
+        </div>
+        <button class="settings-action" type="button" style="background:var(--danger)" onclick="revokeApiToken(${t.id})">Revoke</button>
+      </div>
+    `).join('');
+  }
+
+  async function loadApiTokens() {
+    try {
+      const data = await api('GET', '/api/account/api-tokens');
+      renderApiTokens(data.tokens || []);
+    } catch (e) {
+      feedback('api-token-feedback', e?.detail || 'Failed to load API tokens.', false);
+    }
+  }
+
+  async function createApiToken() {
+    const label = document.getElementById('api-token-label').value.trim() || 'Signal follower';
+    try {
+      const created = await api('POST', '/api/account/api-tokens', { label });
+      document.getElementById('api-token-secret').value = created.token || '';
+      feedback('api-token-feedback', 'Token created. Copy it now; it will not be shown again.', true);
+      await loadApiTokens();
+    } catch (e) {
+      feedback('api-token-feedback', e?.detail || 'Token creation failed.', false);
+    }
+  }
+
+  async function revokeApiToken(tokenId) {
+    try {
+      await api('DELETE', `/api/account/api-tokens/${tokenId}`);
+      feedback('api-token-feedback', 'Token revoked.', true);
+      await loadApiTokens();
+    } catch (e) {
+      feedback('api-token-feedback', e?.detail || 'Token revoke failed.', false);
+    }
+  }
+
   async function loadSettings() {
     try {
-      const [settings, me, account] = await Promise.all([
+      const [settings, me, account, apiTokens] = await Promise.all([
         api('GET', '/api/settings'),
         api('GET', '/api/me'),
         api('GET', '/api/account/kalshi'),
+        api('GET', '/api/account/api-tokens'),
       ]);
 
       // Theme
@@ -591,6 +714,8 @@
         document.getElementById('kalshi-env').value = account.kalshi_env || 'prod';
         document.getElementById('kalshi-label').value = account.label || '';
       }
+
+      renderApiTokens(apiTokens.tokens || []);
     } catch (e) {
       console.error('Failed to load settings:', e);
     }
