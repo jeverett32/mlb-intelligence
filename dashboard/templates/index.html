@@ -326,6 +326,7 @@
     .badge.blue { background: #E8F0FE; color: #1A73E8; }
     .badge.gray { background: var(--bg-elevated); color: var(--text-secondary); }
     .badge.gold { background: var(--accent-light); color: var(--accent); }
+    .badge.inverse { background: var(--text-primary); color: var(--bg-primary); }
 
     .panel {
       background: var(--bg-card);
@@ -1831,7 +1832,7 @@ function streakBadge(streak) {
 }
 function sideBadge(side) {
   if (side === 'home') return badge('Home', 'blue');
-  if (side === 'away') return badge('Away', 'gray');
+  if (side === 'away') return badge('Away', 'inverse');
   return badge('Pass', 'gray');
 }
 function resultBadge(result, side) {
