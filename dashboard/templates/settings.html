@@ -474,6 +474,20 @@
           <div class="settings-feedback" id="live-feedback"></div>
         </section>
 
+        <section class="settings-section">
+          <div class="settings-section-title">Execution Location</div>
+          <p>Recommended: leave this off so the app can place live bets without your computer running. Turn it on only if you want your local machine to place bets through the Signal API.</p>
+          <div class="toggle-wrap">
+            <span class="toggle-label">Use API Endpoint</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="api-execution-toggle" onchange="toggleApiExecution()">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-status" id="api-execution-status">OFF</span>
+          </div>
+          <div class="settings-feedback" id="api-execution-feedback"></div>
+        </section>
+
         <section class="settings-section" id="global-live-section">
           <div class="settings-section-title">Global Master Switch</div>
           <p id="global-live-copy">Admin-only. Turning this off disables live execution for every user.</p>
@@ -527,19 +541,6 @@
         <section class="settings-section">
           <div class="settings-section-title">Signal API</div>
           <p>Use this key for the optional self-custody follower script. It can read model signals and sync local execution results, but cannot place bets through this app.</p>
-          <div class="settings-row">
-            <label class="settings-label" for="execution-mode-select">Execution Mode</label>
-            <select class="settings-input" id="execution-mode-select">
-              <option value="server_managed">Server-managed: app places live bets</option>
-              <option value="self_custody">Self-custody: local script places live bets</option>
-              <option value="paper_only">Paper only: no live execution</option>
-            </select>
-            <div class="settings-hint" style="margin-top:6px">Use self-custody mode before running the local script with live execution enabled.</div>
-          </div>
-          <div class="settings-actions">
-            <button class="settings-action" type="button" onclick="saveExecutionMode()">Save Execution Mode</button>
-          </div>
-          <div class="settings-feedback" id="execution-mode-feedback"></div>
           <div class="api-key-panel">
             <label class="settings-label" for="api-token-secret">API Key</label>
             <div class="api-key-control">
@@ -649,18 +650,22 @@
     } catch { feedback('global-live-feedback', 'Update failed.', false); }
   }
 
-  async function saveExecutionMode() {
-    const mode = document.getElementById('execution-mode-select').value;
+  async function toggleApiExecution() {
+    const on = document.getElementById('api-execution-toggle').checked;
+    const mode = on ? 'self_custody' : 'server_managed';
     try {
       await api('POST', '/api/settings/execution_mode', { value: mode });
-      const copy = mode === 'self_custody'
-        ? 'Saved. Server-side live execution is disabled for this user.'
-        : mode === 'paper_only'
-          ? 'Saved. Live execution is disabled for this user.'
-          : 'Saved. Server-managed live execution is enabled when live betting toggles are on.';
-      feedback('execution-mode-feedback', copy, true);
+      document.getElementById('api-execution-status').textContent = on ? 'ON' : 'OFF';
+      document.getElementById('api-execution-status').classList.toggle('live', on);
+      feedback(
+        'api-execution-feedback',
+        on
+          ? 'API endpoint mode enabled. Your local script places live bets.'
+          : 'Server-managed mode enabled. The app places live bets when live betting toggles are on.',
+        true
+      );
     } catch (e) {
-      feedback('execution-mode-feedback', e?.detail || 'Save failed.', false);
+      feedback('api-execution-feedback', e?.detail || 'Update failed.', false);
     }
   }
 
@@ -806,11 +811,14 @@
         ? 'Admin-only. Turning this off disables live execution for every user.'
         : 'Read-only. An admin controls whether live execution is globally enabled.';
 
+      const apiExecutionOn = settings.execution_mode === 'self_custody';
+      document.getElementById('api-execution-toggle').checked = apiExecutionOn;
+      document.getElementById('api-execution-status').textContent = apiExecutionOn ? 'ON' : 'OFF';
+      document.getElementById('api-execution-status').classList.toggle('live', apiExecutionOn);
+
       if (me.is_admin) {
         document.getElementById('admin-tab-btn').style.display = '';
       }
-
-      document.getElementById('execution-mode-select').value = settings.execution_mode || 'server_managed';
 
       // Kalshi account
       if (account && account.connected) {

@@ -537,7 +537,26 @@ def test_public_page_has_clear_link_to_landing(client):
     """Public page should have clear navigation back to landing page."""
     r = client.get("/public")
     assert r.status_code == 200
-    assert 'class="brand" href="/"' in r.text
+    assert 'class="brand" href="/home"' in r.text
+
+
+def test_home_route_returns_landing_for_approved_users(monkeypatch, app_module, client):
+    """The public home route should not switch to the private dashboard."""
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/home")
+    assert r.status_code == 200
+    assert "Public MLB model results, updated daily." in r.text
+    assert 'data-page="teams"' not in r.text
 
 
 def test_public_page_does_not_mislabel_root_for_approved_users(monkeypatch, app_module, client):

@@ -384,6 +384,11 @@ def index(request: Request):
     return _render_template("index.html")
 
 
+@app.get("/home", response_class=HTMLResponse)
+def public_home():
+    return _render_template("landing.html")
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, user: dict = Depends(require_approved_user)):
     return HTMLResponse(_render_template("settings.html"))
