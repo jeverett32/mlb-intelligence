@@ -1068,6 +1068,19 @@ def init_auth_tables():
                 ON CONFLICT (email) DO NOTHING
                 """
             )
+
+            # Universal paper bankroll pseudo-user (required for FK on paper_orders.email).
+            cur.execute(
+                f"""
+                INSERT INTO {APP_USERS_TABLE} (
+                    email, full_name, password_hash, is_admin, approval_status,
+                    approved_at, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, FALSE, 'approved', NOW(), NOW(), NOW())
+                ON CONFLICT (email) DO NOTHING
+                """,
+                (PAPER_UNIVERSAL_EMAIL, "Universal paper bankroll", "!"),
+            )
             cur.execute(
                 f"""
                 INSERT INTO {APP_SESSIONS_TABLE} (session_id, email, expires_at, created_at)
