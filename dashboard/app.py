@@ -2100,8 +2100,6 @@ def get_admin_errors(user: dict = Depends(require_admin)):
                 msg = run.get("head_commit", {}).get("message", "").split("\n")[0][:80]
                 if conclusion in ("failure", "cancelled", "timed_out"):
                     lines.insert(0, f"[github-actions] {ts} {name} {conclusion} ({sha} {msg})")
-                elif conclusion == "success":
-                    lines.insert(0, f"[github-actions] {ts} {name} ✓ ({sha} {msg})")
     except Exception:
         pass
 
