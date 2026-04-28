@@ -794,10 +794,6 @@ def set_setting(key: str, value: str):
         conn.close()
 
 
-def is_live_betting() -> bool:
-    return get_setting("live_betting", "false").lower() == "true"
-
-
 # ---------------------------------------------------------------------------
 # Generic table browser (for dashboard DB viewer)
 # ---------------------------------------------------------------------------
@@ -1056,7 +1052,7 @@ def init_auth_tables():
                 INSERT INTO settings (key, value, updated_at)
                 VALUES (
                     'global_live_betting',
-                    COALESCE((SELECT value FROM settings WHERE key = 'live_betting'), 'false'),
+                    'false',
                     NOW()
                 )
                 ON CONFLICT (key) DO NOTHING
@@ -1534,7 +1530,7 @@ def set_user_setting(email: str, key: str, value: str):
 
 
 def is_global_live_betting() -> bool:
-    return get_setting("global_live_betting", get_setting("live_betting", "false")).lower() == "true"
+    return get_setting("global_live_betting", "false").lower() == "true"
 
 
 def is_user_live_betting(email: str) -> bool:
