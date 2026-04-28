@@ -912,6 +912,10 @@ def _ensure_paper_backfill(email: str) -> None:
         DB.backfill_paper_orders_from_bets(email)
     except Exception as exc:
         print(f"Paper order backfill failed for {email}: {exc}")
+    try:
+        DB.recompute_paper_order_financials(email)
+    except Exception as exc:
+        print(f"Paper financials recompute failed for {email}: {exc}")
 
 
 def _orders_for_mode(email: str, mode: str) -> pd.DataFrame:

@@ -338,6 +338,7 @@ RETRYABLE_ORDER_STATUSES = (
 )
 
 PAPER_STARTING_BANKROLL_DOLLARS = 10_000.0
+PAPER_UNIVERSAL_EMAIL = "__paper_universal__"
 
 
 def get_upcoming_needing_prediction(season: int = ACTIVE_SEASON) -> pd.DataFrame:
@@ -1772,7 +1773,8 @@ def get_user_balance_history(email: str) -> pd.DataFrame:
 
 
 def get_paper_bankroll_dollars(email: str) -> float:
-    email = _norm_email(email)
+    # Paper mode is universal (same for every user).
+    _ = email
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -1783,7 +1785,7 @@ def get_paper_bankroll_dollars(email: str) -> float:
                 WHERE email = %s
                   AND profit_loss IS NOT NULL
                 """,
-                (email,),
+                (PAPER_UNIVERSAL_EMAIL,),
             )
             row = cur.fetchone()
             paper_profit = float(row[0] or 0.0) if row else 0.0
@@ -1793,7 +1795,8 @@ def get_paper_bankroll_dollars(email: str) -> float:
 
 
 def get_paper_bankroll_history(email: str) -> list[dict]:
-    email = _norm_email(email)
+    # Paper mode is universal (same for every user).
+    _ = email
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -1805,7 +1808,7 @@ def get_paper_bankroll_history(email: str) -> list[dict]:
                   AND paper_bankroll_after IS NOT NULL
                 ORDER BY game_date ASC NULLS LAST, game_pk ASC
                 """,
-                (email,),
+                (PAPER_UNIVERSAL_EMAIL,),
             )
             rows = [dict(row) for row in cur.fetchall()]
     finally:
@@ -1831,34 +1834,16 @@ def get_paper_bankroll_history(email: str) -> list[dict]:
 
 
 def backfill_paper_orders_from_bets(email: str | None = None) -> int:
-    """Create missing paper orders from historical model-qualified bet signals."""
-    target_email = _norm_email(email or "")
+    """Create missing paper orders from historical model-qualified bet signals.
+
+    Paper mode is universal: the same simulated bets for every user. We store the
+    universal stream in `paper_orders` under `PAPER_UNIVERSAL_EMAIL`.
+    """
+    _ = email
+    user_email = PAPER_UNIVERSAL_EMAIL
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            if target_email:
-                cur.execute(
-                    f"""
-                    SELECT email
-                    FROM {APP_USERS_TABLE}
-                    WHERE email = %s
-                      AND approval_status = 'approved'
-                    """,
-                    (target_email,),
-                )
-            else:
-                cur.execute(
-                    f"""
-                    SELECT email
-                    FROM {APP_USERS_TABLE}
-                    WHERE approval_status = 'approved'
-                    ORDER BY email
-                    """
-                )
-            users = [dict(row)["email"] for row in cur.fetchall()]
-            if not users:
-                return 0
-
             cur.execute(
                 """
                 SELECT b.game_pk, b.game_date, b.home_team, b.away_team,
@@ -1876,103 +1861,307 @@ def backfill_paper_orders_from_bets(email: str | None = None) -> int:
             if not signals:
                 return 0
 
+            cur.execute(
+                """
+                SELECT game_pk, profit_loss
+                FROM paper_orders
+                WHERE email = %s
+                """,
+                (user_email,),
+            )
+            existing = {int(row["game_pk"]): dict(row) for row in cur.fetchall()}
+            bankroll = PAPER_STARTING_BANKROLL_DOLLARS
+            rows_to_insert = []
             inserted = 0
-            for user_email in users:
-                cur.execute(
-                    """
-                    SELECT game_pk, profit_loss
-                    FROM paper_orders
-                    WHERE email = %s
-                    """,
-                    (user_email,),
-                )
-                existing = {int(row["game_pk"]): dict(row) for row in cur.fetchall()}
-                bankroll = PAPER_STARTING_BANKROLL_DOLLARS
-                rows_to_insert = []
-                for signal in signals:
-                    game_pk = int(signal["game_pk"])
-                    existing_row = existing.get(game_pk)
-                    if existing_row:
-                        if existing_row.get("profit_loss") is not None:
-                            bankroll += float(existing_row["profit_loss"])
-                        continue
 
-                    bet_frac = float(signal.get("bet_frac") or 0.0)
-                    bet_dollars = round(bankroll * bet_frac, 2)
-                    bet_side = str(signal.get("bet_side") or "none")
-                    market_prob = signal.get("market_implied_prob")
-                    live_price = None
-                    live_edge = None
-                    if market_prob is not None:
-                        market_prob = float(market_prob)
-                        live_price = market_prob if bet_side == "home" else 1.0 - market_prob
-                        model_prob = float(signal["predicted_prob"])
-                        if bet_side == "away":
-                            model_prob = 1.0 - model_prob
-                        live_edge = model_prob - live_price
+            for signal in signals:
+                game_pk = int(signal["game_pk"])
+                existing_row = existing.get(game_pk)
+                if existing_row:
+                    if existing_row.get("profit_loss") is not None:
+                        bankroll += float(existing_row["profit_loss"])
+                    continue
 
-                    result = signal.get("home_win")
-                    profit_loss = None
-                    bankroll_after = bankroll
-                    if result is not None and bet_dollars > 0:
-                        won = (bool(result) and bet_side == "home") or (
-                            not bool(result) and bet_side == "away"
-                        )
-                        if won and live_price and 0 < live_price < 1:
-                            profit_loss = round(bet_dollars * (1.0 / live_price - 1.0), 2)
-                        elif not won:
-                            profit_loss = -bet_dollars
-                        if profit_loss is not None:
-                            bankroll_after = round(bankroll + profit_loss, 2)
+                bet_frac = float(signal.get("bet_frac") or 0.0)
+                bet_dollars = round(bankroll * bet_frac, 2)
+                bet_side = str(signal.get("bet_side") or "none")
+                market_prob = signal.get("market_implied_prob")
+                live_price = None
+                live_edge = None
+                if market_prob is not None:
+                    market_prob = float(market_prob)
+                    live_price = market_prob if bet_side == "home" else 1.0 - market_prob
+                    model_prob = float(signal["predicted_prob"])
+                    if bet_side == "away":
+                        model_prob = 1.0 - model_prob
+                    live_edge = model_prob - live_price
 
-                    rows_to_insert.append(
-                        (
-                            user_email,
-                            game_pk,
-                            str(signal.get("game_date") or "")[:10] or None,
-                            signal.get("home_team") or "",
-                            signal.get("away_team") or "",
-                            float(signal["predicted_prob"]),
-                            float(market_prob) if market_prob is not None else None,
-                            float(signal["edge"]) if signal.get("edge") is not None else None,
-                            bet_side,
-                            bet_frac,
-                            bet_dollars,
-                            None,
-                            live_price,
-                            live_edge,
-                            "dry_run" if bet_dollars > 0 else "skipped_too_small",
-                            bool(result) if result is not None else None,
-                            profit_loss,
-                            bankroll,
-                            bankroll_after,
-                        )
+                result = signal.get("home_win")
+                profit_loss = None
+                bankroll_after = bankroll
+                if result is not None and bet_dollars > 0:
+                    won = (bool(result) and bet_side == "home") or (
+                        not bool(result) and bet_side == "away"
                     )
-                    inserted += 1
+                    if won and live_price and 0 < live_price < 1:
+                        profit_loss = round(bet_dollars * (1.0 / live_price - 1.0), 2)
+                    elif not won:
+                        profit_loss = -bet_dollars
                     if profit_loss is not None:
-                        bankroll = bankroll_after
+                        bankroll_after = round(bankroll + profit_loss, 2)
 
-                if rows_to_insert:
-                    execute_values(
-                        cur,
-                        """
-                        INSERT INTO paper_orders (
-                            email, game_pk, game_date, home_team, away_team,
-                            predicted_prob, market_implied_prob, edge,
-                            bet_side, bet_frac, bet_dollars, n_contracts,
-                            live_price, live_edge, status, result, profit_loss,
-                            paper_bankroll_before, paper_bankroll_after, updated_at
-                        )
-                        VALUES %s
-                        ON CONFLICT (email, game_pk) DO NOTHING
-                        """,
-                        rows_to_insert,
-                        template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())",
+                rows_to_insert.append(
+                    (
+                        user_email,
+                        game_pk,
+                        str(signal.get("game_date") or "")[:10] or None,
+                        signal.get("home_team") or "",
+                        signal.get("away_team") or "",
+                        float(signal["predicted_prob"]),
+                        float(market_prob) if market_prob is not None else None,
+                        float(signal["edge"]) if signal.get("edge") is not None else None,
+                        bet_side,
+                        bet_frac,
+                        bet_dollars,
+                        None,
+                        live_price,
+                        live_edge,
+                        "dry_run" if bet_dollars > 0 else "skipped_too_small",
+                        bool(result) if result is not None else None,
+                        profit_loss,
+                        bankroll,
+                        bankroll_after,
                     )
+                )
+                inserted += 1
+                if profit_loss is not None:
+                    bankroll = bankroll_after
+
+            if rows_to_insert:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO paper_orders (
+                        email, game_pk, game_date, home_team, away_team,
+                        predicted_prob, market_implied_prob, edge,
+                        bet_side, bet_frac, bet_dollars, n_contracts,
+                        live_price, live_edge, status, result, profit_loss,
+                        paper_bankroll_before, paper_bankroll_after, updated_at
+                    )
+                    VALUES %s
+                    ON CONFLICT (email, game_pk) DO NOTHING
+                    """,
+                    rows_to_insert,
+                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())",
+                )
         conn.commit()
         return inserted
     finally:
         conn.close()
+
+
+def _paper_side_model_prob(predicted_prob: float | None, bet_side: str) -> float | None:
+    if predicted_prob is None:
+        return None
+    try:
+        p = float(predicted_prob)
+    except Exception:
+        return None
+    if bet_side == "away":
+        return 1.0 - p
+    if bet_side == "home":
+        return p
+    return None
+
+
+def _paper_side_price(
+    *,
+    bet_side: str,
+    predicted_prob: float | None,
+    edge: float | None,
+    live_price: float | None,
+    market_implied_prob: float | None,
+) -> float | None:
+    """
+    Return the best available contract price (side probability) in [0,1].
+    Priority:
+      1) live_price if present
+      2) market_implied_prob converted to side-price
+      3) derived from (model_prob_side - edge) if both present
+    """
+    for v in (live_price,):
+        if v is None:
+            continue
+        try:
+            p = float(v)
+        except Exception:
+            continue
+        if 0 < p < 1:
+            return p
+
+    if market_implied_prob is not None:
+        try:
+            mp = float(market_implied_prob)
+        except Exception:
+            mp = None
+        if mp is not None and 0 < mp < 1:
+            side_price = mp if bet_side == "home" else (1.0 - mp if bet_side == "away" else None)
+            if side_price is not None and 0 < side_price < 1:
+                return side_price
+
+    if edge is not None:
+        try:
+            e = float(edge)
+        except Exception:
+            e = None
+        if e is not None:
+            model_side = _paper_side_model_prob(predicted_prob, bet_side)
+            if model_side is not None:
+                side_price = model_side - e
+                if 0 < side_price < 1:
+                    return side_price
+    return None
+
+
+def _paper_profit_loss(
+    *,
+    won: bool,
+    stake: float,
+    side_price: float | None,
+    n_contracts: int | None = None,
+) -> float | None:
+    if stake <= 0:
+        return None
+    if not won:
+        return round(-stake, 2)
+    if n_contracts is not None:
+        return round(float(n_contracts) - stake, 2)
+    if side_price is None or not (0 < side_price < 1):
+        return None
+    return round(stake * (1.0 / side_price - 1.0), 2)
+
+
+def recompute_paper_order_financials(email: str | None = None) -> int:
+    """
+    Fill missing paper bet financials:
+      - paper_bankroll_before / paper_bankroll_after
+      - bet_dollars (stake) when missing
+      - profit_loss when missing and result is known
+
+    Uses universal chronological ordering and PAPER_STARTING_BANKROLL_DOLLARS.
+    Profit is computed from filled n_contracts OR side-price (live_price / market / model-edge derived).
+    """
+    _ = email
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            updated = 0
+            cur.execute(
+                """
+                SELECT id, game_pk, game_date, bet_side, bet_frac, bet_dollars,
+                       predicted_prob, edge, market_implied_prob, live_price,
+                       n_contracts, result, profit_loss,
+                       paper_bankroll_before, paper_bankroll_after
+                FROM paper_orders
+                WHERE email = %s
+                ORDER BY game_date ASC NULLS LAST, game_pk ASC, id ASC
+                """,
+                (PAPER_UNIVERSAL_EMAIL,),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            bankroll = PAPER_STARTING_BANKROLL_DOLLARS
+
+            for r in rows:
+                bet_side = str(r.get("bet_side") or "none")
+                bet_frac = r.get("bet_frac")
+                try:
+                    frac = float(bet_frac) if bet_frac is not None else 0.0
+                except Exception:
+                    frac = 0.0
+                frac = max(0.0, frac)
+
+                stake_existing = r.get("bet_dollars")
+                try:
+                    stake_existing_f = float(stake_existing) if stake_existing is not None else None
+                except Exception:
+                    stake_existing_f = None
+                stake = stake_existing_f
+                if stake is None and frac > 0:
+                    stake = round(bankroll * frac, 2)
+                if stake is not None and stake < 0:
+                    stake = None
+
+                pb_before = r.get("paper_bankroll_before")
+                try:
+                    pb_before_f = float(pb_before) if pb_before is not None else None
+                except Exception:
+                    pb_before_f = None
+                pb_after = r.get("paper_bankroll_after")
+                try:
+                    pb_after_f = float(pb_after) if pb_after is not None else None
+                except Exception:
+                    pb_after_f = None
+
+                result = r.get("result")
+                pnl_existing = r.get("profit_loss")
+                try:
+                    pnl_existing_f = float(pnl_existing) if pnl_existing is not None else None
+                except Exception:
+                    pnl_existing_f = None
+
+                n_contracts = r.get("n_contracts")
+                try:
+                    n_contracts_i = int(n_contracts) if n_contracts is not None else None
+                except Exception:
+                    n_contracts_i = None
+
+                pnl = pnl_existing_f
+                if pnl is None and result is not None and stake is not None and stake > 0 and bet_side in {"home", "away"}:
+                    side_price = _paper_side_price(
+                        bet_side=bet_side,
+                        predicted_prob=r.get("predicted_prob"),
+                        edge=r.get("edge"),
+                        live_price=r.get("live_price"),
+                        market_implied_prob=r.get("market_implied_prob"),
+                    )
+                    won = (bool(result) and bet_side == "home") or (not bool(result) and bet_side == "away")
+                    pnl = _paper_profit_loss(won=won, stake=stake, side_price=side_price, n_contracts=n_contracts_i)
+
+                desired_before = bankroll
+                desired_after = bankroll
+                if pnl is not None:
+                    desired_after = round(bankroll + pnl, 2)
+
+                needs_update = (
+                    (stake_existing_f is None and stake is not None)
+                    or (pb_before_f is None)
+                    or (pb_after_f is None and result is not None)
+                    or (pnl_existing_f is None and pnl is not None)
+                )
+                if needs_update:
+                    cur.execute(
+                        """
+                        UPDATE paper_orders
+                        SET bet_dollars = COALESCE(bet_dollars, %s),
+                            profit_loss = COALESCE(profit_loss, %s),
+                            paper_bankroll_before = COALESCE(paper_bankroll_before, %s),
+                            paper_bankroll_after = COALESCE(paper_bankroll_after, %s),
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            stake,
+                            pnl,
+                            desired_before,
+                            desired_after,
+                            int(r["id"]),
+                        ),
+                    )
+                    updated += cur.rowcount
+
+                bankroll = desired_after
+
+        conn.commit()
+        return updated
 
 
 def upsert_paper_order(
@@ -2059,7 +2248,8 @@ def upsert_paper_order(
 
 
 def get_paper_orders(email: str) -> pd.DataFrame:
-    email = _norm_email(email)
+    # Paper mode is universal (same for every user).
+    _ = email
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -2070,7 +2260,7 @@ def get_paper_orders(email: str) -> pd.DataFrame:
                 WHERE email = %s
                 ORDER BY game_date DESC NULLS LAST, game_pk DESC
                 """,
-                (email,),
+                (PAPER_UNIVERSAL_EMAIL,),
             )
             rows = cur.fetchall()
     finally:
