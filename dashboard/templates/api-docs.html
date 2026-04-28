@@ -335,6 +335,7 @@
           <li>The script polls MLB Intelligence for model signals.</li>
           <li>The script places orders directly with Kalshi using your local key file.</li>
           <li>The script syncs order and balance updates back to the dashboard.</li>
+          <li>The dashboard tracks the script heartbeat, so stale runner status means the local machine is off, asleep, or disconnected.</li>
         </ol>
         <div class="docs-callout">
           <p>Your Kalshi private key stays on your machine. The tradeoff is uptime: if your machine is off, asleep, or disconnected, it cannot place bets.</p>
@@ -399,7 +400,7 @@ DRY_RUN = True</code>
             </tr>
             <tr>
               <td><code>POST /api/client/heartbeat</code></td>
-              <td>Confirm follower script can authenticate and reach the server.</td>
+              <td>Confirm follower script can authenticate and update runner last-seen status.</td>
             </tr>
           </tbody>
         </table>

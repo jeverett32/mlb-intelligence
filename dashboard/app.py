@@ -441,6 +441,7 @@ class ClientOrderPayload(BaseModel):
     dry_run: bool = False
     result: bool | None = None
     profit_loss: float | None = None
+    error: str = ""
 
 
 class ClientHeartbeatPayload(BaseModel):
@@ -536,6 +537,8 @@ def require_client_writer(request: Request):
 
 @app.get("/api/settings")
 def get_settings(user: dict = Depends(require_approved_user)):
+    last_seen = DB.get_user_setting(user["email"], "self_custody_last_seen_at", "")
+    last_error = DB.get_user_setting(user["email"], "self_custody_last_error", "")
     return {
         "live_betting": DB.is_user_live_betting(user["email"]),
         "dashboard_timezone": DB.get_user_setting(
@@ -544,6 +547,12 @@ def get_settings(user: dict = Depends(require_approved_user)):
         "global_live_betting": DB.is_global_live_betting(),
         "can_manage_global_live_betting": bool(user["is_admin"]),
         "effective_live_betting": DB.is_global_live_betting() and DB.is_user_live_betting(user["email"]),
+        "self_custody": {
+            "last_seen_at": last_seen or None,
+            "kalshi_env": DB.get_user_setting(user["email"], "self_custody_kalshi_env", ""),
+            "client_version": DB.get_user_setting(user["email"], "self_custody_client_version", ""),
+            "last_error": last_error or None,
+        },
     }
 
 
@@ -801,6 +810,8 @@ def sync_client_order(
         result=payload.result,
         profit_loss=payload.profit_loss,
     )
+    if payload.status == "error" and payload.error:
+        DB.set_user_setting(user["email"], "self_custody_last_error", payload.error[:500])
     try:
         DB.backfill_user_order_results()
     except Exception as exc:
@@ -813,10 +824,14 @@ def sync_client_heartbeat(
     payload: ClientHeartbeatPayload,
     user: dict = Depends(require_client_writer),
 ):
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    DB.set_user_setting(user["email"], "self_custody_last_seen_at", now_utc)
+    DB.set_user_setting(user["email"], "self_custody_kalshi_env", payload.kalshi_env[:32])
+    DB.set_user_setting(user["email"], "self_custody_client_version", payload.version[:64])
     return {
         "ok": True,
         "email": user["email"],
-        "server_time_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "server_time_utc": now_utc,
         "kalshi_env": payload.kalshi_env,
     }
 

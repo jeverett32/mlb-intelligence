@@ -373,6 +373,7 @@ def sync_order(signal: dict, result: dict) -> None:
             "live_edge": result.get("live_edge"),
             "status": result.get("status", "pending"),
             "dry_run": bool(DRY_RUN),
+            "error": result.get("error", ""),
         },
     )
 

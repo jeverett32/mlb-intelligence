@@ -549,6 +549,7 @@
             </div>
           </div>
           <div class="settings-feedback" id="api-token-feedback"></div>
+          <div class="settings-hint" id="self-custody-status">Runner status: never seen.</div>
           <div class="settings-hint">Endpoints: <code>/api/signals/upcoming</code>, <code>/api/client/orders</code>, and <code>/api/client/balance</code> with <code>Authorization: Bearer &lt;token&gt;</code>.</div>
           <div class="api-tab-footer">
             <a class="admin-redirect-btn" href="/docs/api" target="_blank" rel="noreferrer">Open API Docs</a>
@@ -725,6 +726,24 @@
     feedback('api-token-feedback', 'Copied.', true);
   }
 
+  function renderSelfCustodyStatus(status) {
+    const el = document.getElementById('self-custody-status');
+    if (!el) return;
+    if (!status || !status.last_seen_at) {
+      el.textContent = 'Runner status: never seen.';
+      return;
+    }
+    let seen = null;
+    try { seen = new Date(status.last_seen_at); } catch { seen = null; }
+    const ageSeconds = seen ? Math.max(0, Math.floor((Date.now() - seen.getTime()) / 1000)) : null;
+    const state = ageSeconds == null ? 'seen' : (ageSeconds <= 180 ? 'online recently' : 'stale');
+    const seenCopy = seen ? seen.toLocaleString() : status.last_seen_at;
+    const env = status.kalshi_env ? ` · ${status.kalshi_env}` : '';
+    const version = status.client_version ? ` · ${status.client_version}` : '';
+    const error = status.last_error ? ` · last error: ${status.last_error}` : '';
+    el.textContent = `Runner status: ${state} · last seen ${seenCopy}${env}${version}${error}`;
+  }
+
   async function loadSettings() {
     try {
       const [settings, me, account, apiTokens] = await Promise.all([
@@ -773,6 +792,7 @@
       }
 
       renderApiToken(apiTokens.tokens || []);
+      renderSelfCustodyStatus(settings.self_custody);
     } catch (e) {
       console.error('Failed to load settings:', e);
     }
