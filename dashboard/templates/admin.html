@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MLB Admin</title>
+  <title>Admin</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/dashboard.css">
   <script src="/static/chart.umd.min.js" defer></script>
@@ -469,7 +469,8 @@
 
 <header class="admin-header">
   <div class="admin-header-left">
-    <h1>MLB Admin</h1>
+    <img src="/static/favicon.svg" alt="Logo" style="width:32px;height:32px;">
+    <h1>Admin</h1>
   </div>
   <a class="back-link" href="/">&#8592; Dashboard</a>
 </header>
@@ -624,7 +625,19 @@ function showTab(name, btn) {
   if (name === 'errors') loadErrors();
   if (name === 'database') loadDbTable();
   if (name === 'model') loadModelInsights();
+  history.replaceState(null, '', '#' + name);
 }
+
+function restoreTab() {
+  const hash = location.hash.replace('#', '');
+  if (!hash) return;
+  const btn = [...document.querySelectorAll('.admin-tabs button')].find(
+    b => b.textContent.toLowerCase().replace(/\s+/g, '') === hash ||
+         b.getAttribute('onclick')?.includes("'" + hash + "'")
+  );
+  if (btn) showTab(hash, btn);
+}
+restoreTab();
 
 function badge(text, cls) {
   return `<span class="badge${cls ? ' ' + cls : ''}">${text}</span>`;
