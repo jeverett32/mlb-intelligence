@@ -1540,14 +1540,13 @@ html, body {
 }
 
 .side-pill.home {
-  background: #36506a;
-  color: #fff;
+  background: #dde4ec;
+  color: #3d556e;
 }
 
 .side-pill.away {
-  background: #dde4ec;
-  color: #36506a;
-  border: 1px solid var(--border);
+  background: var(--text-primary);
+  color: var(--bg-primary);
 }
 
 :root[data-theme="dark"] .side-pill.home {
