@@ -828,6 +828,7 @@ BROWSABLE_TABLES = {
     "paper_orders",
     "model_metric_snapshots",
     "model_artifacts",
+    "admin_notes",
 }
 
 BROWSE_TABLE_ORDER_BY = {
@@ -843,6 +844,7 @@ BROWSE_TABLE_ORDER_BY = {
     "paper_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
     "model_metric_snapshots": "trained_at DESC NULLS LAST, id DESC",
     "model_artifacts": "created_at DESC NULLS LAST, id DESC",
+    "admin_notes": "updated_at DESC NULLS LAST, id DESC",
 }
 
 
@@ -903,6 +905,7 @@ USER_STATUSES = {
 APP_USERS_TABLE = "app_users"
 APP_SESSIONS_TABLE = "app_sessions"
 APP_API_TOKENS_TABLE = "app_api_tokens"
+ADMIN_NOTES_TABLE = "admin_notes"
 
 
 def _norm_email(email: str) -> str:
@@ -911,6 +914,107 @@ def _norm_email(email: str) -> str:
 
 def _hash_api_token(token: str) -> str:
     return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def init_admin_notes_table():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {ADMIN_NOTES_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL DEFAULT '',
+                    created_by TEXT,
+                    updated_by TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_{ADMIN_NOTES_TABLE}_updated_at
+                ON {ADMIN_NOTES_TABLE} (updated_at DESC)
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_admin_notes(limit: int = 100) -> list[dict]:
+    init_admin_notes_table()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {ADMIN_NOTES_TABLE}
+                ORDER BY updated_at DESC, id DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def create_admin_note(title: str, body: str, actor_email: str | None = None) -> dict:
+    init_admin_notes_table()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {ADMIN_NOTES_TABLE}
+                    (title, body, created_by, updated_by, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, NOW(), NOW())
+                RETURNING *
+                """,
+                (title or "", body or "", actor_email, actor_email),
+            )
+            note = dict(cur.fetchone())
+        conn.commit()
+        return note
+    finally:
+        conn.close()
+
+
+def update_admin_note(note_id: int, title: str, body: str, actor_email: str | None = None) -> dict | None:
+    init_admin_notes_table()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                UPDATE {ADMIN_NOTES_TABLE}
+                SET title = %s,
+                    body = %s,
+                    updated_by = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (title or "", body or "", actor_email, int(note_id)),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_admin_note(note_id: int) -> bool:
+    init_admin_notes_table()
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"DELETE FROM {ADMIN_NOTES_TABLE} WHERE id = %s", (int(note_id),))
+            deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
+    finally:
+        conn.close()
 
 
 def init_auth_tables():
@@ -1123,6 +1227,7 @@ def init_auth_tables():
         conn.close()
     init_model_metrics_table()
     init_model_artifacts_table()
+    init_admin_notes_table()
 
 
 def upsert_user(

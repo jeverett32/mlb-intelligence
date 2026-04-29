@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 import pandas as pd
 
@@ -56,6 +58,89 @@ def test_admin_database_browser_lists_model_artifacts(monkeypatch, app_module, c
     r = client.get("/admin")
     assert r.status_code == 200
     assert '<option value="model_artifacts">model_artifacts</option>' in r.text
+    assert "showTab('notes'" in r.text
+
+
+def test_admin_notes_crud(monkeypatch, app_module, client):
+    now = datetime(2026, 4, 29, 18, 0, tzinfo=timezone.utc)
+    notes = {}
+    next_id = {"value": 1}
+
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "admin@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": True,
+        },
+    )
+
+    def list_notes(limit=100):
+        return list(notes.values())
+
+    def create_note(title, body, actor_email=None):
+        note = {
+            "id": next_id["value"],
+            "title": title,
+            "body": body,
+            "created_by": actor_email,
+            "updated_by": actor_email,
+            "created_at": now,
+            "updated_at": now,
+        }
+        notes[note["id"]] = note
+        next_id["value"] += 1
+        return note
+
+    def update_note(note_id, title, body, actor_email=None):
+        note = notes.get(note_id)
+        if not note:
+            return None
+        note.update({"title": title, "body": body, "updated_by": actor_email, "updated_at": now})
+        return note
+
+    def delete_note(note_id):
+        return notes.pop(note_id, None) is not None
+
+    monkeypatch.setattr(app_module.DB, "list_admin_notes", list_notes)
+    monkeypatch.setattr(app_module.DB, "create_admin_note", create_note)
+    monkeypatch.setattr(app_module.DB, "update_admin_note", update_note)
+    monkeypatch.setattr(app_module.DB, "delete_admin_note", delete_note)
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.post("/api/admin/notes", json={"title": "Lineup idea", "body": "Track scratch timing"})
+    assert r.status_code == 200
+    assert r.json()["id"] == 1
+    assert r.json()["created_by"] == "admin@example.com"
+
+    r = client.get("/api/admin/notes")
+    assert r.status_code == 200
+    assert r.json()["notes"][0]["title"] == "Lineup idea"
+
+    r = client.put("/api/admin/notes/1", json={"title": "Updated", "body": "New text"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Updated"
+
+    r = client.delete("/api/admin/notes/1")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
+def test_admin_notes_reject_empty_note(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "admin@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": True,
+        },
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.post("/api/admin/notes", json={"title": " ", "body": ""})
+    assert r.status_code == 400
 
 
 def test_user_settings_include_personal_and_effective_live(monkeypatch, app_module, client):

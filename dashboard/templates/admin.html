@@ -458,6 +458,91 @@
     .feat-acc-item .vals { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
     .disagreements-body { padding: 16px; }
 
+    .notes-layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .note-form {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+    }
+    .note-field {
+      display: grid;
+      gap: 6px;
+    }
+    .note-field label {
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .note-field input,
+    .note-field textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font: inherit;
+      padding: 10px 12px;
+    }
+    .note-field textarea {
+      min-height: 220px;
+      resize: vertical;
+      line-height: 1.55;
+    }
+    .note-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .notes-list {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+    .note-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .note-item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .note-item h3 {
+      font-size: 0.95rem;
+      line-height: 1.25;
+      color: var(--text-primary);
+    }
+    .note-meta {
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      white-space: nowrap;
+    }
+    .note-body {
+      color: var(--text-secondary);
+      font-size: 0.86rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .note-item-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .fi-modal-overlay {
       display: none;
       position: fixed;
@@ -499,6 +584,7 @@
 
     @media (max-width: 980px) {
       .panel-row { grid-template-columns: 1fr; }
+      .notes-layout { grid-template-columns: 1fr; }
       .training-history-row {
         grid-template-columns: 70px 70px 1fr 70px 70px;
       }
@@ -525,6 +611,7 @@
 
 <div class="admin-tabs">
   <button class="active" onclick="showTab('access', this)">Access Requests</button>
+  <button onclick="showTab('notes', this)">Notes</button>
   <button onclick="showTab('database', this)">Database</button>
   <button onclick="showTab('model', this)">Model Insights</button>
   <button onclick="showTab('errors', this)">Errors</button>
@@ -550,6 +637,39 @@
       </div>
       <div class="table-wrap" id="users-body">
         <div class="empty">Loading users...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notes tab -->
+  <div class="tab-pane" id="tab-notes">
+    <div class="notes-layout">
+      <div class="panel">
+        <div class="panel-header"><span id="note-form-title">New Note</span></div>
+        <form class="note-form" onsubmit="saveNote(event)">
+          <input type="hidden" id="note-id" value="">
+          <div class="note-field">
+            <label for="note-title">Title</label>
+            <input id="note-title" maxlength="160" autocomplete="off" placeholder="Idea, task, or reminder">
+          </div>
+          <div class="note-field">
+            <label for="note-body">Note</label>
+            <textarea id="note-body" maxlength="20000" placeholder="Write note"></textarea>
+          </div>
+          <div class="note-actions">
+            <button class="btn" type="submit" id="note-save-btn">Save Note</button>
+            <button class="btn secondary" type="button" onclick="resetNoteForm()">Clear</button>
+          </div>
+        </form>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Saved Notes</span>
+          <button class="btn secondary" onclick="loadNotes()" style="font-size:0.72rem;padding:4px 10px;">Refresh</button>
+        </div>
+        <div class="notes-list" id="notes-body">
+          <div class="empty">Loading notes...</div>
+        </div>
       </div>
     </div>
   </div>
@@ -713,6 +833,7 @@ function showTab(name, btn) {
   const pane = document.getElementById('tab-' + name);
   if (pane) pane.classList.add('active');
   if (btn) btn.classList.add('active');
+  if (name === 'notes') loadNotes();
   if (name === 'errors') loadErrors();
   if (name === 'database') loadDbTable();
   if (name === 'model') loadModelInsights();
@@ -739,6 +860,109 @@ function statusBadge(s) {
   if (s === 'rejected') return badge('rejected', 'red');
   if (s === 'disabled') return badge('disabled', 'gray');
   return badge(s, 'gray');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+let adminNotes = [];
+
+function noteTimestamp(value) {
+  if (!value) return '—';
+  return String(value).slice(0, 19).replace('T', ' ');
+}
+
+function resetNoteForm() {
+  document.getElementById('note-id').value = '';
+  document.getElementById('note-title').value = '';
+  document.getElementById('note-body').value = '';
+  document.getElementById('note-form-title').textContent = 'New Note';
+  document.getElementById('note-save-btn').textContent = 'Save Note';
+}
+
+function editNote(id) {
+  const note = adminNotes.find(n => Number(n.id) === Number(id));
+  if (!note) return;
+  document.getElementById('note-id').value = note.id;
+  document.getElementById('note-title').value = note.title || '';
+  document.getElementById('note-body').value = note.body || '';
+  document.getElementById('note-form-title').textContent = 'Edit Note';
+  document.getElementById('note-save-btn').textContent = 'Update Note';
+  document.getElementById('note-title').focus();
+}
+
+function renderNotes(notes) {
+  const el = document.getElementById('notes-body');
+  if (!notes.length) {
+    el.innerHTML = '<div class="empty">No notes yet</div>';
+    return;
+  }
+  el.innerHTML = notes.map(note => `
+    <article class="note-item">
+      <div class="note-item-head">
+        <h3>${escapeHtml(note.title || 'Untitled note')}</h3>
+        <span class="note-meta">${escapeHtml(noteTimestamp(note.updated_at))}</span>
+      </div>
+      <div class="note-body">${escapeHtml(note.body || '')}</div>
+      <div class="note-item-actions">
+        <button class="action-btn" onclick="editNote(${Number(note.id)})">Edit</button>
+        <button class="action-btn danger" onclick="deleteNote(${Number(note.id)})">Delete</button>
+      </div>
+    </article>
+  `).join('');
+}
+
+async function loadNotes() {
+  const el = document.getElementById('notes-body');
+  el.innerHTML = '<div class="empty">Loading notes...</div>';
+  try {
+    const resp = await fetch('/api/admin/notes');
+    if (!resp.ok) { el.innerHTML = '<div class="empty">Unable to load notes</div>'; return; }
+    const data = await resp.json();
+    adminNotes = data.notes || [];
+    renderNotes(adminNotes);
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function saveNote(event) {
+  event.preventDefault();
+  const id = document.getElementById('note-id').value;
+  const title = document.getElementById('note-title').value;
+  const body = document.getElementById('note-body').value;
+  const method = id ? 'PUT' : 'POST';
+  const url = id ? `/api/admin/notes/${encodeURIComponent(id)}` : '/api/admin/notes';
+  const resp = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!resp.ok) {
+    const msg = await resp.text();
+    alert(msg || 'Failed to save note');
+    return;
+  }
+  resetNoteForm();
+  await loadNotes();
+}
+
+async function deleteNote(id) {
+  if (!confirm('Delete this note?')) return;
+  const resp = await fetch(`/api/admin/notes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!resp.ok) {
+    alert('Failed to delete note');
+    return;
+  }
+  resetNoteForm();
+  await loadNotes();
 }
 
 async function loadUsers() {

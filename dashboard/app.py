@@ -2135,6 +2135,31 @@ class AdminUserActionPayload(BaseModel):
     rejection_reason: str = ""
 
 
+class AdminNotePayload(BaseModel):
+    title: str = ""
+    body: str = ""
+
+
+def _clean_note_payload(payload: AdminNotePayload) -> tuple[str, str]:
+    title = (payload.title or "").strip()
+    body = (payload.body or "").strip()
+    if not title and not body:
+        raise HTTPException(status_code=400, detail="Note needs title or body")
+    if len(title) > 160:
+        raise HTTPException(status_code=400, detail="Title too long")
+    if len(body) > 20000:
+        raise HTTPException(status_code=400, detail="Note body too long")
+    return title, body
+
+
+def _serialize_admin_note(note: dict) -> dict:
+    out = dict(note)
+    for key in ("created_at", "updated_at"):
+        if out.get(key):
+            out[key] = out[key].isoformat()
+    return out
+
+
 @app.post("/api/admin/users/{email}/status")
 def admin_set_user_status(
     email: str,
@@ -2172,6 +2197,39 @@ def admin_set_user_admin(
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
     return updated
+
+
+@app.get("/api/admin/notes")
+def get_admin_notes(user: dict = Depends(require_admin)):
+    notes = DB.list_admin_notes(limit=100)
+    return {"notes": [_serialize_admin_note(n) for n in notes]}
+
+
+@app.post("/api/admin/notes")
+def create_admin_note(payload: AdminNotePayload, user: dict = Depends(require_admin)):
+    title, body = _clean_note_payload(payload)
+    note = DB.create_admin_note(title, body, actor_email=user["email"])
+    return _serialize_admin_note(note)
+
+
+@app.put("/api/admin/notes/{note_id}")
+def update_admin_note(
+    note_id: int,
+    payload: AdminNotePayload,
+    user: dict = Depends(require_admin),
+):
+    title, body = _clean_note_payload(payload)
+    note = DB.update_admin_note(note_id, title, body, actor_email=user["email"])
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return _serialize_admin_note(note)
+
+
+@app.delete("/api/admin/notes/{note_id}")
+def delete_admin_note(note_id: int, user: dict = Depends(require_admin)):
+    if not DB.delete_admin_note(note_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"ok": True}
 
 
 @app.get("/api/admin/model-metrics")
