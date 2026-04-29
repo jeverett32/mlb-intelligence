@@ -2717,20 +2717,27 @@ def init_model_artifacts_table():
                 CREATE INDEX IF NOT EXISTS idx_model_artifacts_active
                 ON {MODEL_ARTIFACTS_TABLE} (is_active, created_at DESC)
             """)
-            cur.execute("ALTER TABLE IF EXISTS bets ADD COLUMN IF NOT EXISTS model_artifact_id BIGINT")
-            cur.execute(
-                """
-                DO $$
-                BEGIN
-                    IF to_regclass('public.bets') IS NOT NULL THEN
-                        CREATE INDEX IF NOT EXISTS idx_bets_model_artifact_id
-                        ON bets (model_artifact_id);
-                    END IF;
-                END
-                $$;
-                """
-            )
-        conn.commit()
+            conn.commit()
+            try:
+                cur.execute("ALTER TABLE IF EXISTS bets ADD COLUMN IF NOT EXISTS model_artifact_id BIGINT")
+                cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                        IF to_regclass('public.bets') IS NOT NULL THEN
+                            CREATE INDEX IF NOT EXISTS idx_bets_model_artifact_id
+                            ON bets (model_artifact_id);
+                        END IF;
+                    END
+                    $$;
+                    """
+                )
+                conn.commit()
+            except psycopg2.Error:
+                conn.rollback()
+                # Some production roles can read/write bets but do not own it.
+                # Artifact caching still works; update_bet_prediction falls back
+                # if model_artifact_id is unavailable.
     finally:
         conn.close()
 
