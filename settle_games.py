@@ -20,7 +20,7 @@ import db as DB
 from config import ACTIVE_SEASON
 
 
-def settle_completed_games(cutoff_hours: int = 4) -> int:
+def settle_completed_games(cutoff_hours: float = 2.0) -> dict:
     """
     Settle all unsettled games that started more than `cutoff_hours` ago.
     Returns the number of games successfully settled.
@@ -53,7 +53,18 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
 
     if not rows:
         print("No unsettled games found.")
-        return 0
+        user_updated = DB.backfill_user_order_results() or 0
+        paper_updated = DB.backfill_paper_order_results() or 0
+        if user_updated or paper_updated:
+            print(
+                f"Backfilled {user_updated} user + {paper_updated} paper bet row(s)."
+            )
+        return {
+            "games_settled": 0,
+            "games_checked": 0,
+            "user_orders_updated": user_updated,
+            "paper_orders_updated": paper_updated,
+        }
 
     print(f"Checking {len(rows)} unsettled game(s)...")
     settled_count = 0
@@ -154,11 +165,19 @@ def settle_completed_games(cutoff_hours: int = 4) -> int:
                 f"  ERROR settling game_pk={game_pk} ({away_team} @ {home_team}): {e}"
             )
 
-    DB.backfill_user_order_results()
-    DB.backfill_paper_order_results()
+    user_updated = DB.backfill_user_order_results() or 0
+    paper_updated = DB.backfill_paper_order_results() or 0
 
-    print(f"\nDone. Settled {settled_count}/{len(rows)} game(s).")
-    return settled_count
+    print(
+        f"\nDone. Settled {settled_count}/{len(rows)} game(s); "
+        f"backfilled {user_updated} user + {paper_updated} paper bet row(s)."
+    )
+    return {
+        "games_settled": settled_count,
+        "games_checked": len(rows),
+        "user_orders_updated": user_updated,
+        "paper_orders_updated": paper_updated,
+    }
 
 
 if __name__ == "__main__":

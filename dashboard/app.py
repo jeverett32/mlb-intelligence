@@ -679,8 +679,15 @@ def run_pipeline_action(
     if action == "settle_games":
         try:
             from settle_games import settle_completed_games
-            settled = settle_completed_games()
-            return {"ok": True, "message": f"Settled {settled} game(s)."}
+            stats = settle_completed_games()
+            return {
+                "ok": True,
+                "message": (
+                    f"Settled {stats['games_settled']}/{stats['games_checked']} game(s); "
+                    f"updated {stats['user_orders_updated']} user + "
+                    f"{stats['paper_orders_updated']} paper bet row(s)."
+                ),
+            }
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
@@ -2164,7 +2171,7 @@ def admin_set_user_admin(
 
 @app.get("/api/admin/model-metrics")
 def get_admin_model_metrics(user: dict = Depends(require_admin)):
-    runs = DB.get_training_runs(limit=50)
+    runs = DB.get_model_metric_snapshots(limit=50)
     for r in runs:
         if r.get("trained_at"):
             r["trained_at"] = r["trained_at"].isoformat()
@@ -2173,7 +2180,7 @@ def get_admin_model_metrics(user: dict = Depends(require_admin)):
 
 @app.get("/api/admin/model-metrics/latest")
 def get_admin_model_metrics_latest(user: dict = Depends(require_admin)):
-    run = DB.get_latest_training_run()
+    run = DB.get_latest_model_metric_snapshot()
     if not run:
         return {"run": None}
     if run.get("trained_at"):
