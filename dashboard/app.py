@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
 from config import ACTIVE_SEASON
 from fetch.fetch_balance import fetch_balance_for_account
+from fetch.fetch_live_positions import refresh_due_orders
 
 import bcrypt as _bcrypt
 import numpy as np
@@ -518,6 +519,7 @@ class ClientOrderPayload(BaseModel):
     bet_dollars: float | None = None
     n_contracts: int | None = None
     kalshi_order_id: str | None = None
+    kalshi_ticker: str | None = None
     live_price: float | None = None
     live_edge: float | None = None
     status: str = "pending"
@@ -968,6 +970,7 @@ def sync_client_order(
         bet_dollars=payload.bet_dollars,
         n_contracts=payload.n_contracts,
         kalshi_order_id=payload.kalshi_order_id,
+        kalshi_ticker=payload.kalshi_ticker,
         live_price=payload.live_price,
         live_edge=payload.live_edge,
         status=payload.status,
@@ -1041,7 +1044,7 @@ def _is_open_position_frame(df: pd.DataFrame, active_statuses: set[str] = ACTIVE
     dollars_src = df["bet_dollars"] if "bet_dollars" in df.columns else pd.Series(0, index=df.index)
     dollars = pd.to_numeric(dollars_src, errors="coerce").fillna(0)
     statuses = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
-    return result_open & (dollars > 0) & statuses.isin(ACTIVE_BET_STATUSES)
+    return result_open & (dollars > 0) & statuses.isin(active_statuses)
 
 
 @app.get("/api/bets")
@@ -1113,6 +1116,11 @@ def get_bets(
 @app.get("/api/open-bets")
 def get_open_bets(mode: str = "paper", user: dict = Depends(require_approved_user)):
     mode = _validate_bet_mode(mode)
+    if mode == "live":
+        try:
+            refresh_due_orders(stale_seconds=300, limit=25)
+        except Exception as exc:
+            print(f"Live position refresh skipped during open-bets read: {exc}")
     df = _orders_for_mode(user["email"], mode)
     if df.empty:
         return {"bets": [], "total": 0}

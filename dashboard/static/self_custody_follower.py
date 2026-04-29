@@ -40,6 +40,7 @@ SIGNAL_LIMIT = 25
 STATE_FILE = "signal_follower_state.json"
 ORDER_SLIPPAGE_CENTS = 3
 EXECUTION_MIN_EDGE = 0.0
+KALSHI_ORDER_ENDPOINT = "events"  # "events" or "legacy"
 
 
 KALSHI_BASES = {
@@ -113,6 +114,113 @@ def mlbi_headers() -> dict:
         "Authorization": f"Bearer {MLBI_API_TOKEN}",
         "Content-Type": "application/json",
     }
+
+
+def to_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def first_float(*values):
+    for value in values:
+        parsed = to_float(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def price_to_dollars(value):
+    parsed = first_float(value)
+    if parsed is None:
+        return None
+    if parsed > 1:
+        return parsed / 100.0
+    return parsed
+
+
+def order_fill_count(order: dict) -> float:
+    return first_float(
+        order.get("fill_count"),
+        order.get("fill_count_fp"),
+        order.get("filled_count"),
+        order.get("filled_count_fp"),
+    ) or 0.0
+
+
+def order_fill_cost(order: dict) -> float:
+    taker_dollars = first_float(order.get("taker_fill_cost_dollars"))
+    maker_dollars = first_float(order.get("maker_fill_cost_dollars"))
+    if taker_dollars is not None or maker_dollars is not None:
+        return (taker_dollars or 0.0) + (maker_dollars or 0.0)
+    filled_dollars = first_float(order.get("filled_cost_dollars"))
+    if filled_dollars is not None:
+        return filled_dollars
+    fill_count = order_fill_count(order)
+    avg_price = price_to_dollars(first_float(
+        order.get("average_fill_price"),
+        order.get("average_fill_price_dollars"),
+    ))
+    if fill_count > 0 and avg_price is not None:
+        return fill_count * avg_price
+    return 0.0
+
+
+def post_legacy_order(ticker: str, n_contracts: int, limit_price_cents: int) -> tuple[dict, str]:
+    order_path = api_path("portfolio/orders")
+    order_body = {
+        "ticker": ticker,
+        "side": "yes",
+        "action": "buy",
+        "time_in_force": "immediate_or_cancel",
+        "count": n_contracts,
+        "client_order_id": str(uuid.uuid4()),
+        "yes_price": limit_price_cents,
+    }
+    resp = requests.post(
+        kalshi_base_url() + "/portfolio/orders",
+        headers=kalshi_headers("POST", order_path),
+        json=order_body,
+        timeout=15,
+    )
+    if resp.status_code != 201:
+        raise FollowerError(f"order rejected ({resp.status_code}): {resp.text}")
+    return resp.json()["order"], "legacy"
+
+
+def post_events_order(ticker: str, n_contracts: int, limit_price_cents: int) -> tuple[dict, str]:
+    order_path = api_path("portfolio/events/orders")
+    order_body = {
+        "ticker": ticker,
+        "side": "bid",
+        "count": f"{float(n_contracts):.2f}",
+        "price": f"{limit_price_cents / 100.0:.4f}",
+        "time_in_force": "immediate_or_cancel",
+        "self_trade_prevention_type": "taker_at_cross",
+        "client_order_id": str(uuid.uuid4()),
+    }
+    resp = requests.post(
+        kalshi_base_url() + "/portfolio/events/orders",
+        headers=kalshi_headers("POST", order_path),
+        json=order_body,
+        timeout=15,
+    )
+    if resp.status_code == 201:
+        return resp.json(), "events"
+    text = (resp.text or "").lower()
+    hints = ("portfolio/events/orders", "side", "price", "count", "schema", "invalid")
+    if resp.status_code in {400, 404, 405, 422} and any(hint in text for hint in hints):
+        return post_legacy_order(ticker, n_contracts, limit_price_cents)
+    raise FollowerError(f"order rejected ({resp.status_code}): {resp.text}")
+
+
+def post_kalshi_order(ticker: str, n_contracts: int, limit_price_cents: int) -> tuple[dict, str]:
+    if KALSHI_ORDER_ENDPOINT == "legacy":
+        return post_legacy_order(ticker, n_contracts, limit_price_cents)
+    return post_events_order(ticker, n_contracts, limit_price_cents)
 
 
 def load_state() -> dict:
@@ -312,35 +420,22 @@ def execute_signal(signal: dict) -> tuple[dict, int]:
             "live_edge": live_edge,
         }, balance_cents
 
-    order_path = api_path("portfolio/orders")
-    order_body = {
-        "ticker": ticker,
-        "side": "yes",
-        "action": "buy",
-        "time_in_force": "immediate_or_cancel",
-        "count": n_contracts,
-        "client_order_id": str(uuid.uuid4()),
-        "yes_price": limit_price_cents,
-    }
-    resp = requests.post(
-        kalshi_base_url() + "/portfolio/orders",
-        headers=kalshi_headers("POST", order_path),
-        json=order_body,
-        timeout=15,
-    )
-    if resp.status_code != 201:
-        raise FollowerError(f"order rejected ({resp.status_code}): {resp.text}")
-
-    order = resp.json()["order"]
-    fill_count = float(order.get("fill_count") or order.get("filled_count") or 0)
-    actual_cost = float(order.get("taker_fill_cost_dollars") or order.get("filled_cost_dollars") or 0)
+    order, _order_api = post_kalshi_order(ticker, n_contracts, limit_price_cents)
+    fill_count = order_fill_count(order)
+    actual_cost = order_fill_cost(order)
     if fill_count <= 0 or actual_cost <= 0:
-        return {"game_pk": signal["game_pk"], "status": "unfilled", "order_id": order["order_id"]}, balance_cents
+        return {
+            "game_pk": signal["game_pk"],
+            "status": "unfilled",
+            "order_id": order["order_id"],
+            "ticker": ticker,
+        }, balance_cents
 
     return {
         "game_pk": signal["game_pk"],
         "status": "filled",
         "order_id": order["order_id"],
+        "ticker": ticker,
         "fill_cost": round(actual_cost, 2),
         "contracts": max(1, int(round(fill_count))),
         "live_price": live_price,
@@ -369,6 +464,7 @@ def sync_order(signal: dict, result: dict) -> None:
             "bet_dollars": result.get("fill_cost") or result.get("bet_dollars"),
             "n_contracts": result.get("contracts"),
             "kalshi_order_id": result.get("order_id"),
+            "kalshi_ticker": result.get("ticker"),
             "live_price": result.get("live_price"),
             "live_edge": result.get("live_edge"),
             "status": result.get("status", "pending"),

@@ -1114,8 +1114,16 @@ def init_auth_tables():
                     bet_dollars DOUBLE PRECISION,
                     n_contracts INTEGER,
                     kalshi_order_id TEXT,
+                    kalshi_ticker TEXT,
                     live_price DOUBLE PRECISION,
                     live_edge DOUBLE PRECISION,
+                    current_price DOUBLE PRECISION,
+                    current_value DOUBLE PRECISION,
+                    unrealized_pnl DOUBLE PRECISION,
+                    position_count DOUBLE PRECISION,
+                    market_status TEXT,
+                    last_checked_at TIMESTAMPTZ,
+                    last_check_error TEXT,
                     status TEXT NOT NULL DEFAULT 'pending',
                     dry_run BOOLEAN NOT NULL DEFAULT TRUE,
                     result BOOLEAN,
@@ -1123,6 +1131,29 @@ def init_auth_tables():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE (email, game_pk)
+                )
+            """)
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS kalshi_ticker TEXT")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS current_price DOUBLE PRECISION")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS current_value DOUBLE PRECISION")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS unrealized_pnl DOUBLE PRECISION")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS position_count DOUBLE PRECISION")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS market_status TEXT")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS last_check_error TEXT")
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS user_order_snapshots (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    game_pk BIGINT NOT NULL,
+                    kalshi_ticker TEXT,
+                    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    current_price DOUBLE PRECISION,
+                    current_value DOUBLE PRECISION,
+                    unrealized_pnl DOUBLE PRECISION,
+                    position_count DOUBLE PRECISION,
+                    market_status TEXT,
+                    source TEXT NOT NULL DEFAULT 'kalshi'
                 )
             """)
             cur.execute(f"""
@@ -1158,6 +1189,9 @@ def init_auth_tables():
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_API_TOKENS_TABLE}_email ON {APP_API_TOKENS_TABLE} (email)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_balance_email_recorded ON user_balance (email, recorded_at)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_email_status ON user_orders (email, status, game_date)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_ticker ON user_orders (kalshi_ticker)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_live_refresh ON user_orders (status, result, last_checked_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_order_snapshots_order_time ON user_order_snapshots (email, game_pk, checked_at DESC)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_orders_email_status ON paper_orders (email, status, game_date)")
 
             # Universal paper bankroll pseudo-user (required for FK on paper_orders.email).
@@ -2441,6 +2475,7 @@ def upsert_user_order(
     bet_dollars=None,
     n_contracts=None,
     kalshi_order_id: str | None = None,
+    kalshi_ticker: str | None = None,
     live_price=None,
     live_edge=None,
     status: str = "pending",
@@ -2458,14 +2493,14 @@ def upsert_user_order(
                     email, game_pk, game_date, home_team, away_team,
                     predicted_prob, market_implied_prob, edge,
                     bet_side, bet_frac, bet_dollars, n_contracts,
-                    kalshi_order_id, live_price, live_edge, status, dry_run,
+                    kalshi_order_id, kalshi_ticker, live_price, live_edge, status, dry_run,
                     result, profit_loss, updated_at
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
                     %s, %s, NOW()
                 )
                 ON CONFLICT (email, game_pk) DO UPDATE SET
@@ -2480,6 +2515,7 @@ def upsert_user_order(
                     bet_dollars = COALESCE(EXCLUDED.bet_dollars, user_orders.bet_dollars),
                     n_contracts = COALESCE(EXCLUDED.n_contracts, user_orders.n_contracts),
                     kalshi_order_id = COALESCE(EXCLUDED.kalshi_order_id, user_orders.kalshi_order_id),
+                    kalshi_ticker = COALESCE(EXCLUDED.kalshi_ticker, user_orders.kalshi_ticker),
                     live_price = EXCLUDED.live_price,
                     live_edge = EXCLUDED.live_edge,
                     status = EXCLUDED.status,
@@ -2502,6 +2538,7 @@ def upsert_user_order(
                     float(bet_dollars) if bet_dollars is not None else None,
                     int(n_contracts) if n_contracts is not None else None,
                     kalshi_order_id,
+                    kalshi_ticker,
                     float(live_price) if live_price is not None else None,
                     float(live_edge) if live_edge is not None else None,
                     status,
@@ -2571,6 +2608,146 @@ def get_user_order(email: str, game_pk: str | int) -> dict | None:
             )
             row = cur.fetchone()
             return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_open_live_user_orders_for_refresh(
+    stale_seconds: int = 300,
+    limit: int = 200,
+) -> list[dict]:
+    """Return unsettled live orders that need Kalshi mark-to-market refresh."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT uo.*, ka.key_id, ka.key_path, ka.kalshi_env
+                FROM user_orders uo
+                JOIN kalshi_accounts ka ON ka.email = uo.email
+                WHERE ka.is_active = TRUE
+                  AND uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND uo.result IS NULL
+                  AND COALESCE(uo.bet_dollars, 0) > 0
+                  AND (
+                      uo.last_checked_at IS NULL
+                      OR uo.last_checked_at < NOW() - (%s * INTERVAL '1 second')
+                  )
+                ORDER BY uo.last_checked_at NULLS FIRST, uo.game_date NULLS LAST, uo.id
+                LIMIT %s
+                """,
+                (int(stale_seconds), int(limit)),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_user_order_kalshi_ticker(
+    email: str,
+    game_pk: str | int,
+    kalshi_ticker: str,
+) -> None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE user_orders
+                SET kalshi_ticker = %s,
+                    updated_at = NOW()
+                WHERE email = %s
+                  AND game_pk = %s
+                """,
+                (kalshi_ticker, email, int(game_pk)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_user_order_live_snapshot(
+    email: str,
+    game_pk: str | int,
+    *,
+    kalshi_ticker: str | None = None,
+    current_price=None,
+    current_value=None,
+    unrealized_pnl=None,
+    position_count=None,
+    market_status: str | None = None,
+    last_check_error: str | None = None,
+    source: str = "kalshi",
+) -> None:
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            if last_check_error is not None:
+                cur.execute(
+                    """
+                    UPDATE user_orders
+                    SET kalshi_ticker = COALESCE(%s, kalshi_ticker),
+                        last_checked_at = NOW(),
+                        last_check_error = %s,
+                        updated_at = NOW()
+                    WHERE email = %s
+                      AND game_pk = %s
+                    """,
+                    (kalshi_ticker, last_check_error, email, int(game_pk)),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE user_orders
+                    SET kalshi_ticker = COALESCE(%s, kalshi_ticker),
+                        current_price = %s,
+                        current_value = %s,
+                        unrealized_pnl = %s,
+                        position_count = %s,
+                        market_status = %s,
+                        last_checked_at = NOW(),
+                        last_check_error = NULL,
+                        updated_at = NOW()
+                    WHERE email = %s
+                      AND game_pk = %s
+                    """,
+                    (
+                        kalshi_ticker,
+                        float(current_price) if current_price is not None else None,
+                        float(current_value) if current_value is not None else None,
+                        float(unrealized_pnl) if unrealized_pnl is not None else None,
+                        float(position_count) if position_count is not None else None,
+                        market_status,
+                        email,
+                        int(game_pk),
+                    ),
+                )
+            if last_check_error is None:
+                cur.execute(
+                    """
+                    INSERT INTO user_order_snapshots (
+                        email, game_pk, kalshi_ticker, current_price,
+                        current_value, unrealized_pnl, position_count,
+                        market_status, source
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        email,
+                        int(game_pk),
+                        kalshi_ticker,
+                        float(current_price) if current_price is not None else None,
+                        float(current_value) if current_value is not None else None,
+                        float(unrealized_pnl) if unrealized_pnl is not None else None,
+                        float(position_count) if position_count is not None else None,
+                        market_status,
+                        source[:64],
+                    ),
+                )
+        conn.commit()
     finally:
         conn.close()
 

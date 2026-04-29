@@ -1789,6 +1789,11 @@ function fmt$(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
   return '$' + Number(v).toFixed(2);
 }
+function fmtSigned$(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  const n = Number(v);
+  return (n >= 0 ? '+' : '-') + '$' + Math.abs(n).toFixed(2);
+}
 function fmtPct(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
   return (Number(v) * 100).toFixed(1) + '%';
@@ -1844,6 +1849,17 @@ function formatLocalDateTime(utc) {
     hour12: true,
     timeZone: currentTimezone(),
   }).format(d);
+}
+function formatShortAge(utc) {
+  if (!utc) return '—';
+  const d = new Date(utc);
+  if (!isFinite(d)) return '—';
+  const secs = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (secs < 90) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 90) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  return `${hours}h ago`;
 }
 function formatLocalTime(utc) {
   if (!utc) return '—';
@@ -2405,21 +2421,41 @@ function renderActionQueue(targetId, games, emptyMessage) {
 }
 
 function renderOpenBets(targetId, bets, emptyMessage) {
+  const live = state.betMode === 'live';
+  const headers = live
+    ? ['Game', 'Start', 'Side', 'Stake', 'Entry', 'Mark', 'Value', 'P/L', 'Checked']
+    : ['Game', 'Start', 'Side', 'Stake', 'Model', 'Market', 'Edge', 'Status'];
   renderTable(
     targetId,
-    ['Game', 'Start', 'Side', 'Stake', 'Model', 'Market', 'Edge', 'Status'],
-    bets.map(b => `
-      <tr>
-        <td><strong>${b.away_team || '—'}</strong> @ <strong>${b.home_team || '—'}</strong></td>
-        <td>${formatLocalDateTime(b.game_time_utc)}</td>
-        <td>${sideBadge(b.bet_side)}</td>
-        <td>${fmt$(b.bet_dollars)}</td>
-        <td>${fmtPct(b.predicted_prob)}</td>
-        <td>${fmtPct(b.market_implied_prob)}</td>
-        <td>${edgeText(b.edge)}</td>
-        <td>${betStatus(b)}</td>
-      </tr>
-    `),
+    headers,
+    bets.map(b => {
+      const pnl = b.unrealized_pnl;
+      const pnlColor = Number(pnl || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
+      return live ? `
+        <tr>
+          <td><strong>${b.away_team || '—'}</strong> @ <strong>${b.home_team || '—'}</strong></td>
+          <td>${formatLocalDateTime(b.game_time_utc)}</td>
+          <td>${sideBadge(b.bet_side)}</td>
+          <td>${fmt$(b.bet_dollars)}</td>
+          <td>${fmtPct(b.live_price)}</td>
+          <td>${fmtPct(b.current_price)}</td>
+          <td>${fmt$(b.current_value)}</td>
+          <td style="color:${pnlColor};font-weight:700;">${fmtSigned$(pnl)}</td>
+          <td>${b.last_check_error ? 'Error' : formatShortAge(b.last_checked_at)}</td>
+        </tr>
+      ` : `
+        <tr>
+          <td><strong>${b.away_team || '—'}</strong> @ <strong>${b.home_team || '—'}</strong></td>
+          <td>${formatLocalDateTime(b.game_time_utc)}</td>
+          <td>${sideBadge(b.bet_side)}</td>
+          <td>${fmt$(b.bet_dollars)}</td>
+          <td>${fmtPct(b.predicted_prob)}</td>
+          <td>${fmtPct(b.market_implied_prob)}</td>
+          <td>${edgeText(b.edge)}</td>
+          <td>${betStatus(b)}</td>
+        </tr>
+      `;
+    }),
     emptyMessage
   );
 }
@@ -2540,19 +2576,23 @@ function renderOverview() {
     ? Number(paperBankroll.current_dollars || paperBankroll.starting_dollars || 10000)
     : Number(bal.current_dollars || 0);
   const openExposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
+  const openMarkedValue = openBets.reduce((sum, b) => {
+    const marked = b.current_value == null ? b.bet_dollars : b.current_value;
+    return sum + Number(marked || 0);
+  }, 0);
   const availableCash = state.betMode === 'paper'
     ? Math.max(0, balance - openExposure)
     : balance;
   const estimatedBankroll = state.betMode === 'paper'
     ? balance
-    : balance + openExposure;
+    : balance + openMarkedValue;
   const delta = ((modelAcc.accuracy || 0) - (modelAcc.market_accuracy || 0)) * 100;
 
   document.getElementById('hdr-balance').textContent = fmt$(estimatedBankroll);
   document.getElementById('s-balance').textContent = fmt$(estimatedBankroll);
   document.getElementById('s-balance-copy').textContent = state.betMode === 'paper'
     ? `Estimated bankroll includes ${fmt$(openExposure)} in open simulated positions. Available paper cash: ${fmt$(availableCash)}.`
-    : `Estimated bankroll is available cash (${fmt$(availableCash)}) plus ${fmt$(openExposure)} in open positions.`;
+    : `Estimated bankroll is available cash (${fmt$(availableCash)}) plus ${fmt$(openMarkedValue)} marked open positions.`;
   document.getElementById('s-open-bets').textContent = String(openBets.length);
 
   const roi = perf.roi_pct;
@@ -2898,10 +2938,13 @@ function renderBets() {
   const openBets = getOpenBetRows();
   renderOpenBets('bets-open-body', openBets, 'No open bets');
   const exposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
+  const unrealized = openBets.reduce((sum, b) => sum + Number(b.unrealized_pnl || 0), 0);
   const label = state.betMode === 'paper' ? 'paper' : 'live';
   const betsSummaryLabel = document.getElementById('bets-summary-label');
   if (betsSummaryLabel) {
-    betsSummaryLabel.textContent = openBets.length ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed` : `No open ${label} exposure`;
+    betsSummaryLabel.textContent = openBets.length
+      ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed${state.betMode === 'live' ? ` • ${fmtSigned$(unrealized)} unrealized` : ''}`
+      : `No open ${label} exposure`;
   }
   renderSettledBets(state.settledBets || { bets: [], total: 0 });
 }
@@ -3012,6 +3055,18 @@ async function loadAll() {
   renderAll();
 }
 
+async function refreshBetFeed() {
+  try {
+    const balance = await fetch('/api/balance').then(r => { if (!r.ok) throw new Error('balance failed'); return r.json(); });
+    state.balance = balance;
+    await loadBetModeData();
+    renderOverview();
+    renderBets();
+  } catch (e) {
+    console.warn('Bet feed refresh failed:', e);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     document.addEventListener('keydown', (e) => {
@@ -3023,6 +3078,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.documentElement.setAttribute('data-theme', savedTheme);
 
     await loadAll();
+    window.setInterval(refreshBetFeed, 300000);
 
     const savedPage = localStorage.getItem('dashboard_page');
     const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);

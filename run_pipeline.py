@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent / "bet"))
 from model import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
+from fetch.fetch_live_positions import refresh_due_orders  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
@@ -55,8 +56,10 @@ MIN_GAME_TIME_MINUTES = 0
 
 # Skip the pre-batch schedule refresh if we fetched more recently than this
 FETCH_STALE_SECONDS = 300
+LIVE_POSITION_REFRESH_SECONDS = 300
 
 _LAST_FETCH_TS: float = 0.0
+_LAST_LIVE_POSITION_REFRESH_TS: float = 0.0
 
 
 def _sd_notify(state: str) -> None:
@@ -72,6 +75,24 @@ def _sd_notify(state: str) -> None:
         pass
 
 
+def refresh_live_positions_if_due(force: bool = False) -> None:
+    global _LAST_LIVE_POSITION_REFRESH_TS
+    now = time.time()
+    if not force and now - _LAST_LIVE_POSITION_REFRESH_TS < LIVE_POSITION_REFRESH_SECONDS:
+        return
+    _LAST_LIVE_POSITION_REFRESH_TS = now
+    try:
+        stats = refresh_due_orders(stale_seconds=LIVE_POSITION_REFRESH_SECONDS)
+        if stats.checked:
+            print(
+                "Live position refresh: "
+                f"checked={stats.checked} updated={stats.updated} "
+                f"skipped={stats.skipped} errors={stats.errors}"
+            )
+    except Exception as e:
+        print(f"  Live position refresh failed: {e}")
+
+
 def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
     """Sleep in chunks, pinging the systemd watchdog between chunks."""
     remaining = max(0.0, total_secs)
@@ -80,6 +101,7 @@ def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
         time.sleep(chunk)
         remaining -= chunk
         _sd_notify("WATCHDOG=1")
+        refresh_live_positions_if_due()
 
 
 def _mark_fetched() -> None:
@@ -440,6 +462,7 @@ def main():
     while True:
         _sd_notify("WATCHDOG=1")
         settle_completed_games()
+        refresh_live_positions_if_due(force=True)
 
         if _fetch_is_fresh():
             print(

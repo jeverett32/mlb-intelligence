@@ -25,6 +25,7 @@ from fetch.fetch_balance import fetch_balance_for_account
 MLB_SERIES = "KXMLBGAME"
 ORDER_SLIPPAGE_CENTS = int(os.environ.get("KALSHI_ORDER_SLIPPAGE_CENTS", "3"))
 EXECUTION_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
+KALSHI_ORDER_ENDPOINT = os.environ.get("KALSHI_ORDER_ENDPOINT", "events").strip().lower()
 KELLY_FRACTION = 0.25
 MAX_BET_FRAC = 0.25
 
@@ -112,6 +113,114 @@ def _order_fill_cost(order: dict) -> float:
         return ((taker_cents or 0.0) + (maker_cents or 0.0)) / 100.0
     filled_cents = _first_float(order.get("filled_cost"))
     return (filled_cents or 0.0) / 100.0 if filled_cents is not None else 0.0
+
+
+def _events_order_fill_cost(order: dict) -> float:
+    fill_count = _order_fill_count(order)
+    avg_price = _price_to_dollars(_first_float(
+        order.get("average_fill_price"),
+        order.get("average_fill_price_dollars"),
+        order.get("price"),
+    ))
+    if fill_count > 0 and avg_price is not None:
+        return fill_count * avg_price
+    return _order_fill_cost(order)
+
+
+def _is_safe_events_fallback(resp: requests.Response) -> bool:
+    if resp.status_code not in {400, 404, 405, 422}:
+        return False
+    text = (resp.text or "").lower()
+    hints = ("portfolio/events/orders", "side", "price", "count", "schema", "invalid")
+    return any(hint in text for hint in hints)
+
+
+def _post_legacy_order(
+    session: requests.Session,
+    base_url: str,
+    key_id: str,
+    private_key,
+    ticker: str,
+    n_contracts: int,
+    limit_price_cents: int,
+) -> tuple[dict, str]:
+    order_path = api_path("portfolio/orders")
+    headers = auth_headers(key_id, private_key, "POST", order_path)
+    order_body = {
+        "ticker": ticker,
+        "side": "yes",
+        "action": "buy",
+        "time_in_force": "immediate_or_cancel",
+        "count": n_contracts,
+        "client_order_id": str(uuid.uuid4()),
+        "yes_price": limit_price_cents,
+    }
+    resp = session.post(
+        base_url + "/portfolio/orders",
+        headers=headers,
+        json=order_body,
+        timeout=15,
+    )
+    if resp.status_code != 201:
+        raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
+    return resp.json()["order"], "legacy"
+
+
+def _post_events_order(
+    session: requests.Session,
+    base_url: str,
+    key_id: str,
+    private_key,
+    ticker: str,
+    n_contracts: int,
+    limit_price_cents: int,
+) -> tuple[dict, str]:
+    order_path = api_path("portfolio/events/orders")
+    headers = auth_headers(key_id, private_key, "POST", order_path)
+    order_body = {
+        "ticker": ticker,
+        "side": "bid",
+        "count": f"{float(n_contracts):.2f}",
+        "price": f"{limit_price_cents / 100.0:.4f}",
+        "time_in_force": "immediate_or_cancel",
+        "self_trade_prevention_type": "taker_at_cross",
+        "client_order_id": str(uuid.uuid4()),
+    }
+    resp = session.post(
+        base_url + "/portfolio/events/orders",
+        headers=headers,
+        json=order_body,
+        timeout=15,
+    )
+    if resp.status_code == 201:
+        return resp.json(), "events"
+    if KALSHI_ORDER_ENDPOINT in {"events", "auto"} and _is_safe_events_fallback(resp):
+        print(
+            "  Events order endpoint rejected request before execution; "
+            "falling back to legacy /portfolio/orders."
+        )
+        return _post_legacy_order(
+            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents
+        )
+    raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
+
+
+def _post_kalshi_order(
+    session: requests.Session,
+    base_url: str,
+    key_id: str,
+    private_key,
+    ticker: str,
+    n_contracts: int,
+    limit_price_cents: int,
+) -> tuple[dict, str]:
+    if KALSHI_ORDER_ENDPOINT == "legacy":
+        return _post_legacy_order(
+            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents
+        )
+    return _post_events_order(
+        session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents
+    )
 
 
 def _place_bet_error_status(exc: Exception) -> str:
@@ -370,46 +479,37 @@ def _execute_bet_row(
             "live_edge": live_edge,
         }
 
-    order_path = api_path("portfolio/orders")
-    headers = auth_headers(key_id, private_key, "POST", order_path)
-
-    order_body = {
-        "ticker": ticker,
-        "side": side,
-        "action": "buy",
-        "time_in_force": "immediate_or_cancel",
-        "count": n_contracts,
-        "client_order_id": str(uuid.uuid4()),
-        price_field: limit_price_cents,
-    }
-
-    resp = session.post(
-        base_url + "/portfolio/orders",
-        headers=headers,
-        json=order_body,
-        timeout=15,
+    order, order_api = _post_kalshi_order(
+        session,
+        base_url,
+        key_id,
+        private_key,
+        ticker,
+        n_contracts,
+        limit_price_cents,
     )
-
-    if resp.status_code == 201:
-        order = resp.json()["order"]
-        order_id = order["order_id"]
-        fill_count = _order_fill_count(order)
-        actual_cost = _order_fill_cost(order)
-        print(f"\n  Order placed:    {order_id}")
-        print(f"  Status:          {order['status']}")
-        print(f"  Filled:          {fill_count:.2f}")
-        print(f"  Fill cost:       ${actual_cost:.2f}")
-    else:
-        raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
+    order_id = order["order_id"]
+    fill_count = _order_fill_count(order)
+    actual_cost = (
+        _events_order_fill_cost(order)
+        if order_api == "events"
+        else _order_fill_cost(order)
+    )
+    print(f"\n  Order placed:    {order_id}")
+    print(f"  API:             {order_api}")
+    print(f"  Status:          {order.get('status', 'submitted')}")
+    print(f"  Filled:          {fill_count:.2f}")
+    print(f"  Fill cost:       ${actual_cost:.2f}")
 
     if fill_count <= 0 or actual_cost <= 0:
         print("  Order was accepted but not filled. Not recording it as a placed bet.")
-        return {"game_pk": str(row.get("game_pk")), "status": "unfilled", "order_id": order_id}
+        return {"game_pk": str(row.get("game_pk")), "status": "unfilled", "order_id": order_id, "ticker": ticker}
 
     return {
         "game_pk":   str(row.get("game_pk")),
         "status":    "filled",
         "order_id":  order_id,
+        "ticker":    ticker,
         "fill_cost": round(actual_cost, 2),
         "contracts": max(1, int(round(fill_count))),
         "live_price": live_price,
@@ -536,6 +636,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
         bet_dollars=result.get("fill_cost") or result.get("bet_dollars"),
         n_contracts=result.get("contracts"),
         kalshi_order_id=result.get("order_id"),
+        kalshi_ticker=result.get("ticker"),
         live_price=result.get("live_price"),
         live_edge=result.get("live_edge"),
         status=result.get("status", "pending"),
