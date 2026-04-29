@@ -1218,6 +1218,49 @@ html, body {
   line-height: 1.55;
 }
 
+.research-main {
+  padding: 44px 0 0;
+  display: grid;
+  gap: 36px;
+}
+
+.research-hero {
+  max-width: 780px;
+}
+
+.research-hero h1 {
+  font-size: clamp(2.8rem, 6vw, 4.8rem);
+  line-height: 1.07;
+  letter-spacing: -0.06em;
+  margin: 14px 0 24px;
+  text-wrap: balance;
+  max-width: 12ch;
+}
+
+.research-hero p,
+.research-empty p {
+  color: var(--text-secondary);
+  font-size: 1.04rem;
+  line-height: 1.72;
+  max-width: 66ch;
+}
+
+.research-empty {
+  padding: 28px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.66), rgba(255,255,255,0.26));
+  border: 1px solid rgba(255,255,255,0.34);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
+}
+
+.research-empty h2 {
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  margin-bottom: 12px;
+}
+
 .public-analytics-main {
   padding-top: 38px;
 }

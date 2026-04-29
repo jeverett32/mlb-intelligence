@@ -287,6 +287,11 @@ def contact_page():
     return _render_template("contact.html")
 
 
+@app.get("/research", response_class=HTMLResponse)
+def research_page():
+    return _render_template("research.html")
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy_page():
     return _render_template("privacy.html")
@@ -306,7 +311,7 @@ def robots_txt():
 
 @app.get("/sitemap.xml")
 def sitemap_xml():
-    pages = ["/", "/home", "/public", "/privacy", "/contact", "/docs/api"]
+    pages = ["/", "/home", "/public", "/research", "/privacy", "/contact", "/docs/api"]
     urls = "\n".join(
         f"  <url><loc>{BASE_URL}{p}</loc></url>" for p in pages
     )

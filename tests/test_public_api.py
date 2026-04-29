@@ -540,6 +540,22 @@ def test_public_page_has_clear_link_to_landing(client):
     assert 'class="brand" href="/home"' in r.text
 
 
+def test_research_page_renders_empty_state(client):
+    r = client.get("/research")
+    assert r.status_code == 200
+    assert "Research" in r.text
+    assert "No research posts published yet." in r.text
+    assert 'href="/public">Public analytics</a>' in r.text
+    assert 'href="/research">Research</a>' in r.text
+    assert 'href="/contact">Contact</a>' in r.text
+
+
+def test_sitemap_includes_research(client):
+    r = client.get("/sitemap.xml")
+    assert r.status_code == 200
+    assert "/research" in r.text
+
+
 def test_home_route_returns_landing_for_approved_users(monkeypatch, app_module, client):
     """The public home route should not switch to the private dashboard."""
     monkeypatch.setattr(
