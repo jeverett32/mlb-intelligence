@@ -578,7 +578,7 @@ html, body {
   border-radius: 999px;
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: #17120a;
+  color: #fff;
   text-decoration: none;
   font-weight: 600;
   font-size: 0.95rem;
@@ -674,7 +674,7 @@ html, body {
 .btn-primary {
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: #17120a;
+  color: #fff;
 }
 .btn-secondary {
   background: var(--bg-card);
@@ -2325,7 +2325,7 @@ body.auth-body {
 .ps-hero-actions a.primary {
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: #17120a;
+  color: #fff;
   min-height: 44px;
   padding: 0 18px;
   border-radius: 999px;
