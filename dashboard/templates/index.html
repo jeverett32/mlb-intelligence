@@ -1953,25 +1953,9 @@ function pnlBadge(v) {
   const n = Number(v);
   return badge((n >= 0 ? '+' : '') + '$' + n.toFixed(2), n >= 0 ? 'green' : 'red');
 }
-function gamePnl(game) {
-  if (game.result == null || game.bet_dollars == null) return null;
-  const won = (game.result && game.bet_side === 'home') || (!game.result && game.bet_side === 'away');
-  const bd = Number(game.bet_dollars || 0);
-  if (!won) return -bd;
-  if (game.n_contracts != null) return Number(game.n_contracts) - bd;
-  const lp = game.live_price;
-  if (lp && Number(lp) > 0) return bd * (1.0 / Number(lp) - 1.0);
-  const mp = game.market_implied_prob;
-  if (mp && Number(mp) > 0) {
-    const ratio = game.bet_side === 'home' ? (1 / Number(mp) - 1) : (1 / (1 - Number(mp)) - 1);
-    return bd * ratio;
-  }
-  return null;
-}
 function betStatus(game) {
   if (game.result != null) {
-    const pnl = gamePnl(game);
-    if (pnl != null) return pnlBadge(pnl);
+    if (game.profit_loss != null) return pnlBadge(game.profit_loss);
     return badge('Settled', 'gray');
   }
   const s = game.status;

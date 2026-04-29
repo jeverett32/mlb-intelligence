@@ -1549,6 +1549,7 @@ def get_games_by_date(
         pred_cols = [
             "game_pk", "predicted_prob", "edge", "bet_side", "bet_frac",
             "market_implied_prob", "bet_dollars", "result", "kalshi_order_id",
+            "profit_loss", "n_contracts", "status",
         ]
         available = [c for c in pred_cols if c in bets_df.columns]
         bets_df["game_pk"] = bets_df["game_pk"].astype(str)
@@ -1593,7 +1594,7 @@ def get_games_by_date(
         "home_implied_prob", "away_implied_prob", "close_home_ml", "close_away_ml",
         "predicted_prob", "edge", "bet_side", "bet_frac", "bet_dollars",
         "n_contracts", "result", "kalshi_order_id", "status", "dry_run",
-        "live_price", "live_edge",
+        "live_price", "live_edge", "profit_loss",
     ]
     return {
         "date": date,
