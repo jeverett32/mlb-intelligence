@@ -1501,6 +1501,7 @@ def get_teams(user: dict = Depends(require_approved_user)):
 @app.get("/api/games-by-date")
 def get_games_by_date(
     date: str = None,
+    mode: str = "paper",
     user: dict = Depends(require_approved_user),
 ):
     user_tz = ZoneInfo(
@@ -1554,7 +1555,7 @@ def get_games_by_date(
         day_games["game_pk"] = day_games["game_pk"].astype(str)
         day_games = day_games.merge(bets_df[available], on="game_pk", how="left")
 
-    user_orders = DB.get_user_orders(user["email"])
+    user_orders = DB.get_user_orders(user["email"]) if mode == "live" else pd.DataFrame()
     if not user_orders.empty:
         user_orders = user_orders.copy()
         user_orders["game_pk"] = user_orders["game_pk"].astype(str)

@@ -2446,6 +2446,7 @@ async function setBetMode(mode) {
   localStorage.setItem('bet_mode', state.betMode);
   renderModeToggle();
   await loadBetModeData();
+  if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr);
   renderAll();
 }
 
@@ -2834,7 +2835,7 @@ async function loadGamesForDate(dateStr) {
   const body = document.getElementById('games-body');
   body.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const res = await fetch(`/api/games-by-date?date=${dateStr}`);
+    const res = await fetch(`/api/games-by-date?date=${dateStr}&mode=${state.betMode}`);
     const data = await res.json();
     renderGameCards(data.games || []);
   } catch (e) {
