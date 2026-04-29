@@ -110,6 +110,43 @@
       color: var(--text-primary);
       letter-spacing: -0.01em;
     }
+    .admin-header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .admin-refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+    .admin-refresh-btn svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+    }
+    .admin-refresh-btn:hover {
+      border-color: var(--accent-light);
+    }
+    .admin-refresh-btn.spinning svg {
+      animation: admin-spin 0.8s linear infinite;
+    }
+    .admin-refresh-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    @keyframes admin-spin {
+      to { transform: rotate(360deg); }
+    }
     .back-link {
       font-size: 13px;
       font-weight: 500;
@@ -606,7 +643,17 @@
     <img src="/static/favicon.svg" alt="Logo" style="width:32px;height:32px;">
     <h1>Admin</h1>
   </div>
-  <a class="back-link" href="/"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3l-5 5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg> Dashboard</a>
+  <div class="admin-header-right">
+    <button class="admin-refresh-btn" type="button" aria-label="Refresh all data" onclick="adminRefreshAll()">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+      Refresh Data
+    </button>
+    <a class="back-link" href="/"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3l-5 5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg> Dashboard</a>
+  </div>
 </header>
 
 <div class="admin-tabs">
@@ -826,6 +873,18 @@
 
 let dbOffset = 0;
 const DB_LIMIT = 50;
+
+async function adminRefreshAll() {
+  const btn = document.querySelector('.admin-refresh-btn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  try {
+    await Promise.all([loadUsers(), loadNotes(), loadErrors(), loadDbTable(), loadModelInsights()]);
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  }
+}
 
 function showTab(name, btn) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
