@@ -330,15 +330,15 @@
     .badge.red { background: var(--danger-light); color: var(--danger); }
     .badge.blue { background: #dde4ec; color: #3d556e; }
     .badge.home { background: #dde4ec; color: #3d556e; }
-    .badge.away { background: var(--text-primary); color: var(--bg-primary); }
+    .badge.away { background: #fff; color: var(--text-primary); border: 1px solid var(--accent); }
     .badge.gray { background: var(--bg-elevated); color: var(--text-secondary); }
     .badge.gold { background: var(--accent-light); color: var(--accent); }
     .badge.inverse { background: var(--text-primary); color: var(--bg-primary); }
     :root[data-theme="dark"] .badge.home { background: #1f3144; color: var(--text-primary); }
-    :root[data-theme="dark"] .badge.away { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
+    :root[data-theme="dark"] .badge.away { background: #05070a; color: var(--text-primary); border-color: var(--accent); }
     @media (prefers-color-scheme: dark) {
       :root[data-theme="auto"] .badge.home { background: #1f3144; color: var(--text-primary); }
-      :root[data-theme="auto"] .badge.away { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
+      :root[data-theme="auto"] .badge.away { background: #05070a; color: var(--text-primary); border-color: var(--accent); }
     }
 
     .panel {

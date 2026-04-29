@@ -1545,8 +1545,9 @@ html, body {
 }
 
 .side-pill.away {
-  background: var(--text-primary);
-  color: var(--bg-primary);
+  background: #fff;
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
 }
 
 :root[data-theme="dark"] .side-pill.home {
@@ -1555,9 +1556,9 @@ html, body {
 }
 
 :root[data-theme="dark"] .side-pill.away {
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  border-color: var(--border);
+  background: #05070a;
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1567,9 +1568,9 @@ html, body {
   }
 
   :root[data-theme="auto"] .side-pill.away {
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    border-color: var(--border);
+    background: #05070a;
+    color: var(--text-primary);
+    border-color: var(--accent);
   }
 }
 
