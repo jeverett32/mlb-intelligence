@@ -613,6 +613,14 @@
 
           <div class="admin-redirect-row">
             <div>
+              <div class="admin-redirect-label">Refresh Live Scores</div>
+              <div class="admin-redirect-copy">Pull latest live scores from MLB API for today's games.</div>
+            </div>
+            <button class="admin-redirect-btn" onclick="runPipelineAction('refresh_live_scores', this)">Run</button>
+          </div>
+
+          <div class="admin-redirect-row">
+            <div>
               <div class="admin-redirect-label">Refresh Schedule</div>
               <div class="admin-redirect-copy">Re-fetch today's MLB schedule and game times.</div>
             </div>

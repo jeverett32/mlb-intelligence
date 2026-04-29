@@ -135,41 +135,34 @@
     .meta-chip.live strong { color: var(--success); }
     .meta-chip.off strong { color: var(--danger); }
     .refresh-button {
-      width: 40px;
-      height: 40px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: var(--bg-elevated);
-      color: var(--text-primary);
+      padding: 4px;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-muted);
       cursor: pointer;
       font-size: 0;
-      transition: border-color 0.2s ease, transform 0.2s ease;
+      transition: color 0.2s ease;
       flex: 0 0 auto;
     }
     .refresh-button svg {
-      width: 18px;
-      height: 18px;
+      width: 15px;
+      height: 13px;
       stroke: currentColor;
+      opacity: 0.5;
+      transition: opacity 0.2s ease;
     }
-    .refresh-button:hover,
-    .refresh-button:focus-visible {
-      border-color: var(--accent-light);
-      transform: translateY(-1px);
-      outline: none;
+    .refresh-button:hover svg {
+      opacity: 0.8;
     }
     .refresh-button.spinning svg {
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
-    }
-    .last-refresh {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      white-space: nowrap;
     }
     .settings-button {
       width: 40px;
@@ -1419,9 +1412,7 @@
       .balance-chip { font-size: 0.78rem; }
       .balance-chip strong { font-size: 0.92rem; }
       .header-meta { display: none; }
-      .refresh-button { width: 36px; height: 36px; }
-      .refresh-button svg { width: 16px; height: 16px; }
-      .last-refresh { display: none; }
+      .refresh-button svg { width: 13px; height: 11px; }
       .settings-button { width: 36px; height: 36px; }
       .settings-button svg { width: 16px; height: 16px; }
       nav { padding: 0 14px; }
@@ -1498,7 +1489,6 @@
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
       </svg>
     </button>
-    <span class="last-refresh" id="hdr-last-refresh"></span>
     <div class="balance-chip">
       <span class="balance-label">Balance:</span> <strong id="hdr-balance">$0.00</strong>
     </div>
@@ -3113,8 +3103,6 @@ async function loadBetModeData() {
   state.openBets = openBets;
 }
 
-let lastDataFetchTime = null;
-
 async function loadAll() {
   const [me, account, settings, balance, paperBankroll, upcoming, teams, modelAccuracy] = await Promise.all([
     fetch('/api/me').then(r => { if (!r.ok) throw new Error('me failed'); return r.json(); }),
@@ -3138,22 +3126,11 @@ async function loadAll() {
   state.teams = teams;
   state.modelAccuracy = modelAccuracy;
   await loadBetModeData();
-  lastDataFetchTime = Date.now();
   renderAll();
 }
 
 function handleRefresh() {
   renderAll();
-  updateLastRefreshDisplay();
-}
-
-function updateLastRefreshDisplay() {
-  const el = document.getElementById('hdr-last-refresh');
-  if (!el || !lastDataFetchTime) return;
-  const secs = Math.round((Date.now() - lastDataFetchTime) / 1000);
-  if (secs < 60) el.textContent = `${secs}s ago`;
-  else if (secs < 3600) el.textContent = `${Math.floor(secs / 60)}m ago`;
-  else el.textContent = `${Math.floor(secs / 3600)}h ago`;
 }
 
 async function refreshBetFeed() {
@@ -3161,7 +3138,7 @@ async function refreshBetFeed() {
     const balance = await fetch('/api/balance').then(r => { if (!r.ok) throw new Error('balance failed'); return r.json(); });
     state.balance = balance;
     await loadBetModeData();
-    lastDataFetchTime = Date.now();
+    if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr);
     renderOverview();
     renderBets();
   } catch (e) {
@@ -3181,7 +3158,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await loadAll();
     window.setInterval(refreshBetFeed, 300000);
-    window.setInterval(updateLastRefreshDisplay, 10000);
 
     const savedPage = localStorage.getItem('dashboard_page');
     const savedBtn = document.querySelector(`button[data-page="${savedPage}"]`);
