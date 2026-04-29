@@ -1102,14 +1102,14 @@ def get_bets(
     if "result" in df.columns and "bet_dollars" in df.columns:
 
         def calc_pnl(row):
-            if row.get("result") is None or row.get("bet_dollars") is None:
+            if pd.isna(row.get("result")) or pd.isna(row.get("bet_dollars")):
                 return None
             won = (bool(row["result"]) and row["bet_side"] == "home") or (
                 not bool(row["result"]) and row["bet_side"] == "away"
             )
             bd = float(row["bet_dollars"] or 0)
             n_contracts = row.get("n_contracts")
-            if won and n_contracts is not None:
+            if won and n_contracts is not None and not pd.isna(n_contracts):
                 return round(float(n_contracts) - bd, 2)
             if won:
                 lp = row.get("live_price")
