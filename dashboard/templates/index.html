@@ -750,9 +750,19 @@
       padding: 14px 18px 10px;
     }
     .game-card-status-top {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
       min-height: 18px;
-      text-align: center;
       padding-bottom: 6px;
+    }
+    .game-card-status-center {
+      grid-column: 2;
+      text-align: center;
+    }
+    .game-card-status-right {
+      grid-column: 3;
+      justify-self: end;
     }
     .game-card-team {
       display: flex;
@@ -1928,7 +1938,7 @@ function isGameLive(g) {
   return state === 'live' || ['in_progress', 'manager_challenge', 'delayed'].includes(status);
 }
 function hasScore(g) {
-  return g.home_score != null && g.away_score != null;
+  return (g.home_win != null || isGameLive(g)) && g.home_score != null && g.away_score != null;
 }
 function gameStatusLine(g) {
   if (g.home_win != null) return 'Final';
@@ -1944,7 +1954,7 @@ function gameStatusLine(g) {
     }
     return String(g.live_status_text || 'Live').toUpperCase();
   }
-  return g.live_status_text || g.detailed_state || '';
+  return '';
 }
 
 function shouldShowExplain(game) {
@@ -2785,19 +2795,21 @@ function renderGameCards(games) {
     const finished = g.home_win != null;
     const live = isGameLive(g);
     const scored = hasScore(g);
+    const notStarted = !finished && !live;
     const homeWon = g.home_win === true;
     const awayWon = g.home_win === false;
 
-    const rightTop = finished || live || scored
+    const rightTop = scored
       ? `<span class="game-card-score${awayWon ? ' winner' : ' loser'}">${g.away_score}</span>`
-      : `<span class="game-card-time">${formatLocalTime(g.game_time_utc)}</span>`;
-    const rightBot = finished || live || scored
+      : '';
+    const rightBot = scored
       ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
       : '';
     const status = gameStatusLine(g);
-    const statusLine = status
-      ? `<div class="game-card-status-top"><span class="game-card-final">${status}</span></div>`
-      : '';
+    const statusLine = `<div class="game-card-status-top">
+      <span class="game-card-final game-card-status-center">${status}</span>
+      ${notStarted ? `<span class="game-card-time game-card-status-right">${formatLocalTime(g.game_time_utc)}</span>` : ''}
+    </div>`;
     const explainBtn = shouldShowExplain(g)
       ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
