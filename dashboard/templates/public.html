@@ -8,7 +8,7 @@
   <meta property="og:description" content="Public MLB betting model analytics: ROI, calibration, market comparison, and recent settled bets." />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary" />
-  <meta name="theme-color" content="#FAF9F7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#f4f3f1" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#12171C" media="(prefers-color-scheme: dark)" />
   <title>MLB Model Performance</title>
   <link rel="preload" href="/static/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -314,8 +314,8 @@ function reflectValue(sourceId, value) {
 }
 
 function calChartCfg(data) {
-  var accent = cssVar('--accent') || '#B8860B';
-  var grid = cssVar('--grid-color') || '#E8E4DE';
+  var accent = cssVar('--accent') || '#4a6b8a';
+  var grid = cssVar('--grid-color') || '#d9d6d1';
   var tick = cssVar('--tick-color') || '#9C9690';
   var axisTitle = cssVar('--axis-title-color') || '#6B6560';
   var points = data.map(function(d) { return { x: d.predicted, y: d.actual, n: d.n || 0 }; });
@@ -370,8 +370,8 @@ function calChartCfg(data) {
 }
 
 function roiChartCfg(data) {
-  var accent = cssVar('--accent') || '#B8860B';
-  var grid = cssVar('--grid-color') || '#E8E4DE';
+  var accent = cssVar('--accent') || '#4a6b8a';
+  var grid = cssVar('--grid-color') || '#d9d6d1';
   var tick = cssVar('--tick-color') || '#9C9690';
   var axisTitle = cssVar('--axis-title-color') || '#6B6560';
   var labels = data.map(function(d) { return d.game_date; });
