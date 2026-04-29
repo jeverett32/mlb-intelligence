@@ -630,7 +630,7 @@
 
     <div class="panel">
       <div class="panel-header">
-        <span>Training Run History</span>
+        <span>Model Metric Snapshot History</span>
       </div>
       <div class="training-history-row head">
         <div>Date</div>
@@ -1110,7 +1110,7 @@ function renderEdgeDistribution(run) {
 }
 
 function renderHistoryCharts(runs) {
-  if (runs.length < 2) return;
+  if (!runs.length) return;
   const sorted = [...runs].reverse();
   const labels = sorted.map(r => r.trained_at ? r.trained_at.slice(0, 10) : '?');
   const briers = sorted.map(r => r.mean_brier);
