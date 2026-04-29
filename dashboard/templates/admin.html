@@ -551,6 +551,31 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+    .notes-head-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .notes-filter {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--bg-elevated);
+    }
+    .notes-filter button {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .notes-filter button.active {
+      background: rgba(30, 64, 175, 0.16);
+      color: var(--text-primary);
+      font-weight: 700;
+    }
 
     .fi-modal-overlay {
       display: none;
@@ -674,9 +699,14 @@
       <div class="panel">
         <div class="panel-header">
           <span>Saved Notes</span>
-          <button class="btn secondary" onclick="loadNotes()" style="font-size:0.72rem;padding:4px 10px;">Refresh</button>
+          <div class="notes-head-controls">
+            <div class="notes-filter" role="tablist" aria-label="Notes status filter">
+              <button id="notes-filter-open" class="active" onclick="setNotesView('open')">Open</button>
+              <button id="notes-filter-done" onclick="setNotesView('done')">Done</button>
+            </div>
+            <button class="btn secondary" onclick="loadNotes()" style="font-size:0.72rem;padding:4px 10px;">Refresh</button>
+          </div>
         </div>
-        <div style="padding: 0 16px; color: var(--text-muted); font-size: 0.74rem;">Drag notes to reorder</div>
         <div class="notes-list" id="notes-body">
           <div class="empty">Loading notes...</div>
         </div>
@@ -884,10 +914,18 @@ function escapeHtml(value) {
 
 let adminNotes = [];
 let draggedNoteId = null;
+let notesView = 'open';
 
 function noteTimestamp(value) {
   if (!value) return '—';
   return String(value).slice(0, 19).replace('T', ' ');
+}
+
+function setNotesView(view) {
+  notesView = view === 'done' ? 'done' : 'open';
+  document.getElementById('notes-filter-open').classList.toggle('active', notesView === 'open');
+  document.getElementById('notes-filter-done').classList.toggle('active', notesView === 'done');
+  renderNotes();
 }
 
 function resetNoteForm() {
@@ -930,13 +968,27 @@ async function persistNoteOrder() {
   }
 }
 
-function renderNotes(notes) {
-  const el = document.getElementById('notes-body');
-  if (!notes.length) {
-    el.innerHTML = '<div class="empty">No notes yet</div>';
+async function setNoteDone(id, isDone) {
+  const resp = await fetch(`/api/admin/notes/${encodeURIComponent(id)}/done`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_done: Boolean(isDone) }),
+  });
+  if (!resp.ok) {
+    alert('Failed to update note status');
     return;
   }
-  el.innerHTML = notes.map(note => `
+  await loadNotes();
+}
+
+function renderNotes() {
+  const el = document.getElementById('notes-body');
+  const filteredNotes = adminNotes.filter(n => notesView === 'done' ? Boolean(n.is_done) : !Boolean(n.is_done));
+  if (!filteredNotes.length) {
+    el.innerHTML = `<div class="empty">${notesView === 'done' ? 'No done notes yet' : 'No open notes yet'}</div>`;
+    return;
+  }
+  el.innerHTML = filteredNotes.map(note => `
     <article class="note-item" draggable="true" data-note-id="${Number(note.id)}">
       <div class="note-item-head">
         <h3>${escapeHtml(note.title || 'Untitled note')}</h3>
@@ -945,6 +997,7 @@ function renderNotes(notes) {
       <div class="note-body">${escapeHtml(note.body || '')}</div>
       <div class="note-item-actions">
         <button class="action-btn" onclick="editNote(${Number(note.id)})">Edit</button>
+        <button class="action-btn" onclick="setNoteDone(${Number(note.id)}, ${note.is_done ? 'false' : 'true'})">${note.is_done ? 'Mark Open' : 'Mark Done'}</button>
         <button class="action-btn danger" onclick="deleteNote(${Number(note.id)})">Delete</button>
       </div>
     </article>
@@ -975,7 +1028,7 @@ function renderNotes(notes) {
       if (draggedNoteId == null || targetId === draggedNoteId) return;
       const changed = moveNoteInMemory(draggedNoteId, targetId);
       if (!changed) return;
-      renderNotes(adminNotes);
+      renderNotes();
       await persistNoteOrder();
     });
   });
@@ -989,7 +1042,7 @@ async function loadNotes() {
     if (!resp.ok) { el.innerHTML = '<div class="empty">Unable to load notes</div>'; return; }
     const data = await resp.json();
     adminNotes = data.notes || [];
-    renderNotes(adminNotes);
+    renderNotes();
   } catch (e) {
     el.innerHTML = `<div class="empty">Error: ${escapeHtml(e.message)}</div>`;
   }

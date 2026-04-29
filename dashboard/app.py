@@ -2207,6 +2207,10 @@ class AdminNoteReorderPayload(BaseModel):
     note_ids: list[int]
 
 
+class AdminNoteDonePayload(BaseModel):
+    is_done: bool
+
+
 def _clean_note_payload(payload: AdminNotePayload) -> tuple[str, str]:
     title = (payload.title or "").strip()
     body = (payload.body or "").strip()
@@ -2309,6 +2313,18 @@ def reorder_admin_notes(payload: AdminNoteReorderPayload, user: dict = Depends(r
     if not DB.reorder_admin_notes(note_ids):
         raise HTTPException(status_code=400, detail="Invalid note_ids")
     return {"ok": True}
+
+
+@app.post("/api/admin/notes/{note_id}/done")
+def set_admin_note_done(
+    note_id: int,
+    payload: AdminNoteDonePayload,
+    user: dict = Depends(require_admin),
+):
+    note = DB.set_admin_note_done(note_id, payload.is_done, actor_email=user["email"])
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return _serialize_admin_note(note)
 
 
 @app.get("/api/admin/model-metrics")

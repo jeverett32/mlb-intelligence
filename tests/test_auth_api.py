@@ -85,6 +85,7 @@ def test_admin_notes_crud(monkeypatch, app_module, client):
             "title": title,
             "body": body,
             "sort_order": next_id["value"],
+            "is_done": False,
             "created_by": actor_email,
             "updated_by": actor_email,
             "created_at": now,
@@ -111,11 +112,19 @@ def test_admin_notes_crud(monkeypatch, app_module, client):
             notes[note_id]["sort_order"] = idx
         return True
 
+    def set_note_done(note_id, is_done, actor_email=None):
+        note = notes.get(note_id)
+        if not note:
+            return None
+        note.update({"is_done": bool(is_done), "updated_by": actor_email, "updated_at": now})
+        return note
+
     monkeypatch.setattr(app_module.DB, "list_admin_notes", list_notes)
     monkeypatch.setattr(app_module.DB, "create_admin_note", create_note)
     monkeypatch.setattr(app_module.DB, "update_admin_note", update_note)
     monkeypatch.setattr(app_module.DB, "delete_admin_note", delete_note)
     monkeypatch.setattr(app_module.DB, "reorder_admin_notes", reorder_notes)
+    monkeypatch.setattr(app_module.DB, "set_admin_note_done", set_note_done)
     client.cookies.set(app_module.COOKIE_NAME, "fake-session")
 
     r = client.post("/api/admin/notes", json={"title": "Lineup idea", "body": "Track scratch timing"})
@@ -138,6 +147,10 @@ def test_admin_notes_crud(monkeypatch, app_module, client):
     r = client.get("/api/admin/notes")
     assert r.status_code == 200
     assert [n["id"] for n in r.json()["notes"]] == [2, 1]
+
+    r = client.post("/api/admin/notes/1/done", json={"is_done": True})
+    assert r.status_code == 200
+    assert r.json()["is_done"] is True
 
     r = client.put("/api/admin/notes/1", json={"title": "Updated", "body": "New text"})
     assert r.status_code == 200

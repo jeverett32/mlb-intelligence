@@ -986,6 +986,7 @@ def init_admin_notes_table():
                     title TEXT NOT NULL DEFAULT '',
                     body TEXT NOT NULL DEFAULT '',
                     sort_order BIGINT,
+                    is_done BOOLEAN NOT NULL DEFAULT FALSE,
                     created_by TEXT,
                     updated_by TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -993,6 +994,7 @@ def init_admin_notes_table():
                 )
             """)
             cur.execute(f"ALTER TABLE {ADMIN_NOTES_TABLE} ADD COLUMN IF NOT EXISTS sort_order BIGINT")
+            cur.execute(f"ALTER TABLE {ADMIN_NOTES_TABLE} ADD COLUMN IF NOT EXISTS is_done BOOLEAN NOT NULL DEFAULT FALSE")
             cur.execute(f"""
                 WITH ranked AS (
                     SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC, id DESC) AS rn
@@ -1046,8 +1048,8 @@ def create_admin_note(title: str, body: str, actor_email: str | None = None) -> 
             cur.execute(
                 f"""
                 INSERT INTO {ADMIN_NOTES_TABLE}
-                    (title, body, sort_order, created_by, updated_by, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                    (title, body, sort_order, is_done, created_by, updated_by, created_at, updated_at)
+                VALUES (%s, %s, %s, FALSE, %s, %s, NOW(), NOW())
                 RETURNING *
                 """,
                 (title or "", body or "", next_sort_order, actor_email, actor_email),
@@ -1118,6 +1120,29 @@ def reorder_admin_notes(note_ids: list[int]) -> bool:
                 )
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def set_admin_note_done(note_id: int, is_done: bool, actor_email: str | None = None) -> dict | None:
+    init_admin_notes_table()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                UPDATE {ADMIN_NOTES_TABLE}
+                SET is_done = %s,
+                    updated_by = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (bool(is_done), actor_email, int(note_id)),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
     finally:
         conn.close()
 
