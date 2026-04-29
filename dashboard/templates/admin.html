@@ -11,19 +11,21 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <style>
     :root, :root[data-theme="light"] {
-      --bg-primary: #FAF9F7;
-      --bg-card: #FFFFFF;
-      --bg-elevated: #F5F3EF;
-      --text-primary: #1A1814;
-      --text-secondary: #6B6560;
-      --text-muted: #9C9690;
-      --accent: #B8860B;
-      --accent-light: #E8DFD0;
-      --success: #2D6A4F;
-      --success-light: #D4EDDA;
-      --danger: #9B2335;
-      --danger-light: #FADBD8;
-      --border: #E8E4DE;
+      --bg-primary: #f4f3f1;
+      --bg-card: #ffffff;
+      --bg-elevated: #ececea;
+      --text-primary: #1a1814;
+      --text-secondary: #6b6560;
+      --text-muted: #9c9690;
+      --accent: #4a6b8a;
+      --accent-strong: #36506a;
+      --accent-light: #dde4ec;
+      --success: #587a5f;
+      --success-light: #dde8df;
+      --danger: #a85a5a;
+      --danger-light: #f0dede;
+      --info: #3d556e;
+      --border: #d9d6d1;
       --shadow-sm: 0 1px 3px rgba(26,24,20,0.04);
       --shadow-md: 0 4px 12px rgba(26,24,20,0.06);
       --radius-sm: 4px;
@@ -32,19 +34,21 @@
       color-scheme: light;
     }
     :root[data-theme="dark"] {
-      --bg-primary: #12171C;
-      --bg-card: #1A2128;
-      --bg-elevated: #232D36;
-      --text-primary: #F4EFE7;
-      --text-secondary: #C3B9AC;
+      --bg-primary: #12171c;
+      --bg-card: #1a2128;
+      --bg-elevated: #232d36;
+      --text-primary: #f4efe7;
+      --text-secondary: #c3b9ac;
       --text-muted: #918779;
-      --accent: #E0A446;
-      --accent-light: #4A3821;
-      --success: #7FD0A8;
-      --success-light: #1F3A31;
-      --danger: #F0A1AB;
-      --danger-light: #45252D;
-      --border: #313C45;
+      --accent: #8aa9c7;
+      --accent-strong: #a8c0d8;
+      --accent-light: #2a3a4a;
+      --success: #98b8a0;
+      --success-light: #1f3a31;
+      --danger: #d49a9a;
+      --danger-light: #45252d;
+      --info: #6f8eb6;
+      --border: #313c45;
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
       --radius-sm: 4px;
@@ -54,19 +58,21 @@
     }
     @media (prefers-color-scheme: dark) {
       :root[data-theme="auto"] {
-        --bg-primary: #12171C;
-        --bg-card: #1A2128;
-        --bg-elevated: #232D36;
-        --text-primary: #F4EFE7;
-        --text-secondary: #C3B9AC;
+        --bg-primary: #12171c;
+        --bg-card: #1a2128;
+        --bg-elevated: #232d36;
+        --text-primary: #f4efe7;
+        --text-secondary: #c3b9ac;
         --text-muted: #918779;
-        --accent: #E0A446;
-        --accent-light: #4A3821;
-        --success: #7FD0A8;
-        --success-light: #1F3A31;
-        --danger: #F0A1AB;
-        --danger-light: #45252D;
-        --border: #313C45;
+        --accent: #8aa9c7;
+        --accent-strong: #a8c0d8;
+        --accent-light: #2a3a4a;
+        --success: #98b8a0;
+        --success-light: #1f3a31;
+        --danger: #d49a9a;
+        --danger-light: #45252d;
+        --info: #6f8eb6;
+        --border: #313c45;
         --shadow-sm: 0 1px 3px rgba(0,0,0,0.28);
         --shadow-md: 0 4px 12px rgba(0,0,0,0.34);
         color-scheme: dark;
@@ -105,19 +111,18 @@
       letter-spacing: -0.01em;
     }
     .back-link {
-      font-size: 0.82rem;
+      font-size: 13px;
+      font-weight: 500;
       color: var(--text-secondary);
       text-decoration: none;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 6px 10px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: var(--bg-elevated);
-      transition: color 0.15s ease, border-color 0.15s ease;
+      gap: 6px;
+      padding: 6px 0;
+      transition: color 0.15s ease;
     }
-    .back-link:hover { color: var(--text-primary); border-color: var(--accent-light); }
+    .back-link:hover { color: var(--accent); }
+    .back-link svg { width: 14px; height: 14px; }
 
     .admin-tabs {
       background: var(--bg-card);
@@ -216,19 +221,22 @@
     .action-btn {
       display: inline-flex;
       align-items: center;
-      padding: 4px 10px;
+      padding: 6px 14px;
       border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      background: var(--bg-elevated);
+      border-radius: 999px;
+      background: transparent;
       color: var(--text-secondary);
-      font-size: 0.72rem;
-      font-weight: 500;
+      font-size: 12px;
+      font-weight: 700;
       cursor: pointer;
-      transition: background 0.15s ease, color 0.15s ease;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
       margin-right: 4px;
     }
-    .action-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
-    .action-btn.danger:hover { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+    .action-btn.approve { color: var(--success); border-color: var(--success); }
+    .action-btn.approve:hover { background: var(--success-light); }
+    .action-btn.danger { color: var(--danger); border-color: var(--danger); }
+    .action-btn.danger:hover { background: var(--danger-light); }
+    .action-btn:hover { border-color: var(--accent); color: var(--accent); }
 
     .btn {
       display: inline-flex;
@@ -512,7 +520,7 @@
     <img src="/static/favicon.svg" alt="Logo" style="width:32px;height:32px;">
     <h1>Admin</h1>
   </div>
-  <a class="back-link" href="/">&#8592; Dashboard</a>
+  <a class="back-link" href="/"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3l-5 5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg> Dashboard</a>
 </header>
 
 <div class="admin-tabs">
@@ -753,7 +761,7 @@ async function loadUsers() {
           <td>${String(u.created_at || '').slice(0, 19).replace('T', ' ') || '—'}</td>
           <td>${String(u.last_login_at || '').slice(0, 19).replace('T', ' ') || '—'}</td>
           <td>
-            <button class="action-btn" onclick="setUserStatus('${u.email}', 'approved')">Approve</button>
+            <button class="action-btn approve" onclick="setUserStatus('${u.email}', 'approved')">Approve</button>
             <button class="action-btn danger" onclick="setUserStatus('${u.email}', 'rejected')">Reject</button>
             <button class="action-btn danger" onclick="setUserStatus('${u.email}', 'disabled')">Disable</button>
             <button class="action-btn" onclick="setUserAdmin('${u.email}', ${u.is_admin ? 'false' : 'true'})">${u.is_admin ? 'Revoke Admin' : 'Grant Admin'}</button>
@@ -896,7 +904,7 @@ function renderFeatureImportances(latest, runs) {
 
   const labels = sorted.map(r => r.trained_at ? r.trained_at.slice(0, 10) : '?');
   const colors = [
-    '#E0A446', '#2D6A4F', '#9B2335', '#4A90D9', '#8B5CF6',
+    '#4a6b8a', '#587a5f', '#a85a5a', '#4A90D9', '#8B5CF6',
     '#D97706', '#059669', '#DC2626', '#6366F1', '#EC4899',
   ];
 
@@ -1077,7 +1085,7 @@ function renderEdgeDistribution(run) {
         data: ed.counts,
         backgroundColor: ed.bin_edges.slice(0, -1).map((b, i) => {
           const mid = (b + ed.bin_edges[i + 1]) / 2;
-          return mid >= 0 ? 'rgba(45,106,79,0.6)' : 'rgba(155,35,53,0.6)';
+          return mid >= 0 ? 'rgba(88,122,95,0.6)' : 'rgba(168,90,90,0.6)';
         }),
         borderWidth: 0,
         borderRadius: 2,
@@ -1124,8 +1132,8 @@ function renderHistoryCharts(runs) {
       labels,
       datasets: [{
         data: briers,
-        borderColor: 'rgba(224,164,70,1)',
-        backgroundColor: 'rgba(224,164,70,0.1)',
+        borderColor: 'rgba(74,107,138,1)',
+        backgroundColor: 'rgba(74,107,138,0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 3,
@@ -1140,8 +1148,8 @@ function renderHistoryCharts(runs) {
       labels,
       datasets: [{
         data: rois,
-        borderColor: 'rgba(45,106,79,1)',
-        backgroundColor: 'rgba(45,106,79,0.1)',
+        borderColor: 'rgba(88,122,95,1)',
+        backgroundColor: 'rgba(88,122,95,0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 3,
