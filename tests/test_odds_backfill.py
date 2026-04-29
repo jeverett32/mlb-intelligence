@@ -21,6 +21,9 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
             "close_home_ml",
             "close_away_ml",
             "home_implied_prob",
+            "home_score",
+            "away_score",
+            "home_win",
             "extra",
         ]
     )
@@ -43,6 +46,9 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
         for assignment in assignments
     )
     assert "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)" in assignments
+    assert "home_score = COALESCE(EXCLUDED.home_score, games.home_score)" in assignments
+    assert "away_score = COALESCE(EXCLUDED.away_score, games.away_score)" in assignments
+    assert "home_win = COALESCE(EXCLUDED.home_win, games.home_win)" in assignments
 
 
 def test_backfill_updates_only_valid_real_sbr_lines():

@@ -224,6 +224,8 @@ def _upsert_assignment(col: str, cols: set[str]) -> str:
     """Build a safe ON CONFLICT assignment for one games-table column."""
     if col == "extra":
         return "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)"
+    if col in {"home_score", "away_score", "home_win"}:
+        return f"{col} = COALESCE(EXCLUDED.{col}, games.{col})"
     if col in ODDS_OPEN_COLS:
         side = "home" if col == "open_home_ml" else "away"
         if f"close_{side}_ml" not in cols:
