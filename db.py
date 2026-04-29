@@ -2639,7 +2639,10 @@ def get_open_live_user_orders_for_refresh(
                 """,
                 (int(stale_seconds), int(limit)),
             )
-            return [dict(r) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
+            for row in rows:
+                row["key_id"] = decrypt_field(row.get("key_id") or "")
+            return rows
     finally:
         conn.close()
 
