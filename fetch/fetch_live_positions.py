@@ -1,5 +1,7 @@
 """
-Refresh live Kalshi order mark-to-market data.
+Refresh Kalshi market marks for open live and paper orders.
+
+One Kalshi market request updates every user/order sharing that ticker.
 
 Run once:
     uv run python -m fetch.fetch_live_positions --once
@@ -22,11 +24,11 @@ from urllib3.util.retry import Retry
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
-from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
+from bet.place_bet import find_kalshi_market
+from kalshi_client import get_base_url
 
 
 REFRESH_STALE_SECONDS = 300
-MLB_SERIES = "KXMLBGAME"
 
 
 @dataclass
@@ -61,59 +63,19 @@ def _first_float(*values):
     return None
 
 
-def _signed_get(
-    session: requests.Session,
-    base_url: str,
-    key_id: str,
-    private_key,
-    endpoint: str,
-    params: dict | None = None,
-) -> dict:
-    path = api_path(endpoint)
-    resp = session.get(
-        base_url + "/" + endpoint.lstrip("/"),
-        headers=auth_headers(key_id, private_key, "GET", path),
-        params=params or {},
-        timeout=15,
+def _market_mark_price(market: dict) -> float | None:
+    # Conservative liquidation estimate for a YES position: highest YES bid.
+    mark = _first_float(
+        market.get("yes_bid_dollars"),
+        market.get("yes_bid"),
+        market.get("yes_bid_cents"),
+        market.get("last_price_dollars"),
+        market.get("last_price"),
+        market.get("last_price_cents"),
     )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _fetch_order_ticker(
-    session: requests.Session,
-    base_url: str,
-    key_id: str,
-    private_key,
-    order_id: str,
-) -> str | None:
-    if not order_id:
-        return None
-    body = _signed_get(session, base_url, key_id, private_key, f"portfolio/orders/{order_id}")
-    order = body.get("order") or body
-    ticker = order.get("ticker")
-    return str(ticker) if ticker else None
-
-
-def _fetch_position(
-    session: requests.Session,
-    base_url: str,
-    key_id: str,
-    private_key,
-    ticker: str,
-) -> dict:
-    body = _signed_get(
-        session,
-        base_url,
-        key_id,
-        private_key,
-        "portfolio/positions",
-        params={"ticker": ticker, "count_filter": "position,total_traded", "limit": 1000},
-    )
-    for pos in body.get("market_positions", []):
-        if str(pos.get("ticker", "")).upper() == ticker.upper():
-            return pos
-    return {}
+    if mark is not None and mark > 1:
+        mark = mark / 100.0
+    return mark
 
 
 def _fetch_market(session: requests.Session, base_url: str, ticker: str) -> dict:
@@ -127,121 +89,102 @@ def _fetch_market(session: requests.Session, base_url: str, ticker: str) -> dict
     return markets[0] if markets else {}
 
 
-def _market_mark_price(market: dict) -> float | None:
-    # Conservative liquidation estimate for a YES position: highest YES bid.
-    return _first_float(
-        market.get("yes_bid_dollars"),
-        market.get("yes_bid"),
-        market.get("yes_bid_cents"),
-        market.get("last_price_dollars"),
-        market.get("last_price"),
-        market.get("last_price_cents"),
-    )
-
-
-def refresh_order(row: dict, session: requests.Session | None = None) -> bool:
-    session = session or _retry_session()
-    email = str(row["email"])
-    game_pk = row["game_pk"]
-    key_id, private_key = load_credentials(
-        key_id=row.get("key_id"),
-        key_path=row.get("key_path"),
-    )
-    base_url = get_base_url(row.get("kalshi_env"))
-
+def _resolve_ticker(row: dict, base_url: str) -> str:
     ticker = (row.get("kalshi_ticker") or "").strip()
-    if not ticker:
-        ticker = _fetch_order_ticker(
-            session,
-            base_url,
-            key_id,
-            private_key,
-            str(row.get("kalshi_order_id") or ""),
-        ) or ""
-        if ticker:
-            DB.update_user_order_kalshi_ticker(email, game_pk, ticker)
-    if not ticker:
-        DB.update_user_order_live_snapshot(
-            email,
-            game_pk,
-            last_check_error="missing Kalshi ticker",
+    if ticker:
+        return ticker
+    bet_side = str(row.get("bet_side") or "").lower()
+    if bet_side not in {"home", "away"}:
+        return ""
+    ticker, _market = find_kalshi_market(
+        str(row.get("home_team") or ""),
+        str(row.get("away_team") or ""),
+        str(row.get("game_date") or "")[:10],
+        bet_side,
+        game_time_utc=str(row.get("game_time_utc") or "") or None,
+        base_url=base_url,
+    )
+    if ticker:
+        DB.update_order_kalshi_ticker(
+            str(row.get("mode") or "live"),
+            str(row["email"]),
+            row["game_pk"],
+            ticker,
         )
-        return False
+    return ticker or ""
 
-    position = _fetch_position(session, base_url, key_id, private_key, ticker)
-    market = _fetch_market(session, base_url, ticker)
 
-    position_count = _first_float(
-        position.get("position_fp"),
-        position.get("position"),
-        row.get("n_contracts"),
-    )
-    mark_price = _market_mark_price(market)
-    if mark_price is not None and mark_price > 1:
-        mark_price = mark_price / 100.0
-    current_value = None
-    if position_count is not None and mark_price is not None:
-        current_value = round(float(position_count) * float(mark_price), 2)
-    bet_dollars = _to_float(row.get("bet_dollars"))
-    unrealized_pnl = None
-    if current_value is not None and bet_dollars is not None:
-        unrealized_pnl = round(current_value - bet_dollars, 2)
-
-    DB.update_user_order_live_snapshot(
-        email,
-        game_pk,
-        kalshi_ticker=ticker,
-        current_price=mark_price,
-        current_value=current_value,
-        unrealized_pnl=unrealized_pnl,
-        position_count=position_count,
-        market_status=market.get("status"),
-        last_check_error=None,
-    )
-    return True
+def _refresh_ticker(session: requests.Session, ticker: str, base_url: str) -> int:
+    try:
+        market = _fetch_market(session, base_url, ticker)
+        mark_price = _market_mark_price(market)
+        market_status = market.get("status")
+        DB.upsert_kalshi_market_snapshot(
+            ticker,
+            current_price=mark_price,
+            market_status=market_status,
+            last_error=None,
+        )
+        return DB.apply_market_snapshot_to_open_orders(
+            ticker,
+            current_price=mark_price,
+            market_status=market_status,
+            last_error=None,
+        )
+    except Exception as exc:
+        msg = str(exc)[:500]
+        DB.upsert_kalshi_market_snapshot(ticker, last_error=msg)
+        DB.apply_market_snapshot_to_open_orders(ticker, last_error=msg)
+        raise
 
 
 def refresh_due_orders(
     stale_seconds: int = REFRESH_STALE_SECONDS,
     limit: int = 200,
 ) -> RefreshStats:
-    rows = DB.get_open_live_user_orders_for_refresh(stale_seconds=stale_seconds, limit=limit)
+    rows = DB.get_open_orders_for_market_refresh(stale_seconds=stale_seconds, limit=limit)
     stats = RefreshStats(checked=len(rows))
     if not rows:
         return stats
+
     session = _retry_session()
+    tickers_by_env: dict[str, set[str]] = {}
     for row in rows:
+        kalshi_env = str(row.get("kalshi_env") or "").strip().lower() or None
+        base_url = get_base_url(kalshi_env)
         try:
-            if refresh_order(row, session=session):
-                stats.updated += 1
-            else:
-                stats.skipped += 1
+            ticker = _resolve_ticker(row, base_url)
         except Exception as exc:
             stats.errors += 1
+            print(f"Ticker resolve failed for {row.get('mode')} game_pk={row.get('game_pk')}: {exc}")
+            continue
+        if not ticker:
+            stats.skipped += 1
+            continue
+        tickers_by_env.setdefault(base_url, set()).add(ticker)
+
+    for base_url, tickers in tickers_by_env.items():
+        for ticker in sorted(tickers):
             try:
-                DB.update_user_order_live_snapshot(
-                    str(row["email"]),
-                    row["game_pk"],
-                    kalshi_ticker=row.get("kalshi_ticker"),
-                    last_check_error=str(exc)[:500],
-                )
-            except Exception:
-                pass
-            print(f"Live position refresh failed for {row.get('email')} game_pk={row.get('game_pk')}: {exc}")
+                stats.updated += _refresh_ticker(session, ticker, base_url)
+            except Exception as exc:
+                stats.errors += 1
+                print(f"Market refresh failed for {ticker}: {exc}")
+
     return stats
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Refresh live Kalshi position marks.")
+    parser = argparse.ArgumentParser(description="Refresh Kalshi market marks.")
     parser.add_argument("--once", action="store_true", help="Run one refresh pass and exit")
     parser.add_argument("--interval", type=int, default=REFRESH_STALE_SECONDS, help="Loop interval in seconds")
-    parser.add_argument("--limit", type=int, default=200, help="Max orders per pass")
+    parser.add_argument("--limit", type=int, default=200, help="Max order rows per pass")
     args = parser.parse_args()
 
     while True:
         stats = refresh_due_orders(stale_seconds=args.interval, limit=args.limit)
         print(
-            "Live position refresh: "
+            "Market mark refresh: "
             f"checked={stats.checked} updated={stats.updated} "
             f"skipped={stats.skipped} errors={stats.errors}"
         )

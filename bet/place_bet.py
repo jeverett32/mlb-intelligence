@@ -534,6 +534,7 @@ def _upsert_paper_result(email: str, game_pk: str, row: dict, result: dict, pape
         bet_frac=row.get("bet_frac") or 0.0,
         bet_dollars=result.get("bet_dollars"),
         n_contracts=result.get("contracts"),
+        kalshi_ticker=result.get("ticker"),
         live_price=result.get("live_price"),
         live_edge=result.get("live_edge"),
         status=result.get("status", "pending"),

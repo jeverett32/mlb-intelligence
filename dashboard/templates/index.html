@@ -2421,17 +2421,14 @@ function renderActionQueue(targetId, games, emptyMessage) {
 }
 
 function renderOpenBets(targetId, bets, emptyMessage) {
-  const live = state.betMode === 'live';
-  const headers = live
-    ? ['Game', 'Start', 'Side', 'Stake', 'Entry', 'Mark', 'Value', 'P/L', 'Checked']
-    : ['Game', 'Start', 'Side', 'Stake', 'Model', 'Market', 'Edge', 'Status'];
+  const headers = ['Game', 'Start', 'Side', 'Stake', 'Entry', 'Mark', 'Value', 'P/L', 'Checked'];
   renderTable(
     targetId,
     headers,
     bets.map(b => {
       const pnl = b.unrealized_pnl;
       const pnlColor = Number(pnl || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
-      return live ? `
+      return `
         <tr>
           <td><strong>${b.away_team || '—'}</strong> @ <strong>${b.home_team || '—'}</strong></td>
           <td>${formatLocalDateTime(b.game_time_utc)}</td>
@@ -2442,17 +2439,6 @@ function renderOpenBets(targetId, bets, emptyMessage) {
           <td>${fmt$(b.current_value)}</td>
           <td style="color:${pnlColor};font-weight:700;">${fmtSigned$(pnl)}</td>
           <td>${b.last_check_error ? 'Error' : formatShortAge(b.last_checked_at)}</td>
-        </tr>
-      ` : `
-        <tr>
-          <td><strong>${b.away_team || '—'}</strong> @ <strong>${b.home_team || '—'}</strong></td>
-          <td>${formatLocalDateTime(b.game_time_utc)}</td>
-          <td>${sideBadge(b.bet_side)}</td>
-          <td>${fmt$(b.bet_dollars)}</td>
-          <td>${fmtPct(b.predicted_prob)}</td>
-          <td>${fmtPct(b.market_implied_prob)}</td>
-          <td>${edgeText(b.edge)}</td>
-          <td>${betStatus(b)}</td>
         </tr>
       `;
     }),
@@ -2943,7 +2929,7 @@ function renderBets() {
   const betsSummaryLabel = document.getElementById('bets-summary-label');
   if (betsSummaryLabel) {
     betsSummaryLabel.textContent = openBets.length
-      ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed${state.betMode === 'live' ? ` • ${fmtSigned$(unrealized)} unrealized` : ''}`
+      ? `${openBets.length} open ${label} bets • ${fmt$(exposure)} exposed • ${fmtSigned$(unrealized)} unrealized`
       : `No open ${label} exposure`;
   }
   renderSettledBets(state.settledBets || { bets: [], total: 0 });

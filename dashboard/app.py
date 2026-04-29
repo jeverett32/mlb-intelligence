@@ -1116,11 +1116,12 @@ def get_bets(
 @app.get("/api/open-bets")
 def get_open_bets(mode: str = "paper", user: dict = Depends(require_approved_user)):
     mode = _validate_bet_mode(mode)
-    if mode == "live":
-        try:
-            refresh_due_orders(stale_seconds=300, limit=25)
-        except Exception as exc:
-            print(f"Live position refresh skipped during open-bets read: {exc}")
+    if mode == "paper":
+        _ensure_paper_backfill(user["email"])
+    try:
+        refresh_due_orders(stale_seconds=300, limit=25)
+    except Exception as exc:
+        print(f"Market mark refresh skipped during open-bets read: {exc}")
     df = _orders_for_mode(user["email"], mode)
     if df.empty:
         return {"bets": [], "total": 0}
