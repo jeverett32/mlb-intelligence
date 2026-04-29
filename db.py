@@ -2729,6 +2729,7 @@ def get_open_orders_for_market_refresh(
                     FROM paper_orders po
                     LEFT JOIN games g ON g.game_pk = po.game_pk
                     WHERE po.status = 'dry_run'
+                      AND po.email = %s
                       AND po.result IS NULL
                       AND COALESCE(po.bet_dollars, 0) > 0
                 ) q
@@ -2738,7 +2739,7 @@ def get_open_orders_for_market_refresh(
                 ORDER BY q.last_checked_at NULLS FIRST, q.game_date NULLS LAST, q.mode, q.game_pk
                 LIMIT %s
                 """,
-                (int(stale_seconds), int(limit)),
+                (PAPER_UNIVERSAL_EMAIL, int(stale_seconds), int(limit)),
             )
             return [dict(r) for r in cur.fetchall()]
     finally:

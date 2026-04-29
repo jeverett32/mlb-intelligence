@@ -518,11 +518,14 @@ def _execute_bet_row(
 
 
 def _upsert_paper_result(email: str, game_pk: str, row: dict, result: dict, paper_bankroll: float) -> None:
+    # Paper mode is universal. Per-user dry-run rows are legacy noise now;
+    # dashboard paper state comes from DB.PAPER_UNIVERSAL_EMAIL only.
+    _ = email
     paper_after = None
     if result.get("status") in {"dry_run", "skipped_no_live_edge"}:
         paper_after = paper_bankroll
     DB.upsert_paper_order(
-        email,
+        DB.PAPER_UNIVERSAL_EMAIL,
         game_pk,
         game_date=row.get("game_date", ""),
         home_team=row.get("home_team", ""),
