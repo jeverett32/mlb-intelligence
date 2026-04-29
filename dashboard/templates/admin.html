@@ -563,7 +563,7 @@
           <option value="user_balance">user_balance</option>
           <option value="user_orders">user_orders</option>
           <option value="paper_orders">paper_orders</option>
-          <option value="model_training_runs">model_training_runs</option>
+          <option value="model_metric_snapshots">model_metric_snapshots</option>
         </select>
         <span class="row-count" id="db-row-count"></span>
       </div>
@@ -851,7 +851,7 @@ async function loadModelInsights() {
     const { run: latest } = await latestResp.json();
     const { runs } = await allResp.json();
     if (!latest) {
-      document.getElementById('model-summary-cards').innerHTML = '<div class="empty" style="grid-column:1/-1">No training runs recorded yet. Re-train the model to populate this tab.</div>';
+      document.getElementById('model-summary-cards').innerHTML = '<div class="empty" style="grid-column:1/-1">No model metric snapshots recorded yet. Re-run model metrics to populate this tab.</div>';
       return;
     }
     renderModelSummary(latest);
@@ -1172,7 +1172,7 @@ function renderFeatureAccuracy(run) {
 function renderTrainingHistory(runs) {
   const el = document.getElementById('training-history-body');
   if (!runs.length) {
-    el.innerHTML = '<div class="empty">No training runs yet.</div>';
+    el.innerHTML = '<div class="empty">No model metric snapshots yet.</div>';
     return;
   }
   el.innerHTML = runs.map(r => `

@@ -1394,7 +1394,7 @@ if __name__ == "__main__":
             },
             "feature_accuracy": extras.get("feature_accuracy", {}),
         }
-        run_id = db.save_training_run(run_data)
-        print(f"Training run saved to DB (id={run_id})")
+        run_id = db.save_model_metric_snapshot(run_data)
+        print(f"Model metric snapshot saved to DB (id={run_id})")
     except Exception as e:
-        print(f"WARNING: Could not save training run to DB: {e}")
+        print(f"WARNING: Could not save model metric snapshot to DB: {e}")

@@ -809,7 +809,7 @@ BROWSABLE_TABLES = {
     "user_balance",
     "user_orders",
     "paper_orders",
-    "model_training_runs",
+    "model_metric_snapshots",
 }
 
 
@@ -2512,18 +2512,38 @@ def backfill_paper_order_results():
 
 
 # ---------------------------------------------------------------------------
-# Model metrics
+# Model metric snapshots
 # ---------------------------------------------------------------------------
 
-MODEL_TRAINING_RUNS_TABLE = "model_training_runs"
+MODEL_METRIC_SNAPSHOTS_TABLE = "model_metric_snapshots"
 
 
 def init_model_metrics_table():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT to_regclass('public.model_training_runs'),
+                       to_regclass('public.model_metric_snapshots')
+                """
+            )
+            old_table, new_table = cur.fetchone()
+            if old_table and not new_table:
+                cur.execute("ALTER TABLE model_training_runs RENAME TO model_metric_snapshots")
+                cur.execute("SELECT to_regclass('public.model_training_runs_id_seq')")
+                if cur.fetchone()[0]:
+                    cur.execute("ALTER SEQUENCE model_training_runs_id_seq RENAME TO model_metric_snapshots_id_seq")
+                    cur.execute(
+                        """
+                        ALTER TABLE model_metric_snapshots
+                        ALTER COLUMN id SET DEFAULT nextval('model_metric_snapshots_id_seq')
+                        """
+                    )
+                cur.execute("DROP INDEX IF EXISTS idx_mtr_trained_at")
+
             cur.execute(f"""
-                CREATE TABLE IF NOT EXISTS {MODEL_TRAINING_RUNS_TABLE} (
+                CREATE TABLE IF NOT EXISTS {MODEL_METRIC_SNAPSHOTS_TABLE} (
                     id SERIAL PRIMARY KEY,
                     trained_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     model_type TEXT NOT NULL,
@@ -2544,20 +2564,20 @@ def init_model_metrics_table():
                 )
             """)
             cur.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_mtr_trained_at
-                ON {MODEL_TRAINING_RUNS_TABLE} (trained_at DESC)
+                CREATE INDEX IF NOT EXISTS idx_mms_trained_at
+                ON {MODEL_METRIC_SNAPSHOTS_TABLE} (trained_at DESC)
             """)
         conn.commit()
     finally:
         conn.close()
 
 
-def save_training_run(data: dict) -> int:
+def save_model_metric_snapshot(data: dict) -> int:
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(f"""
-                INSERT INTO {MODEL_TRAINING_RUNS_TABLE}
+                INSERT INTO {MODEL_METRIC_SNAPSHOTS_TABLE}
                     (model_type, git_commit, num_features, training_rows, val_rows,
                      num_folds, mean_brier, mean_roi, total_bets, duration_seconds,
                      feature_importances, fold_results, edge_distribution, config,
@@ -2588,12 +2608,12 @@ def save_training_run(data: dict) -> int:
         conn.close()
 
 
-def get_training_runs(limit: int = 50) -> list[dict]:
+def get_model_metric_snapshots(limit: int = 50) -> list[dict]:
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(f"""
-                SELECT * FROM {MODEL_TRAINING_RUNS_TABLE}
+                SELECT * FROM {MODEL_METRIC_SNAPSHOTS_TABLE}
                 ORDER BY trained_at DESC LIMIT %s
             """, (limit,))
             return [dict(r) for r in cur.fetchall()]
@@ -2601,9 +2621,9 @@ def get_training_runs(limit: int = 50) -> list[dict]:
         conn.close()
 
 
-def get_latest_training_run() -> dict | None:
-    runs = get_training_runs(limit=1)
-    return runs[0] if runs else None
+def get_latest_model_metric_snapshot() -> dict | None:
+    snapshots = get_model_metric_snapshots(limit=1)
+    return snapshots[0] if snapshots else None
 
 
 def migrate_encrypt_kalshi_keys() -> int:
