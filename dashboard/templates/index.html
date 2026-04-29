@@ -335,10 +335,10 @@
     .badge.gold { background: var(--accent-light); color: var(--accent); }
     .badge.inverse { background: var(--text-primary); color: var(--bg-primary); }
     :root[data-theme="dark"] .badge.home { background: #1f3144; color: var(--text-primary); }
-    :root[data-theme="dark"] .badge.away { background: #05070a; color: var(--text-primary); border-color: var(--accent); }
+    :root[data-theme="dark"] .badge.away { background: #05070a; color: var(--text-primary); border-color: transparent; }
     @media (prefers-color-scheme: dark) {
       :root[data-theme="auto"] .badge.home { background: #1f3144; color: var(--text-primary); }
-      :root[data-theme="auto"] .badge.away { background: #05070a; color: var(--text-primary); border-color: var(--accent); }
+      :root[data-theme="auto"] .badge.away { background: #05070a; color: var(--text-primary); border-color: transparent; }
     }
 
     .panel {

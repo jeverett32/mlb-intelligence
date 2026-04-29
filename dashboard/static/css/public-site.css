@@ -1590,7 +1590,7 @@ html, body {
 :root[data-theme="dark"] .side-pill.away {
   background: #05070a;
   color: var(--text-primary);
-  border-color: var(--accent);
+  border-color: transparent;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1602,7 +1602,7 @@ html, body {
   :root[data-theme="auto"] .side-pill.away {
     background: #05070a;
     color: var(--text-primary);
-    border-color: var(--accent);
+    border-color: transparent;
   }
 }
 
