@@ -2175,6 +2175,65 @@ function lineChartCfg(labels, data) {
     }
   };
 }
+function bankrollChartCfg(labels, cashData, equityData) {
+  const accent = cssVar('--accent') || '#B8860B';
+  const grid = cssVar('--grid-color') || '#E8E4DE';
+  const tick = cssVar('--tick-color') || '#9C9690';
+  const muted = cssVar('--text-muted') || '#9C9690';
+  return {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Available cash',
+          data: cashData,
+          borderColor: muted,
+          backgroundColor: 'rgba(156,150,144,0.08)',
+          fill: false,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+        },
+        {
+          label: 'Estimated bankroll',
+          data: equityData,
+          borderColor: accent,
+          backgroundColor: accent + '26',
+          fill: '-1',
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: tick, boxWidth: 10, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmt$(ctx.parsed.y)}`,
+            afterBody: items => {
+              if (!items.length) return '';
+              const idx = items[0].dataIndex;
+              const exposure = Math.max(0, Number(equityData[idx] || 0) - Number(cashData[idx] || 0));
+              return exposure > 0 ? `Open exposure: ${fmt$(exposure)}` : '';
+            },
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: tick, font: { size: 11 } } },
+        y: { grid: { color: grid }, ticks: { color: tick, font: { size: 11 }, callback: v => fmt$(v) } },
+      },
+    },
+  };
+}
 function calChartCfg(data) {
   const accent = cssVar('--accent') || '#B8860B';
   const grid = cssVar('--grid-color') || '#E8E4DE';
@@ -2270,6 +2329,31 @@ function getPassGames() {
 }
 function getOpenBetRows() {
   return state.openBets?.bets || [];
+}
+function buildBankrollSeries({ history, currentEquity, currentCash, openExposure }) {
+  const rows = (history || []).map(r => {
+    const value = Number(r.balance_dollars || 0);
+    return {
+      label: r.recorded_at ? String(r.recorded_at).slice(0, 10) : 'Start',
+      cash: value,
+      equity: value,
+    };
+  }).filter(r => Number.isFinite(r.cash) && Number.isFinite(r.equity));
+
+  const nowRow = {
+    label: 'Now',
+    cash: Number(currentCash || 0),
+    equity: Number(currentEquity || 0),
+  };
+  if (Number.isFinite(nowRow.cash) && Number.isFinite(nowRow.equity)) {
+    rows.push(nowRow);
+  }
+
+  return {
+    labels: rows.map(r => r.label),
+    cash: rows.map(r => r.cash),
+    equity: rows.map(r => r.equity),
+  };
 }
 
 function renderTable(targetId, headers, rows, emptyMessage) {
@@ -2442,13 +2526,19 @@ function renderOverview() {
     ? Number(paperBankroll.current_dollars || paperBankroll.starting_dollars || 10000)
     : Number(bal.current_dollars || 0);
   const openExposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
+  const availableCash = state.betMode === 'paper'
+    ? Math.max(0, balance - openExposure)
+    : balance;
+  const estimatedBankroll = state.betMode === 'paper'
+    ? balance
+    : balance + openExposure;
   const delta = ((modelAcc.accuracy || 0) - (modelAcc.market_accuracy || 0)) * 100;
 
-  document.getElementById('hdr-balance').textContent = fmt$(balance);
-  document.getElementById('s-balance').textContent = fmt$(balance);
+  document.getElementById('hdr-balance').textContent = fmt$(estimatedBankroll);
+  document.getElementById('s-balance').textContent = fmt$(estimatedBankroll);
   document.getElementById('s-balance-copy').textContent = state.betMode === 'paper'
-    ? `Paper bankroll starts at ${fmt$(paperBankroll.starting_dollars || 10000)} and changes only after simulated settlements.`
-    : 'Latest real bankroll snapshot from the balance table.';
+    ? `Estimated bankroll includes ${fmt$(openExposure)} in open simulated positions. Available paper cash: ${fmt$(availableCash)}.`
+    : `Estimated bankroll is available cash (${fmt$(availableCash)}) plus ${fmt$(openExposure)} in open positions.`;
   document.getElementById('s-open-bets').textContent = String(openBets.length);
 
   const roi = perf.roi_pct;
@@ -2481,15 +2571,19 @@ function renderOverview() {
 
   renderOpenBets('overview-open-body', openBets.slice(0, 6), 'No open positions');
 
-  const bankrollHistory = state.betMode === 'paper'
-    ? (paperBankroll.history || [])
-    : (bal.history || []);
-  if (bankrollHistory.length > 1) {
+  const bankrollSeries = buildBankrollSeries({
+    history: state.betMode === 'paper' ? (paperBankroll.history || []) : (bal.history || []),
+    currentEquity: estimatedBankroll,
+    currentCash: availableCash,
+    openExposure,
+  });
+  if (bankrollSeries.labels.length > 1) {
     const wrap = document.getElementById('balance-chart-wrap');
     wrap.innerHTML = '<canvas id="chart-balance"></canvas>';
-    makeChart('chart-balance', lineChartCfg(
-      bankrollHistory.map(r => r.recorded_at ? String(r.recorded_at).slice(0, 10) : 'Start'),
-      bankrollHistory.map(r => r.balance_dollars)
+    makeChart('chart-balance', bankrollChartCfg(
+      bankrollSeries.labels,
+      bankrollSeries.cash,
+      bankrollSeries.equity
     ));
   } else {
     setChartEmpty(

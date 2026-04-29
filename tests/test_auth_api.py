@@ -310,7 +310,9 @@ def test_api_bets_computes_pnl_from_live_price_when_missing(monkeypatch, app_mod
 
 def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):
     now_utc = pd.Timestamp.now(tz="UTC")
-    today_started = now_utc - pd.Timedelta(hours=2)
+    since_midnight = now_utc - now_utc.normalize()
+    started_delta = min(pd.Timedelta(hours=2), max(pd.Timedelta(minutes=1), since_midnight / 2))
+    today_started = now_utc - started_delta
     tomorrow_game = now_utc + pd.Timedelta(hours=6)
 
     monkeypatch.setattr(
