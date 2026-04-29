@@ -21,6 +21,7 @@ def test_browse_table_order_by_covers_all_browsable_tables():
         ("user_orders", "created_at DESC"),
         ("paper_orders", "created_at DESC"),
         ("model_metric_snapshots", "trained_at DESC"),
+        ("model_artifacts", "created_at DESC"),
     ],
 )
 def test_browse_table_order_by_uses_recent_columns(table, expected_prefix):

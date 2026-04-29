@@ -13,7 +13,11 @@ CLI (for debug/one-off use):
 """
 
 import argparse
+import hashlib
+import json
 import os
+import pickle
+import subprocess
 import sys
 import warnings
 from datetime import datetime, timezone
@@ -36,10 +40,137 @@ import db as DB
 from config import ACTIVE_SEASON, CURRENT_CSV
 
 HISTORICAL_CSV = "data/master_mlb.csv"
+ARTIFACT_SCHEMA_VERSION = 1
 
 
 class PredictError(RuntimeError):
     pass
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
+    return value
+
+
+def _git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=True,
+        )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def _source_hash() -> str | None:
+    try:
+        h = hashlib.sha256()
+        for path in (getattr(T, "__file__", None), __file__):
+            if not path:
+                continue
+            with open(path, "rb") as f:
+                h.update(f.read())
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def _feature_config(active_feats: list[str], early_feats: list[str]) -> dict:
+    return _jsonable({
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "model": T.MODEL,
+        "calibrate": T.CALIBRATE,
+        "early_cutoff": T.EARLY_CUTOFF,
+        "best_w": T.BEST_W,
+        "momentum_w": T.MOMENTUM_W,
+        "train_window_years": T.TRAIN_WINDOW_YEARS,
+        "early_season_games": T.EARLY_SEASON_GAMES,
+        "drop_substr": sorted(T.DROP_SUBSTR),
+        "active_feats": active_feats,
+        "early_feats": early_feats,
+        "feature_columns_config": list(T.FEATURE_COLUMNS),
+        "early_feature_columns_config": list(T.EARLY_FEATURE_COLUMNS),
+        "lr_params": getattr(T, "LR_PARAMS", {}),
+        "lgb_params": getattr(T, "LGB_PARAMS", {}),
+        "xgb_params": getattr(T, "XGB_PARAMS", {}),
+        "mlp_params": {
+            "epochs": getattr(T, "MLP_EPOCHS", None),
+            "lr": getattr(T, "MLP_LR", None),
+        },
+        "git_commit": _git_commit(),
+        "source_hash": _source_hash(),
+    })
+
+
+def _training_fingerprint(train_df: pd.DataFrame, active_feats: list[str], early_feats: list[str]) -> tuple[str, dict]:
+    config = _feature_config(active_feats, early_feats)
+    cols = [
+        c for c in (
+            ["game_pk", "game_date", "home_win", "market_implied_prob",
+             "home_games_played", "away_games_played"] + active_feats + early_feats
+        )
+        if c in train_df.columns
+    ]
+    cols = list(dict.fromkeys(cols))
+    frame = train_df[cols].copy()
+    if "game_date" in frame.columns:
+        frame["game_date"] = pd.to_datetime(frame["game_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    sort_cols = [c for c in ["game_date", "game_pk"] if c in frame.columns]
+    if sort_cols:
+        frame = frame.sort_values(sort_cols, kind="mergesort")
+    frame = frame.reset_index(drop=True)
+
+    h = hashlib.sha256()
+    h.update(json.dumps(config, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    h.update(b"\n")
+    h.update(frame.to_json(orient="split", date_format="iso", double_precision=12).encode("utf-8"))
+
+    max_date = None
+    if "game_date" in train_df.columns:
+        max_raw = pd.to_datetime(train_df["game_date"], errors="coerce").max()
+        max_date = max_raw.date().isoformat() if pd.notna(max_raw) else None
+    meta = {
+        "feature_config": config,
+        "settled_row_count": int(len(train_df)),
+        "max_settled_game_date": max_date,
+        "num_features": int(len(active_feats)),
+        "git_commit": config.get("git_commit"),
+    }
+    return h.hexdigest(), meta
+
+
+def _serialize_artifact(bundle: dict) -> tuple[bytes, str]:
+    blob = pickle.dumps(bundle, protocol=pickle.HIGHEST_PROTOCOL)
+    return blob, hashlib.sha256(blob).hexdigest()
+
+
+def _deserialize_artifact(row: dict, expected_fingerprint: str) -> dict:
+    blob = bytes(row["artifact_bytes"])
+    expected_sha = row.get("artifact_sha256")
+    actual_sha = hashlib.sha256(blob).hexdigest()
+    if expected_sha and expected_sha != actual_sha:
+        raise PredictError("Model artifact checksum mismatch.")
+    bundle = pickle.loads(blob)
+    if bundle.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
+        raise PredictError("Model artifact schema version mismatch.")
+    if bundle.get("training_fingerprint") != expected_fingerprint:
+        raise PredictError("Model artifact fingerprint mismatch.")
+    if bundle.get("model_type") != T.MODEL:
+        raise PredictError("Model artifact type mismatch.")
+    return bundle
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +562,7 @@ def _load_current() -> pd.DataFrame:
 
 def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     """
-    Load data, engineer features, train models. Returns a cache dict:
+    Load data, engineer features, load or train model artifact. Returns a cache dict:
         clf, early_clf, imputer, active_feats, early_feats,
         target_rows: {game_pk_str: one-row DataFrame}.
     The full df_feat is not retained - only rows for the requested game_pks.
@@ -467,46 +598,111 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
         raise PredictError("Insufficient training data after filtering.")
     print(f"  Training rows: {len(train_df):,}")
 
-    X_train = train_df[active_feats].values.astype(np.float32)
-    y_train = train_df["home_win"].values.astype(np.float32)
+    fingerprint, fp_meta = _training_fingerprint(train_df, active_feats, early_feats)
+    artifact_id = None
+    artifact_loaded = False
+    artifact_table_ready = True
 
-    early_mask = (
-        (train_df["home_games_played"] < T.EARLY_CUTOFF) |
-        (train_df["away_games_played"] < T.EARLY_CUTOFF)
-    ) if T.EARLY_CUTOFF else pd.Series(False, index=train_df.index)
+    try:
+        DB.init_model_artifacts_table()
+        artifact_row = DB.get_model_artifact_by_fingerprint(fingerprint)
+    except Exception as e:
+        artifact_table_ready = False
+        artifact_row = None
+        print(f"  WARNING: model artifact lookup failed ({e}); training in-process.")
 
-    early_clf = None
-    if T.EARLY_CUTOFF and early_mask.sum() > 50 and early_feats:
-        X_early = train_df.loc[early_mask, early_feats].values.astype(np.float32)
-        y_early = y_train[early_mask.values]
-        early_clf = T.build_early_lr(X_early, y_early)
+    if artifact_row:
+        try:
+            bundle = _deserialize_artifact(artifact_row, fingerprint)
+            clf = bundle["clf"]
+            early_clf = bundle.get("early_clf")
+            imputer = bundle.get("imputer")
+            active_feats = list(bundle.get("active_feats") or active_feats)
+            early_feats = list(bundle.get("early_feats") or early_feats)
+            artifact_id = int(artifact_row["id"])
+            artifact_loaded = True
+            print(f"  Loaded model artifact id={artifact_id} ({T.MODEL}, fingerprint={fingerprint[:12]}).")
+        except Exception as e:
+            print(f"  WARNING: model artifact load failed ({e}); retraining.")
 
-    reg_mask = ~early_mask.values if T.EARLY_CUTOFF else np.ones(len(train_df), dtype=bool)
-    X_tr_reg = X_train[reg_mask]
-    y_tr_reg = y_train[reg_mask]
+    if not artifact_loaded:
+        X_train = train_df[active_feats].values.astype(np.float32)
+        y_train = train_df["home_win"].values.astype(np.float32)
 
-    print(f"  Training {T.MODEL}...")
-    if T.MODEL == "lgb":
-        clf = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-    elif T.MODEL == "xgb":
-        clf = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-    elif T.MODEL == "lr":
-        clf = T.build_lr(X_tr_reg, y_tr_reg)
-    elif T.MODEL == "mlp":
-        clf = T.build_mlp(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
-    elif T.MODEL in ("ensemble_avg", "ensemble_stack"):
-        clf = (
-            T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg),
-            T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg),
-            T.build_lr(X_tr_reg, y_tr_reg),
-        )
-    else:
-        raise PredictError(f"Unknown MODEL: {T.MODEL!r}")
+        early_mask = (
+            (train_df["home_games_played"] < T.EARLY_CUTOFF) |
+            (train_df["away_games_played"] < T.EARLY_CUTOFF)
+        ) if T.EARLY_CUTOFF else pd.Series(False, index=train_df.index)
 
-    # Fit ensemble imputer once - consumed by the ensemble LR branch at predict time.
-    imputer = None
-    if T.MODEL in ("ensemble_avg", "ensemble_stack"):
-        imputer = SimpleImputer(strategy="median").fit(X_tr_reg)
+        early_clf = None
+        if T.EARLY_CUTOFF and early_mask.sum() > 50 and early_feats:
+            X_early = train_df.loc[early_mask, early_feats].values.astype(np.float32)
+            y_early = y_train[early_mask.values]
+            early_clf = T.build_early_lr(X_early, y_early)
+
+        reg_mask = ~early_mask.values if T.EARLY_CUTOFF else np.ones(len(train_df), dtype=bool)
+        X_tr_reg = X_train[reg_mask]
+        y_tr_reg = y_train[reg_mask]
+
+        print(f"  Training {T.MODEL}...")
+        if T.MODEL == "lgb":
+            clf = T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+        elif T.MODEL == "xgb":
+            clf = T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+        elif T.MODEL == "lr":
+            clf = T.build_lr(X_tr_reg, y_tr_reg)
+        elif T.MODEL == "mlp":
+            clf = T.build_mlp(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg)
+        elif T.MODEL in ("ensemble_avg", "ensemble_stack"):
+            clf = (
+                T.build_lgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg),
+                T.build_xgb(X_tr_reg, y_tr_reg, X_tr_reg, y_tr_reg),
+                T.build_lr(X_tr_reg, y_tr_reg),
+            )
+        else:
+            raise PredictError(f"Unknown MODEL: {T.MODEL!r}")
+
+        # Fit ensemble imputer once - consumed by the ensemble LR branch at predict time.
+        imputer = None
+        if T.MODEL in ("ensemble_avg", "ensemble_stack"):
+            imputer = SimpleImputer(strategy="median").fit(X_tr_reg)
+
+        if artifact_table_ready:
+            try:
+                bundle = {
+                    "schema_version": ARTIFACT_SCHEMA_VERSION,
+                    "training_fingerprint": fingerprint,
+                    "model_type": T.MODEL,
+                    "clf": clf,
+                    "early_clf": early_clf,
+                    "imputer": imputer,
+                    "active_feats": active_feats,
+                    "early_feats": early_feats,
+                    "feature_config": fp_meta["feature_config"],
+                    "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                }
+                artifact_bytes, artifact_sha256 = _serialize_artifact(bundle)
+                artifact_id = DB.save_model_artifact({
+                    "model_type": T.MODEL,
+                    "training_fingerprint": fingerprint,
+                    "artifact_format": "pickle",
+                    "artifact_bytes": artifact_bytes,
+                    "artifact_sha256": artifact_sha256,
+                    "settled_row_count": fp_meta["settled_row_count"],
+                    "max_settled_game_date": fp_meta["max_settled_game_date"],
+                    "active_season": ACTIVE_SEASON,
+                    "target_train_cutoff": str(target_date.date()),
+                    "num_features": fp_meta["num_features"],
+                    "feature_columns": active_feats,
+                    "early_feature_columns": early_feats,
+                    "feature_config": fp_meta["feature_config"],
+                    "metrics": {"source": "prediction_batch"},
+                    "git_commit": fp_meta["git_commit"],
+                })
+                print(f"  Saved model artifact id={artifact_id} ({T.MODEL}, fingerprint={fingerprint[:12]}).")
+            except Exception as e:
+                artifact_id = None
+                print(f"  WARNING: model artifact save failed ({e}); continuing with in-memory model.")
 
     # Keep only target rows; drop the full df_feat to shrink the cache.
     tgt_mask = df_feat["game_pk"].astype(str).isin(set(game_pks))
@@ -524,6 +720,8 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
         "active_feats": active_feats,
         "early_feats":  early_feats,
         "target_rows":  target_rows,
+        "model_artifact_id": artifact_id,
+        "training_fingerprint": fingerprint,
     }
 
 
@@ -595,6 +793,7 @@ def predict_one(game_pk: str, shared: dict) -> dict:
     imputer      = shared["imputer"]
     active_feats = shared["active_feats"]
     early_feats  = shared["early_feats"]
+    model_artifact_id = shared.get("model_artifact_id")
 
     home_team = target_df["home_team"].iloc[0]
     away_team = target_df["away_team"].iloc[0]
@@ -709,7 +908,7 @@ def predict_one(game_pk: str, shared: dict) -> dict:
 
     mkt_prob_val = float(mkt_prob_raw) if not pd.isna(mkt_prob_raw) else None
     edge_val = float(edge) if not (isinstance(edge, float) and np.isnan(edge)) else None
-    DB.update_bet_prediction(game_pk, prob, edge_val, bet_side, bet_frac, mkt_prob_val)
+    DB.update_bet_prediction(game_pk, prob, edge_val, bet_side, bet_frac, mkt_prob_val, model_artifact_id)
     print("Results written to bets table")
     return {
         "game_pk":  game_pk,
@@ -718,6 +917,7 @@ def predict_one(game_pk: str, shared: dict) -> dict:
         "bet_side": bet_side,
         "bet_frac": bet_frac,
         "explanation": explanation,
+        "model_artifact_id": model_artifact_id,
     }
 
 

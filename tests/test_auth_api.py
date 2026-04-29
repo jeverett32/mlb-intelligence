@@ -41,6 +41,23 @@ def test_non_admin_cannot_access_db_browser(monkeypatch, app_module, client):
     assert r.status_code == 403
 
 
+def test_admin_database_browser_lists_model_artifacts(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "admin@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": True,
+        },
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/admin")
+    assert r.status_code == 200
+    assert '<option value="model_artifacts">model_artifacts</option>' in r.text
+
+
 def test_user_settings_include_personal_and_effective_live(monkeypatch, app_module, client):
     monkeypatch.setattr(
         app_module.DB,

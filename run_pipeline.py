@@ -224,16 +224,6 @@ def _predict_and_bet(game_pk: str, shared: dict) -> None:
         NOTIFY.send(f":rotating_light: **Bet crashed** `game_pk={game_pk}`: `{e}`")
 
 
-def record_model_training_run() -> None:
-    """Refresh model insight metrics after a pipeline execution."""
-    print("\n  Recording model training metrics...")
-    try:
-        run_step(["uv", "run", "model/train.py"])
-    except RuntimeError as e:
-        print(f"  WARNING: model training metrics failed: {e}")
-        NOTIFY.send(f":warning: **Model metrics refresh failed**: `{e}`")
-
-
 def run_batch(games: list[dict]) -> None:
     """
     Full pipeline for a batch of games:
@@ -289,7 +279,6 @@ def run_batch(games: list[dict]) -> None:
     print(f"\n{'=' * 60}")
     print(f"BATCH COMPLETE — {len(games)} game(s)")
     print(f"{'=' * 60}")
-    record_model_training_run()
 
 
 def run_pipeline_for_game(game_pk: str):
@@ -313,7 +302,6 @@ def run_pipeline_for_game(game_pk: str):
     print(f"\n{'=' * 60}")
     print(f"PIPELINE COMPLETE — game_pk={game_pk}")
     print(f"{'=' * 60}")
-    record_model_training_run()
 
 
 # ---------------------------------------------------------------------------

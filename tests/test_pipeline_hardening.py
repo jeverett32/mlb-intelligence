@@ -193,6 +193,45 @@ def test_next_batch_runs_late_game_before_first_pitch(monkeypatch):
     assert run_at == datetime(2026, 4, 27, 19, 50, tzinfo=timezone.utc)
 
 
+def test_model_training_fingerprint_tracks_feature_inputs(monkeypatch):
+    from model import predict
+
+    monkeypatch.setattr(predict, "_git_commit", lambda: "abc123")
+    df = pd.DataFrame(
+        [
+            {
+                "game_pk": 2,
+                "game_date": "2026-04-02",
+                "home_win": False,
+                "market_implied_prob": 0.45,
+                "home_games_played": 20,
+                "away_games_played": 22,
+                "feature_a": 1.0,
+            },
+            {
+                "game_pk": 1,
+                "game_date": "2026-04-01",
+                "home_win": True,
+                "market_implied_prob": 0.55,
+                "home_games_played": 30,
+                "away_games_played": 31,
+                "feature_a": 2.0,
+            },
+        ]
+    )
+
+    fp1, meta1 = predict._training_fingerprint(df, ["feature_a"], ["market_implied_prob"])
+    fp2, _ = predict._training_fingerprint(df.iloc[::-1], ["feature_a"], ["market_implied_prob"])
+    changed = df.copy()
+    changed.loc[changed["game_pk"] == 1, "feature_a"] = 2.5
+    fp3, _ = predict._training_fingerprint(changed, ["feature_a"], ["market_implied_prob"])
+
+    assert fp1 == fp2
+    assert fp1 != fp3
+    assert meta1["settled_row_count"] == 2
+    assert meta1["max_settled_game_date"] == "2026-04-02"
+
+
 def test_backfill_paper_orders_uses_rolling_bankroll(monkeypatch):
     fake_cursor = _FakeCursor()
     fake_conn = _FakeConnection(fake_cursor)

@@ -524,28 +524,45 @@ def init_bet(game_pk, game_date, home_team, away_team):
         conn.close()
 
 
-def update_bet_prediction(game_pk, predicted_prob, edge, bet_side, bet_frac, market_implied_prob):
+def update_bet_prediction(game_pk, predicted_prob, edge, bet_side, bet_frac, market_implied_prob, model_artifact_id=None):
+    values = (
+        float(predicted_prob) if predicted_prob is not None else None,
+        float(edge) if edge is not None and edge == edge else None,  # NaN → None
+        bet_side,
+        float(bet_frac),
+        float(market_implied_prob) if market_implied_prob is not None else None,
+        int(model_artifact_id) if model_artifact_id is not None else None,
+        int(game_pk),
+    )
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE bets SET
-                       predicted_prob = %s,
-                       edge = %s,
-                       bet_side = %s,
-                       bet_frac = %s,
-                       market_implied_prob = %s,
-                       updated_at = NOW()
-                   WHERE game_pk = %s""",
-                (
-                    float(predicted_prob) if predicted_prob is not None else None,
-                    float(edge) if edge is not None and edge == edge else None,  # NaN → None
-                    bet_side,
-                    float(bet_frac),
-                    float(market_implied_prob) if market_implied_prob is not None else None,
-                    int(game_pk),
-                ),
-            )
+            try:
+                cur.execute(
+                    """UPDATE bets SET
+                           predicted_prob = %s,
+                           edge = %s,
+                           bet_side = %s,
+                           bet_frac = %s,
+                           market_implied_prob = %s,
+                           model_artifact_id = %s,
+                           updated_at = NOW()
+                       WHERE game_pk = %s""",
+                    values,
+                )
+            except psycopg2.errors.UndefinedColumn:
+                conn.rollback()
+                cur.execute(
+                    """UPDATE bets SET
+                           predicted_prob = %s,
+                           edge = %s,
+                           bet_side = %s,
+                           bet_frac = %s,
+                           market_implied_prob = %s,
+                           updated_at = NOW()
+                       WHERE game_pk = %s""",
+                    values[:5] + (values[-1],),
+                )
         conn.commit()
     finally:
         conn.close()
@@ -810,6 +827,7 @@ BROWSABLE_TABLES = {
     "user_orders",
     "paper_orders",
     "model_metric_snapshots",
+    "model_artifacts",
 }
 
 BROWSE_TABLE_ORDER_BY = {
@@ -824,6 +842,7 @@ BROWSE_TABLE_ORDER_BY = {
     "user_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
     "paper_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
     "model_metric_snapshots": "trained_at DESC NULLS LAST, id DESC",
+    "model_artifacts": "created_at DESC NULLS LAST, id DESC",
 }
 
 
@@ -842,9 +861,19 @@ def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
             # Total row count
             cur.execute(f"SELECT COUNT(*) FROM {table}")
             total = cur.fetchone()["count"]
-            # Page of rows (exclude extra JSONB for games to keep it readable)
+            # Page of rows (exclude bulky/internal columns for readability)
             if table == "games":
                 cols = "game_pk, game_date, season, home_team, away_team, home_score, away_score, home_win, home_implied_prob, away_implied_prob, close_home_ml, close_away_ml, odds_source"
+                cur.execute(f"SELECT {cols} FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
+            elif table == "model_artifacts":
+                cols = """
+                    id, created_at, model_type, training_fingerprint,
+                    octet_length(artifact_bytes) AS artifact_bytes_size,
+                    artifact_format, artifact_sha256, settled_row_count,
+                    max_settled_game_date, active_season, target_train_cutoff,
+                    num_features, git_commit, is_active, feature_columns,
+                    early_feature_columns, feature_config, metrics
+                """
                 cur.execute(f"SELECT {cols} FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
             else:
                 cur.execute(f"SELECT * FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
@@ -1093,6 +1122,7 @@ def init_auth_tables():
     finally:
         conn.close()
     init_model_metrics_table()
+    init_model_artifacts_table()
 
 
 def upsert_user(
@@ -2644,6 +2674,128 @@ def get_model_metric_snapshots(limit: int = 50) -> list[dict]:
 def get_latest_model_metric_snapshot() -> dict | None:
     snapshots = get_model_metric_snapshots(limit=1)
     return snapshots[0] if snapshots else None
+
+
+# ---------------------------------------------------------------------------
+# Persisted prediction model artifacts
+# ---------------------------------------------------------------------------
+
+MODEL_ARTIFACTS_TABLE = "model_artifacts"
+
+
+def init_model_artifacts_table():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {MODEL_ARTIFACTS_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    model_type TEXT NOT NULL,
+                    training_fingerprint TEXT NOT NULL UNIQUE,
+                    artifact_format TEXT NOT NULL DEFAULT 'pickle',
+                    artifact_bytes BYTEA NOT NULL,
+                    artifact_sha256 TEXT NOT NULL,
+                    settled_row_count INTEGER NOT NULL,
+                    max_settled_game_date DATE,
+                    active_season INTEGER,
+                    target_train_cutoff DATE,
+                    num_features INTEGER,
+                    feature_columns JSONB NOT NULL,
+                    early_feature_columns JSONB NOT NULL,
+                    feature_config JSONB NOT NULL,
+                    metrics JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                    git_commit TEXT,
+                    is_active BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_model_artifacts_created_at
+                ON {MODEL_ARTIFACTS_TABLE} (created_at DESC)
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_model_artifacts_active
+                ON {MODEL_ARTIFACTS_TABLE} (is_active, created_at DESC)
+            """)
+            cur.execute("ALTER TABLE IF EXISTS bets ADD COLUMN IF NOT EXISTS model_artifact_id BIGINT")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF to_regclass('public.bets') IS NOT NULL THEN
+                        CREATE INDEX IF NOT EXISTS idx_bets_model_artifact_id
+                        ON bets (model_artifact_id);
+                    END IF;
+                END
+                $$;
+                """
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_model_artifact_by_fingerprint(training_fingerprint: str) -> dict | None:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {MODEL_ARTIFACTS_TABLE}
+                WHERE training_fingerprint = %s
+                LIMIT 1
+                """,
+                (training_fingerprint,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def save_model_artifact(data: dict) -> int:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE {MODEL_ARTIFACTS_TABLE} SET is_active = FALSE WHERE is_active")
+            cur.execute(
+                f"""
+                INSERT INTO {MODEL_ARTIFACTS_TABLE} (
+                    model_type, training_fingerprint, artifact_format,
+                    artifact_bytes, artifact_sha256, settled_row_count,
+                    max_settled_game_date, active_season, target_train_cutoff,
+                    num_features, feature_columns, early_feature_columns,
+                    feature_config, metrics, git_commit, is_active
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
+                ON CONFLICT (training_fingerprint) DO UPDATE SET
+                    is_active = TRUE
+                RETURNING id
+                """,
+                (
+                    data["model_type"],
+                    data["training_fingerprint"],
+                    data.get("artifact_format", "pickle"),
+                    psycopg2.Binary(data["artifact_bytes"]),
+                    data["artifact_sha256"],
+                    data["settled_row_count"],
+                    data.get("max_settled_game_date"),
+                    data.get("active_season"),
+                    data.get("target_train_cutoff"),
+                    data.get("num_features"),
+                    json.dumps(data.get("feature_columns", [])),
+                    json.dumps(data.get("early_feature_columns", [])),
+                    json.dumps(data.get("feature_config", {})),
+                    json.dumps(data.get("metrics", {})),
+                    data.get("git_commit"),
+                ),
+            )
+            artifact_id = cur.fetchone()[0]
+        conn.commit()
+        return int(artifact_id)
+    finally:
+        conn.close()
 
 
 def migrate_encrypt_kalshi_keys() -> int:
