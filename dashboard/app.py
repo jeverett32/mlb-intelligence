@@ -1549,25 +1549,28 @@ def get_games_by_date(
         pred_cols = [
             "game_pk", "predicted_prob", "edge", "bet_side", "bet_frac",
             "market_implied_prob", "bet_dollars", "result", "kalshi_order_id",
-            "profit_loss", "n_contracts", "status",
+            "profit_loss", "n_contracts",
         ]
         available = [c for c in pred_cols if c in bets_df.columns]
         bets_df["game_pk"] = bets_df["game_pk"].astype(str)
         day_games["game_pk"] = day_games["game_pk"].astype(str)
         day_games = day_games.merge(bets_df[available], on="game_pk", how="left")
 
-    user_orders = DB.get_user_orders(user["email"]) if mode == "live" else pd.DataFrame()
-    if not user_orders.empty:
-        user_orders = user_orders.copy()
-        user_orders["game_pk"] = user_orders["game_pk"].astype(str)
+    orders = (
+        DB.get_paper_orders(user["email"]) if mode == "paper"
+        else DB.get_user_orders(user["email"])
+    )
+    if not orders.empty:
+        orders = orders.copy()
+        orders["game_pk"] = orders["game_pk"].astype(str)
         order_cols = [
             "game_pk", "bet_dollars", "n_contracts", "kalshi_order_id",
             "status", "dry_run", "live_price", "live_edge", "result",
             "profit_loss",
         ]
-        available = [c for c in order_cols if c in user_orders.columns]
+        available = [c for c in order_cols if c in orders.columns]
         day_games = day_games.merge(
-            user_orders[available], on="game_pk", how="left",
+            orders[available], on="game_pk", how="left",
             suffixes=("_bets", "_user"),
         )
         for col in order_cols:

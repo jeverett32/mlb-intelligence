@@ -1957,20 +1957,17 @@ function betStatus(game) {
   const settled = game.result != null || game.home_win != null;
   if (settled) {
     if (game.profit_loss != null) return pnlBadge(game.profit_loss);
-    if (game.bet_side && game.bet_side !== 'none') {
+    if (game.bet_side && game.bet_side !== 'none' && game.bet_dollars != null) {
       const hw = game.result != null ? game.result : game.home_win;
       const won = (hw && game.bet_side === 'home') || (!hw && game.bet_side === 'away');
       const bd = Number(game.bet_dollars || 0);
-      if (bd > 0) {
-        if (!won) return pnlBadge(-bd);
-        if (game.n_contracts != null) return pnlBadge(Number(game.n_contracts) - bd);
-        const mp = game.market_implied_prob;
-        if (mp && Number(mp) > 0) {
-          const ratio = game.bet_side === 'home' ? (1 / Number(mp) - 1) : (1 / (1 - Number(mp)) - 1);
-          return pnlBadge(bd * ratio);
-        }
+      if (!won) return pnlBadge(-bd);
+      if (game.n_contracts != null) return pnlBadge(Number(game.n_contracts) - bd);
+      const mp = game.market_implied_prob;
+      if (mp && Number(mp) > 0) {
+        const ratio = game.bet_side === 'home' ? (1 / Number(mp) - 1) : (1 / (1 - Number(mp)) - 1);
+        return pnlBadge(bd * ratio);
       }
-      return won ? badge('Win', 'green') : badge('Loss', 'red');
     }
     return badge('Settled', 'gray');
   }
