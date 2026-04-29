@@ -812,6 +812,26 @@ BROWSABLE_TABLES = {
     "model_metric_snapshots",
 }
 
+BROWSE_TABLE_ORDER_BY = {
+    "games": "game_date DESC NULLS LAST, game_time_utc DESC NULLS LAST, game_pk DESC",
+    "bets": "game_date DESC NULLS LAST, updated_at DESC NULLS LAST, game_pk DESC",
+    "settings": "updated_at DESC NULLS LAST, key ASC",
+    "app_users": "created_at DESC NULLS LAST, email ASC",
+    "app_sessions": "created_at DESC NULLS LAST, session_id DESC",
+    "user_settings": "updated_at DESC NULLS LAST, email ASC, key ASC",
+    "kalshi_accounts": "updated_at DESC NULLS LAST, created_at DESC NULLS LAST, email ASC",
+    "user_balance": "recorded_at DESC NULLS LAST, id DESC",
+    "user_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
+    "paper_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
+    "model_metric_snapshots": "trained_at DESC NULLS LAST, id DESC",
+}
+
+
+def _browse_table_order_by(table: str) -> str:
+    if table not in BROWSABLE_TABLES:
+        raise ValueError(f"Table '{table}' is not browsable")
+    return BROWSE_TABLE_ORDER_BY[table]
+
 
 def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
     if table not in BROWSABLE_TABLES:
@@ -825,9 +845,9 @@ def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
             # Page of rows (exclude extra JSONB for games to keep it readable)
             if table == "games":
                 cols = "game_pk, game_date, season, home_team, away_team, home_score, away_score, home_win, home_implied_prob, away_implied_prob, close_home_ml, close_away_ml, odds_source"
-                cur.execute(f"SELECT {cols} FROM {table} ORDER BY game_date DESC, game_pk LIMIT %s OFFSET %s", (limit, offset))
+                cur.execute(f"SELECT {cols} FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
             else:
-                cur.execute(f"SELECT * FROM {table} ORDER BY 1 DESC LIMIT %s OFFSET %s", (limit, offset))
+                cur.execute(f"SELECT * FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
     finally:
