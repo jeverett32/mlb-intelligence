@@ -2491,9 +2491,9 @@ function renderModelPicksTable() {
     ['Date', 'Matchup', 'Model %', 'Market %', 'Model Side', 'Market Side', 'Result', 'Model', 'Market'],
     pagePicks.map(r => {
       const modelSide = r.predicted_prob > 0.5 ? 'HOME' : 'AWAY';
-      const modelCls = r.predicted_prob > 0.5 ? 'blue' : 'gray';
+      const modelCls = r.predicted_prob > 0.5 ? 'home' : 'away';
       const marketSide = r.market_pred_home === true ? 'HOME' : (r.market_pred_home === false ? 'AWAY' : '—');
-      const marketCls = r.market_pred_home === true ? 'blue' : (r.market_pred_home === false ? 'gray' : '');
+      const marketCls = r.market_pred_home === true ? 'home' : (r.market_pred_home === false ? 'away' : '');
       const resultTxt = r.home_win ? 'Home' : 'Away';
       const modelBadge = r.model_correct === true ? '✓' : (r.model_correct === false ? '✗' : '—');
       const marketBadge = r.market_correct === true ? '✓' : (r.market_correct === false ? '✗' : '—');
