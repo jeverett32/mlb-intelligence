@@ -2570,6 +2570,7 @@ def upsert_user_order(
     dry_run: bool = True,
     result=None,
     profit_loss=None,
+    last_check_error: str | None = None,
 ):
     email = _norm_email(email)
     conn = get_connection()
@@ -2582,14 +2583,14 @@ def upsert_user_order(
                     predicted_prob, market_implied_prob, edge,
                     bet_side, bet_frac, bet_dollars, n_contracts,
                     kalshi_order_id, kalshi_ticker, live_price, live_edge, status, dry_run,
-                    result, profit_loss, updated_at
+                    result, profit_loss, last_check_error, updated_at
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
-                    %s, %s, NOW()
+                    %s, %s, %s, NOW()
                 )
                 ON CONFLICT (email, game_pk) DO UPDATE SET
                     game_date = EXCLUDED.game_date,
@@ -2610,6 +2611,7 @@ def upsert_user_order(
                     dry_run = EXCLUDED.dry_run,
                     result = COALESCE(EXCLUDED.result, user_orders.result),
                     profit_loss = COALESCE(EXCLUDED.profit_loss, user_orders.profit_loss),
+                    last_check_error = EXCLUDED.last_check_error,
                     updated_at = NOW()
                 """,
                 (
@@ -2633,6 +2635,7 @@ def upsert_user_order(
                     bool(dry_run),
                     bool(result) if result is not None else None,
                     float(profit_loss) if profit_loss is not None else None,
+                    last_check_error,
                 ),
             )
         conn.commit()

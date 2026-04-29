@@ -25,7 +25,7 @@ from fetch.fetch_balance import fetch_balance_for_account
 MLB_SERIES = "KXMLBGAME"
 ORDER_SLIPPAGE_CENTS = int(os.environ.get("KALSHI_ORDER_SLIPPAGE_CENTS", "3"))
 EXECUTION_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
-KALSHI_ORDER_ENDPOINT = os.environ.get("KALSHI_ORDER_ENDPOINT", "events").strip().lower()
+KALSHI_ORDER_ENDPOINT = os.environ.get("KALSHI_ORDER_ENDPOINT", "legacy").strip().lower()
 KELLY_FRACTION = 0.25
 MAX_BET_FRAC = 0.25
 
@@ -645,6 +645,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
         live_edge=result.get("live_edge"),
         status=result.get("status", "pending"),
         dry_run=False,
+        last_check_error=result.get("error"),
     )
     return result
 

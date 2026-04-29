@@ -40,7 +40,7 @@ SIGNAL_LIMIT = 25
 STATE_FILE = "signal_follower_state.json"
 ORDER_SLIPPAGE_CENTS = 3
 EXECUTION_MIN_EDGE = 0.0
-KALSHI_ORDER_ENDPOINT = "events"  # "events" or "legacy"
+KALSHI_ORDER_ENDPOINT = "legacy"  # "legacy" or "events"
 
 
 KALSHI_BASES = {
