@@ -755,6 +755,14 @@
       .cal-arrow { font-size: 1.1rem; padding: 4px; }
     }
 
+    .games-refresh-hint {
+      margin: 0 0 10px;
+      font-size: 0.85rem;
+      color: var(--danger);
+    }
+    .games-refresh-hint[hidden] {
+      display: none !important;
+    }
     .game-cards-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1588,6 +1596,7 @@
   </div>
 
   <div id="page-games" class="page">
+    <p id="games-refresh-error" class="games-refresh-hint" role="status" hidden></p>
     <div class="calendar-bar">
       <div class="calendar-month">
         <span id="cal-month-label">April</span>
@@ -1816,7 +1825,11 @@ const state = {
   settledBets: null,
   gamesDateStr: null, // YYYY-MM-DD selected day
   gamesWeekAnchor: null, // YYYY-MM-DD any day in the displayed week
+  activeDashboardPage: 'overview',
 };
+
+const GAMES_SILENT_POLL_MS = 45000;
+let gamesPollTimer = null;
 
 const TEAM_FULL = {
   ARI:'Arizona Diamondbacks',AZ:'Arizona Diamondbacks',
@@ -2424,6 +2437,31 @@ function setChartEmpty(wrapperId, message, canvasId) {
 function clearNavSelection() {
   document.querySelectorAll('nav > button[data-page]').forEach(b => b.classList.remove('active'));
 }
+function setGamesRefreshError(msg) {
+  const el = document.getElementById('games-refresh-error');
+  if (!el) return;
+  if (msg) {
+    el.textContent = msg;
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
+
+function syncGamesPollTimer() {
+  if (gamesPollTimer != null) {
+    clearInterval(gamesPollTimer);
+    gamesPollTimer = null;
+  }
+  if (state.activeDashboardPage !== 'games') return;
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  gamesPollTimer = window.setInterval(() => {
+    if (state.activeDashboardPage !== 'games' || document.visibilityState !== 'visible') return;
+    if (state.gamesDateStr) loadGamesForDate(state.gamesDateStr, { silent: true });
+  }, GAMES_SILENT_POLL_MS);
+}
+
 function showPage(page, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   clearNavSelection();
@@ -2431,6 +2469,14 @@ function showPage(page, btn) {
   if (pageEl) pageEl.classList.add('active');
   if (btn) btn.classList.add('active');
   localStorage.setItem('dashboard_page', page);
+  state.activeDashboardPage = page;
+  syncGamesPollTimer();
+  if (page === 'games') {
+    if (!state.gamesDateStr) state.gamesDateStr = todayDateStr();
+    if (!state.gamesWeekAnchor) state.gamesWeekAnchor = state.gamesDateStr;
+    renderCalendar();
+    loadGamesForDate(state.gamesDateStr, { silent: true });
+  }
 }
 
 function renderModeToggle() {
@@ -2825,62 +2871,69 @@ async function selectGameDate(dateStr) {
   state.gamesDateStr = dateStr;
   state.gamesWeekAnchor = dateStr;
   renderCalendar();
-  await loadGamesForDate(dateStr);
+  await loadGamesForDate(dateStr, { silent: false });
 }
 
-async function loadGamesForDate(dateStr) {
-  const body = document.getElementById('games-body');
-  body.innerHTML = '<div class="empty">Loading…</div>';
-  try {
-    const res = await fetch(`/api/games-by-date?date=${dateStr}&mode=${state.betMode}`);
-    const data = await res.json();
-    renderGameCards(data.games || []);
-  } catch (e) {
-    body.innerHTML = '<div class="empty">Failed to load games</div>';
-  }
-}
-
-function renderGameCards(games) {
-  const el = document.getElementById('games-body');
-  if (!games.length) {
-    el.innerHTML = '<div class="empty">No games on this date</div>';
-    return;
-  }
-  el.innerHTML = games.map(g => {
-    const awayAbbr = g.away_team || '—';
-    const homeAbbr = g.home_team || '—';
-    const awayName = teamName(awayAbbr);
-    const homeName = teamName(homeAbbr);
-    const finished = g.home_win != null;
-    const live = isGameLive(g);
-    const scored = hasScore(g);
-    const notStarted = !finished && !live;
-    const homeWon = g.home_win === true;
-    const awayWon = g.home_win === false;
-
-    const rightTop = scored
-      ? `<span class="game-card-score${awayWon ? ' winner' : ' loser'}">${g.away_score}</span>`
-      : '';
-    const rightBot = scored
-      ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
-      : '';
-    const status = gameStatusLine(g);
-    const statusLine = `<div class="game-card-status-top">
+function gameCardStatusTopHtml(g) {
+  const finished = g.home_win != null;
+  const live = isGameLive(g);
+  const notStarted = !finished && !live;
+  const status = gameStatusLine(g);
+  return `<div class="game-card-status-top">
       <span class="game-card-final game-card-status-center">${status}</span>
       ${notStarted ? `<span class="game-card-time game-card-status-right">${formatLocalTime(g.game_time_utc)}</span>` : ''}
     </div>`;
-    const explainBtn = shouldShowExplain(g)
-      ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
+}
+
+function gameCardExplainBtnHtml(g) {
+  if (!shouldShowExplain(g)) return '';
+  return `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
              <path d="M4 19V5"></path>
              <path d="M7 15l4-4 3 3 6-6"></path>
              <path d="M20 7v6h-6"></path>
            </svg>
-         </button>`
-      : '';
+         </button>`;
+}
 
-    return `
-      <div class="game-card">
+function gameCardDetailsHtml(g) {
+  const explainBtn = gameCardExplainBtnHtml(g);
+  return `<div class="game-card-details">
+          <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
+          <div class="game-card-detail">Market <strong>${fmtPct(g.home_implied_prob)}</strong></div>
+          <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
+          <div class="game-card-side">
+            <span style="display:inline-flex;align-items:center;gap:8px;">
+              ${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}
+              ${explainBtn}
+            </span>
+            <span>${betStatus(g)}</span>
+          </div>
+        </div>`;
+}
+
+function buildSingleGameCardHtml(g) {
+  const awayAbbr = g.away_team || '—';
+  const homeAbbr = g.home_team || '—';
+  const awayName = teamName(awayAbbr);
+  const homeName = teamName(homeAbbr);
+  const finished = g.home_win != null;
+  const live = isGameLive(g);
+  const scored = hasScore(g);
+  const homeWon = g.home_win === true;
+  const awayWon = g.home_win === false;
+
+  const rightTop = scored
+    ? `<span class="game-card-score${awayWon ? ' winner' : ' loser'}">${g.away_score}</span>`
+    : '';
+  const rightBot = scored
+    ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
+    : '';
+  const statusLine = gameCardStatusTopHtml(g);
+  const pk = String(g.game_pk ?? '');
+
+  return `
+      <div class="game-card" data-game-pk="${pk}">
         <div class="game-card-matchup">
           ${statusLine}
           <div class="game-card-team">
@@ -2900,20 +2953,107 @@ function renderGameCards(games) {
             ${rightBot}
           </div>
         </div>
-        <div class="game-card-details">
-          <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
-          <div class="game-card-detail">Market <strong>${fmtPct(g.home_implied_prob)}</strong></div>
-          <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
-          <div class="game-card-side">
-            <span style="display:inline-flex;align-items:center;gap:8px;">
-              ${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}
-              ${explainBtn}
-            </span>
-            <span>${betStatus(g)}</span>
-          </div>
-        </div>
+        ${gameCardDetailsHtml(g)}
       </div>`;
-  }).join('');
+}
+
+function tryPatchGameCards(container, games) {
+  if (!games.length) return false;
+  const cards = [...container.querySelectorAll('.game-card[data-game-pk]')];
+  if (cards.length !== games.length) return false;
+  for (let i = 0; i < games.length; i++) {
+    if (cards[i].dataset.gamePk !== String(games[i].game_pk)) return false;
+  }
+  for (let i = 0; i < games.length; i++) patchGameCard(cards[i], games[i]);
+  return true;
+}
+
+function patchGameCard(el, g) {
+  const finished = g.home_win != null;
+  const live = isGameLive(g);
+  const scored = hasScore(g);
+  const notStarted = !finished && !live;
+  const homeWon = g.home_win === true;
+  const awayWon = g.home_win === false;
+
+  const statusTop = el.querySelector('.game-card-status-top');
+  if (statusTop) {
+    const status = gameStatusLine(g);
+    statusTop.innerHTML = `
+      <span class="game-card-final game-card-status-center">${status}</span>
+      ${notStarted ? `<span class="game-card-time game-card-status-right">${formatLocalTime(g.game_time_utc)}</span>` : ''}
+    `;
+  }
+
+  const teamRows = el.querySelectorAll('.game-card-matchup > .game-card-team');
+  if (teamRows.length >= 2) {
+    patchGameTeamRow(teamRows[0], {
+      scored,
+      scoreVal: g.away_score,
+      winner: awayWon,
+      nameLoser: finished && homeWon,
+    });
+    patchGameTeamRow(teamRows[1], {
+      scored,
+      scoreVal: g.home_score,
+      winner: homeWon,
+      nameLoser: finished && awayWon,
+    });
+  }
+
+  const details = el.querySelector('.game-card-details');
+  if (details) details.outerHTML = gameCardDetailsHtml(g);
+}
+
+function patchGameTeamRow(row, { scored, scoreVal, winner, nameLoser }) {
+  const nameEl = row.querySelector('.game-card-team-name');
+  let scoreEl = row.querySelector('.game-card-score');
+  if (scored && scoreVal != null) {
+    if (!scoreEl) {
+      scoreEl = document.createElement('span');
+      scoreEl.className = 'game-card-score';
+      row.appendChild(scoreEl);
+    }
+    scoreEl.textContent = String(scoreVal);
+    scoreEl.className = 'game-card-score' + (winner ? ' winner' : ' loser');
+    if (nameEl) nameEl.classList.toggle('loser', !!nameLoser);
+  } else {
+    if (scoreEl) scoreEl.remove();
+    if (nameEl) nameEl.classList.remove('loser');
+  }
+}
+
+async function loadGamesForDate(dateStr, opts = {}) {
+  const silent = opts.silent === true;
+  const body = document.getElementById('games-body');
+  if (!silent) {
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    setGamesRefreshError('');
+  }
+  try {
+    const res = await fetch(`/api/games-by-date?date=${dateStr}&mode=${state.betMode}`);
+    const data = await res.json();
+    const games = data.games || [];
+    setGamesRefreshError('');
+    if (silent && tryPatchGameCards(body, games)) return;
+    renderGameCards(games);
+  } catch (e) {
+    if (silent) {
+      console.warn('Games refresh failed:', e);
+      setGamesRefreshError('Could not refresh scores. Will retry.');
+    } else {
+      body.innerHTML = '<div class="empty">Failed to load games</div>';
+    }
+  }
+}
+
+function renderGameCards(games) {
+  const el = document.getElementById('games-body');
+  if (!games.length) {
+    el.innerHTML = '<div class="empty">No games on this date</div>';
+    return;
+  }
+  el.innerHTML = games.map(g => buildSingleGameCardHtml(g)).join('');
 }
 
 function renderGamesPage() {
@@ -3120,7 +3260,7 @@ async function loadBetModeData() {
   state.openBets = openBets;
 }
 
-async function loadAll() {
+async function reloadDashboardState() {
   const [me, account, settings, balance, paperBankroll, upcoming, teams, modelAccuracy] = await Promise.all([
     fetch('/api/me').then(r => { if (!r.ok) throw new Error('me failed'); return r.json(); }),
     fetch('/api/account/kalshi').then(r => { if (!r.ok) throw new Error('account failed'); return r.json(); }),
@@ -3143,11 +3283,28 @@ async function loadAll() {
   state.teams = teams;
   state.modelAccuracy = modelAccuracy;
   await loadBetModeData();
+}
+
+async function loadAll() {
+  await reloadDashboardState();
   renderAll();
 }
 
-function handleRefresh() {
-  renderAll();
+async function handleRefresh() {
+  try {
+    await reloadDashboardState();
+    renderModeToggle();
+    renderLiveStatus();
+    renderOverview();
+    renderBets();
+    renderPerformance();
+    renderTeams();
+    if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr, { silent: true });
+    if (document.getElementById('page-games')?.classList.contains('active')) renderCalendar();
+    syncGamesPollTimer();
+  } catch (e) {
+    console.error('Refresh failed:', e);
+  }
 }
 
 async function refreshBetFeed() {
@@ -3155,7 +3312,7 @@ async function refreshBetFeed() {
     const balance = await fetch('/api/balance').then(r => { if (!r.ok) throw new Error('balance failed'); return r.json(); });
     state.balance = balance;
     await loadBetModeData();
-    if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr);
+    if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr, { silent: true });
     renderOverview();
     renderBets();
   } catch (e) {
@@ -3168,6 +3325,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeExplainModal();
       if (e.key === 'Escape') closeExplainGlossaryModal();
+    });
+    document.addEventListener('visibilitychange', () => {
+      syncGamesPollTimer();
+      if (document.visibilityState === 'visible' && state.activeDashboardPage === 'games' && state.gamesDateStr) {
+        loadGamesForDate(state.gamesDateStr, { silent: true });
+      }
     });
 
     const savedTheme = localStorage.getItem('theme') || 'auto';

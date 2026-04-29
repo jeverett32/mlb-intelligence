@@ -513,6 +513,15 @@
       padding: 14px;
       display: grid;
       gap: 8px;
+      cursor: grab;
+    }
+    .note-item.dragging {
+      opacity: 0.55;
+      cursor: grabbing;
+    }
+    .note-item.drag-over {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
     }
     .note-item-head {
       display: flex;
@@ -667,6 +676,7 @@
           <span>Saved Notes</span>
           <button class="btn secondary" onclick="loadNotes()" style="font-size:0.72rem;padding:4px 10px;">Refresh</button>
         </div>
+        <div style="padding: 0 16px; color: var(--text-muted); font-size: 0.74rem;">Drag notes to reorder</div>
         <div class="notes-list" id="notes-body">
           <div class="empty">Loading notes...</div>
         </div>
@@ -873,6 +883,7 @@ function escapeHtml(value) {
 }
 
 let adminNotes = [];
+let draggedNoteId = null;
 
 function noteTimestamp(value) {
   if (!value) return '—';
@@ -898,6 +909,27 @@ function editNote(id) {
   document.getElementById('note-title').focus();
 }
 
+function moveNoteInMemory(sourceId, targetId) {
+  const sourceIdx = adminNotes.findIndex(n => Number(n.id) === Number(sourceId));
+  const targetIdx = adminNotes.findIndex(n => Number(n.id) === Number(targetId));
+  if (sourceIdx < 0 || targetIdx < 0 || sourceIdx === targetIdx) return false;
+  const [moved] = adminNotes.splice(sourceIdx, 1);
+  adminNotes.splice(targetIdx, 0, moved);
+  return true;
+}
+
+async function persistNoteOrder() {
+  const resp = await fetch('/api/admin/notes/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note_ids: adminNotes.map(n => Number(n.id)) }),
+  });
+  if (!resp.ok) {
+    alert('Failed to save note order');
+    await loadNotes();
+  }
+}
+
 function renderNotes(notes) {
   const el = document.getElementById('notes-body');
   if (!notes.length) {
@@ -905,7 +937,7 @@ function renderNotes(notes) {
     return;
   }
   el.innerHTML = notes.map(note => `
-    <article class="note-item">
+    <article class="note-item" draggable="true" data-note-id="${Number(note.id)}">
       <div class="note-item-head">
         <h3>${escapeHtml(note.title || 'Untitled note')}</h3>
         <span class="note-meta">${escapeHtml(noteTimestamp(note.updated_at))}</span>
@@ -917,6 +949,36 @@ function renderNotes(notes) {
       </div>
     </article>
   `).join('');
+
+  el.querySelectorAll('.note-item').forEach(item => {
+    item.addEventListener('dragstart', (event) => {
+      draggedNoteId = Number(item.dataset.noteId);
+      item.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      draggedNoteId = null;
+      el.querySelectorAll('.note-item').forEach(n => n.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      if (draggedNoteId == null || Number(item.dataset.noteId) === draggedNoteId) return;
+      item.classList.add('drag-over');
+      event.dataTransfer.dropEffect = 'move';
+    });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      item.classList.remove('drag-over');
+      const targetId = Number(item.dataset.noteId);
+      if (draggedNoteId == null || targetId === draggedNoteId) return;
+      const changed = moveNoteInMemory(draggedNoteId, targetId);
+      if (!changed) return;
+      renderNotes(adminNotes);
+      await persistNoteOrder();
+    });
+  });
 }
 
 async function loadNotes() {

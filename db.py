@@ -904,7 +904,7 @@ BROWSE_TABLE_ORDER_BY = {
     "paper_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
     "model_metric_snapshots": "trained_at DESC NULLS LAST, id DESC",
     "model_artifacts": "created_at DESC NULLS LAST, id DESC",
-    "admin_notes": "updated_at DESC NULLS LAST, id DESC",
+    "admin_notes": "sort_order ASC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
 }
 
 
@@ -985,11 +985,28 @@ def init_admin_notes_table():
                     id BIGSERIAL PRIMARY KEY,
                     title TEXT NOT NULL DEFAULT '',
                     body TEXT NOT NULL DEFAULT '',
+                    sort_order BIGINT,
                     created_by TEXT,
                     updated_by TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+            """)
+            cur.execute(f"ALTER TABLE {ADMIN_NOTES_TABLE} ADD COLUMN IF NOT EXISTS sort_order BIGINT")
+            cur.execute(f"""
+                WITH ranked AS (
+                    SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC, id DESC) AS rn
+                    FROM {ADMIN_NOTES_TABLE}
+                )
+                UPDATE {ADMIN_NOTES_TABLE} n
+                SET sort_order = ranked.rn
+                FROM ranked
+                WHERE n.id = ranked.id
+                  AND n.sort_order IS NULL
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_{ADMIN_NOTES_TABLE}_sort_order
+                ON {ADMIN_NOTES_TABLE} (sort_order ASC, id ASC)
             """)
             cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_{ADMIN_NOTES_TABLE}_updated_at
@@ -1009,7 +1026,7 @@ def list_admin_notes(limit: int = 100) -> list[dict]:
                 f"""
                 SELECT *
                 FROM {ADMIN_NOTES_TABLE}
-                ORDER BY updated_at DESC, id DESC
+                ORDER BY sort_order ASC NULLS LAST, updated_at DESC, id DESC
                 LIMIT %s
                 """,
                 (int(limit),),
@@ -1024,14 +1041,16 @@ def create_admin_note(title: str, body: str, actor_email: str | None = None) -> 
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM {ADMIN_NOTES_TABLE}")
+            next_sort_order = int(cur.fetchone()["next_sort_order"])
             cur.execute(
                 f"""
                 INSERT INTO {ADMIN_NOTES_TABLE}
-                    (title, body, created_by, updated_by, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, NOW(), NOW())
+                    (title, body, sort_order, created_by, updated_by, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING *
                 """,
-                (title or "", body or "", actor_email, actor_email),
+                (title or "", body or "", next_sort_order, actor_email, actor_email),
             )
             note = dict(cur.fetchone())
         conn.commit()
@@ -1073,6 +1092,32 @@ def delete_admin_note(note_id: int) -> bool:
             deleted = cur.rowcount > 0
         conn.commit()
         return deleted
+    finally:
+        conn.close()
+
+
+def reorder_admin_notes(note_ids: list[int]) -> bool:
+    init_admin_notes_table()
+    normalized_ids = [int(nid) for nid in note_ids]
+    if not normalized_ids:
+        return False
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"SELECT id FROM {ADMIN_NOTES_TABLE} WHERE id = ANY(%s)",
+                (normalized_ids,),
+            )
+            found_ids = {int(row["id"]) for row in cur.fetchall()}
+            if len(found_ids) != len(set(normalized_ids)):
+                return False
+            for idx, nid in enumerate(normalized_ids, start=1):
+                cur.execute(
+                    f"UPDATE {ADMIN_NOTES_TABLE} SET sort_order = %s WHERE id = %s",
+                    (idx, nid),
+                )
+        conn.commit()
+        return True
     finally:
         conn.close()
 

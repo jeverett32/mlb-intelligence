@@ -2203,6 +2203,10 @@ class AdminNotePayload(BaseModel):
     body: str = ""
 
 
+class AdminNoteReorderPayload(BaseModel):
+    note_ids: list[int]
+
+
 def _clean_note_payload(payload: AdminNotePayload) -> tuple[str, str]:
     title = (payload.title or "").strip()
     body = (payload.body or "").strip()
@@ -2292,6 +2296,18 @@ def update_admin_note(
 def delete_admin_note(note_id: int, user: dict = Depends(require_admin)):
     if not DB.delete_admin_note(note_id):
         raise HTTPException(status_code=404, detail="Note not found")
+    return {"ok": True}
+
+
+@app.post("/api/admin/notes/reorder")
+def reorder_admin_notes(payload: AdminNoteReorderPayload, user: dict = Depends(require_admin)):
+    note_ids = [int(nid) for nid in payload.note_ids]
+    if not note_ids:
+        raise HTTPException(status_code=400, detail="Missing note_ids")
+    if len(note_ids) != len(set(note_ids)):
+        raise HTTPException(status_code=400, detail="Duplicate note_ids")
+    if not DB.reorder_admin_notes(note_ids):
+        raise HTTPException(status_code=400, detail="Invalid note_ids")
     return {"ok": True}
 
 

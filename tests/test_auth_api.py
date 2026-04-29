@@ -77,13 +77,14 @@ def test_admin_notes_crud(monkeypatch, app_module, client):
     )
 
     def list_notes(limit=100):
-        return list(notes.values())
+        return sorted(notes.values(), key=lambda n: n.get("sort_order", 999999))
 
     def create_note(title, body, actor_email=None):
         note = {
             "id": next_id["value"],
             "title": title,
             "body": body,
+            "sort_order": next_id["value"],
             "created_by": actor_email,
             "updated_by": actor_email,
             "created_at": now,
@@ -103,10 +104,18 @@ def test_admin_notes_crud(monkeypatch, app_module, client):
     def delete_note(note_id):
         return notes.pop(note_id, None) is not None
 
+    def reorder_notes(note_ids):
+        if set(note_ids) != set(notes.keys()):
+            return False
+        for idx, note_id in enumerate(note_ids, start=1):
+            notes[note_id]["sort_order"] = idx
+        return True
+
     monkeypatch.setattr(app_module.DB, "list_admin_notes", list_notes)
     monkeypatch.setattr(app_module.DB, "create_admin_note", create_note)
     monkeypatch.setattr(app_module.DB, "update_admin_note", update_note)
     monkeypatch.setattr(app_module.DB, "delete_admin_note", delete_note)
+    monkeypatch.setattr(app_module.DB, "reorder_admin_notes", reorder_notes)
     client.cookies.set(app_module.COOKIE_NAME, "fake-session")
 
     r = client.post("/api/admin/notes", json={"title": "Lineup idea", "body": "Track scratch timing"})
@@ -114,9 +123,21 @@ def test_admin_notes_crud(monkeypatch, app_module, client):
     assert r.json()["id"] == 1
     assert r.json()["created_by"] == "admin@example.com"
 
+    r = client.post("/api/admin/notes", json={"title": "Weather", "body": "Check wind"})
+    assert r.status_code == 200
+    assert r.json()["id"] == 2
+
     r = client.get("/api/admin/notes")
     assert r.status_code == 200
-    assert r.json()["notes"][0]["title"] == "Lineup idea"
+    assert [n["id"] for n in r.json()["notes"]] == [1, 2]
+
+    r = client.post("/api/admin/notes/reorder", json={"note_ids": [2, 1]})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+    r = client.get("/api/admin/notes")
+    assert r.status_code == 200
+    assert [n["id"] for n in r.json()["notes"]] == [2, 1]
 
     r = client.put("/api/admin/notes/1", json={"title": "Updated", "body": "New text"})
     assert r.status_code == 200
