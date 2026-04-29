@@ -1563,6 +1563,7 @@ def get_games_by_date(
         order_cols = [
             "game_pk", "bet_dollars", "n_contracts", "kalshi_order_id",
             "status", "dry_run", "live_price", "live_edge", "result",
+            "profit_loss",
         ]
         available = [c for c in order_cols if c in user_orders.columns]
         day_games = day_games.merge(
