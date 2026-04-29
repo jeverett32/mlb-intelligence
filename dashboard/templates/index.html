@@ -1935,7 +1935,11 @@ function betStatus(game) {
 function isGameLive(g) {
   const state = String(g.game_state || '').toLowerCase();
   const status = String(g.game_status || '').toLowerCase();
-  return state === 'live' || ['in_progress', 'manager_challenge', 'delayed'].includes(status);
+  const detail = String(g.detailed_state || '').toLowerCase();
+  if (['warmup', 'pre-game', 'scheduled'].includes(detail) || ['warmup', 'pre-game', 'scheduled'].includes(status)) {
+    return false;
+  }
+  return state === 'live' || ['in_progress', 'manager_challenge'].includes(status);
 }
 function hasScore(g) {
   return (g.home_win != null || isGameLive(g)) && g.home_score != null && g.away_score != null;

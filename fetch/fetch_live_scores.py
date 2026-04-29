@@ -45,6 +45,8 @@ def _score(game: dict, side: str):
 def _live_status_text(status: dict, linescore: dict) -> str:
     detailed = status.get("detailedState") or ""
     abstract = status.get("abstractGameState") or ""
+    if detailed.lower() in {"warmup", "pre-game", "scheduled"}:
+        return detailed
     if abstract == "Live":
         ordinal = linescore.get("currentInningOrdinal")
         state = linescore.get("inningState")
