@@ -2004,6 +2004,9 @@ function isGamePostponedOrCancelled(g) {
   const det = String(g.detailed_state || '').toLowerCase().replace(/ /g, '_');
   if (gs === 'postponed' || gs === 'cancelled') return true;
   if (det === 'postponed' || det === 'cancelled') return true;
+  const liveTxt = String(g.live_status_text || '').toLowerCase();
+  if (liveTxt.includes('postpone')) return true;
+  if (liveTxt.includes('cancel')) return true;
   return false;
 }
 function isGameLive(g) {
@@ -2023,7 +2026,8 @@ function gameStatusLine(g) {
   if (isGamePostponedOrCancelled(g)) {
     const gs = String(g.game_status || '').toLowerCase();
     const det = String(g.detailed_state || '').toLowerCase();
-    if (gs === 'cancelled' || det === 'cancelled') return 'Cancelled';
+    const liveTxt = String(g.live_status_text || '').toLowerCase();
+    if (gs === 'cancelled' || det === 'cancelled' || liveTxt.includes('cancel')) return 'Cancelled';
     return 'Postponed';
   }
   if (g.home_win != null) return 'Final';
