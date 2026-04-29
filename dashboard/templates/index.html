@@ -329,9 +329,17 @@
     .badge.green { background: var(--success-light); color: var(--success); }
     .badge.red { background: var(--danger-light); color: var(--danger); }
     .badge.blue { background: #dde4ec; color: #3d556e; }
+    .badge.home { background: #36506a; color: #fff; }
+    .badge.away { background: #dde4ec; color: #36506a; border: 1px solid var(--border); }
     .badge.gray { background: var(--bg-elevated); color: var(--text-secondary); }
     .badge.gold { background: var(--accent-light); color: var(--accent); }
     .badge.inverse { background: var(--text-primary); color: var(--bg-primary); }
+    :root[data-theme="dark"] .badge.home { background: #1f3144; color: var(--text-primary); }
+    :root[data-theme="dark"] .badge.away { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
+    @media (prefers-color-scheme: dark) {
+      :root[data-theme="auto"] .badge.home { background: #1f3144; color: var(--text-primary); }
+      :root[data-theme="auto"] .badge.away { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border); }
+    }
 
     .panel {
       background: var(--bg-card);
@@ -1861,13 +1869,13 @@ function streakBadge(streak) {
   return badge(streak, streak.startsWith('W') ? 'green' : 'red');
 }
 function sideBadge(side) {
-  if (side === 'home') return badge('Home', 'blue');
-  if (side === 'away') return badge('Away', 'inverse');
+  if (side === 'home') return badge('Home', 'home');
+  if (side === 'away') return badge('Away', 'away');
   return badge('Pass', 'gray');
 }
 function resultBadge(result, side) {
   if (result == null) return badge('Open', 'gold');
-  if (!side || side === 'none') return result === true ? badge('Home Win', 'blue') : badge('Away Win', 'gray');
+  if (!side || side === 'none') return result === true ? badge('Home Win', 'home') : badge('Away Win', 'away');
   if (result === true) return side === 'home' ? badge('Win', 'green') : badge('Loss', 'red');
   return side === 'away' ? badge('Win', 'green') : badge('Loss', 'red');
 }

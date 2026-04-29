@@ -422,6 +422,13 @@ function makeChart(id, cfg) {
   charts[id] = new Chart(c, cfg);
 }
 
+function sidePill(side) {
+  var normalized = String(side || '').toLowerCase();
+  if (normalized === 'home') return '<span class="side-pill home">Home</span>';
+  if (normalized === 'away') return '<span class="side-pill away">Away</span>';
+  return esc(side || '—');
+}
+
 function renderRecentBetsPage() {
   var body = document.getElementById('recent-bets-body');
   var pager = document.getElementById('recent-bets-pagination');
@@ -439,7 +446,7 @@ function renderRecentBetsPage() {
     return '<tr>' +
       '<td>' + esc(b.game_date) + '</td>' +
       '<td>' + esc(b.matchup) + '</td>' +
-      '<td>' + esc(b.side) + '</td>' +
+      '<td>' + sidePill(b.side) + '</td>' +
       '<td><span class="result-pill ' + (b.result === 'W' ? 'win' : 'loss') + '">' + b.result + '</span></td>' +
       '<td>' + fmtPctWhole(b.model_prob) + '</td>' +
       '<td>' + fmtPctWhole(b.market_prob) + '</td>' +

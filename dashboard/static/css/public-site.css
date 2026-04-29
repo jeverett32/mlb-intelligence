@@ -1526,6 +1526,54 @@ html, body {
   background: rgba(168, 90, 90, 0.12);
 }
 
+.side-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.side-pill.home {
+  background: #36506a;
+  color: #fff;
+}
+
+.side-pill.away {
+  background: #dde4ec;
+  color: #36506a;
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .side-pill.home {
+  background: #1f3144;
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .side-pill.away {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] .side-pill.home {
+    background: #1f3144;
+    color: var(--text-primary);
+  }
+
+  :root[data-theme="auto"] .side-pill.away {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border-color: var(--border);
+  }
+}
+
 .auth-shell-wrap {
   padding-bottom: 44px;
 }
