@@ -110,7 +110,7 @@
       transition: color 0.15s, background 0.15s;
     }
     .back-link:hover { color: var(--text-primary); background: var(--bg-card); }
-    .back-link { margin-bottom: 8px; }
+    .back-link { margin-bottom: 8px; white-space: nowrap; }
 
     .settings-wrap {
       max-width: 860px;
@@ -386,7 +386,17 @@
     .admin-redirect-btn:hover { color: var(--text-primary); border-color: var(--accent-light); }
 
     @media (max-width: 640px) {
-      .back-arrow { display: none; }
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        flex-shrink: 0;
+        margin-bottom: 0;
+        padding: 10px 12px;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .back-link-text { display: none; }
       .settings-layout { flex-direction: column; }
       .settings-sidenav { width: 100%; flex: none; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; overflow-x: auto; }
       .settings-sidenav button { white-space: nowrap; }
@@ -403,7 +413,7 @@
   </div>
   <div class="settings-layout">
     <nav class="settings-sidenav" aria-label="Settings sections">
-      <a class="back-link" href="/"><span class="back-arrow">← </span>Back</a>
+      <a class="back-link" href="/">←<span class="back-link-text"> Back</span></a>
       <button class="active" onclick="showTab('general', this)">General</button>
       <button onclick="showTab('betting', this)">Betting</button>
       <button onclick="showTab('kalshi', this)">Kalshi</button>
