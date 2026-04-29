@@ -749,6 +749,11 @@
       gap: 0;
       padding: 14px 18px 10px;
     }
+    .game-card-status-top {
+      min-height: 18px;
+      text-align: center;
+      padding-bottom: 6px;
+    }
     .game-card-team {
       display: flex;
       align-items: center;
@@ -825,7 +830,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       white-space: nowrap;
     }
 
@@ -1927,17 +1932,19 @@ function hasScore(g) {
 }
 function gameStatusLine(g) {
   if (g.home_win != null) return 'Final';
-  if (isGameLive(g)) return g.live_status_text || 'Live';
+  if (isGameLive(g)) {
+    const inningState = String(g.inning_state || '').toUpperCase();
+    const ordinal = String(g.inning_ordinal || '').toUpperCase();
+    const outs = g.outs == null ? null : Number(g.outs);
+    if ((inningState === 'TOP' || inningState === 'BOTTOM') && ordinal) {
+      const outsText = Number.isFinite(outs)
+        ? ` • ${outs} ${outs === 1 ? 'OUT' : 'OUTS'}`
+        : '';
+      return `${inningState} ${ordinal}${outsText}`;
+    }
+    return String(g.live_status_text || 'Live').toUpperCase();
+  }
   return g.live_status_text || g.detailed_state || '';
-}
-function countText(g) {
-  if (!isGameLive(g)) return '';
-  const inningState = String(g.inning_state || '').toLowerCase();
-  if (inningState !== 'top' && inningState !== 'bottom') return '';
-  const balls = g.balls == null ? null : Number(g.balls);
-  const strikes = g.strikes == null ? null : Number(g.strikes);
-  if (!Number.isFinite(balls) || !Number.isFinite(strikes)) return '';
-  return `${balls}-${strikes}`;
 }
 
 function shouldShowExplain(game) {
@@ -2788,9 +2795,8 @@ function renderGameCards(games) {
       ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
       : '';
     const status = gameStatusLine(g);
-    const count = countText(g);
     const statusLine = status
-      ? `<div style="text-align:center;padding-top:2px"><span class="game-card-final">${status}${count ? ` • ${count}` : ''}</span></div>`
+      ? `<div class="game-card-status-top"><span class="game-card-final">${status}</span></div>`
       : '';
     const explainBtn = shouldShowExplain(g)
       ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
@@ -2805,6 +2811,7 @@ function renderGameCards(games) {
     return `
       <div class="game-card">
         <div class="game-card-matchup">
+          ${statusLine}
           <div class="game-card-team">
             <div class="team-logo">
               <img src="/static/team-logos/${awayAbbr}.png" alt="${awayAbbr}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
@@ -2821,7 +2828,6 @@ function renderGameCards(games) {
             <span class="game-card-team-name${finished && awayWon ? ' loser' : ''}">${homeName} <span class="game-card-odds">${fmtML(g.close_home_ml)}</span></span>
             ${rightBot}
           </div>
-          ${statusLine}
         </div>
         <div class="game-card-details">
           <div class="game-card-detail">Model <strong>${fmtPct(g.predicted_prob)}</strong></div>
