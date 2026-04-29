@@ -678,7 +678,7 @@ def run_pipeline_action(
     request: Request, payload: dict, user: dict = Depends(require_admin)
 ):
     action = payload.get("action")
-    allowed = {"settle_games", "refresh_schedule", "refresh_balance", "refresh_live_scores"}
+    allowed = {"settle_games", "refresh_schedule", "refresh_balance", "refresh_live_scores", "refresh_live_bets"}
     if action not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
@@ -734,6 +734,17 @@ def run_pipeline_action(
             today = pd.Timestamp.now(tz="US/Eastern").strftime("%Y-%m-%d")
             updated = refresh_scores_for_date(today)
             return {"ok": True, "message": f"Refreshed live scores for {today} ({updated} game(s) updated)."}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    elif action == "refresh_live_bets":
+        try:
+            from fetch.fetch_live_positions import refresh_due_orders
+            stats = refresh_due_orders(stale_seconds=0)
+            return {
+                "ok": True,
+                "message": f"Checked {stats.checked} order(s), updated {stats.updated}, skipped {stats.skipped}, errors {stats.errors}.",
+            }
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
