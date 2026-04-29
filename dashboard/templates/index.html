@@ -1917,6 +1917,28 @@ function betStatus(game) {
   if (game.predicted_prob != null) return badge('No Bet', 'gray');
   return badge('Pending', 'gray');
 }
+function isGameLive(g) {
+  const state = String(g.game_state || '').toLowerCase();
+  const status = String(g.game_status || '').toLowerCase();
+  return state === 'live' || ['in_progress', 'manager_challenge', 'delayed'].includes(status);
+}
+function hasScore(g) {
+  return g.home_score != null && g.away_score != null;
+}
+function gameStatusLine(g) {
+  if (g.home_win != null) return 'Final';
+  if (isGameLive(g)) return g.live_status_text || 'Live';
+  return g.live_status_text || g.detailed_state || '';
+}
+function countText(g) {
+  if (!isGameLive(g)) return '';
+  const inningState = String(g.inning_state || '').toLowerCase();
+  if (inningState !== 'top' && inningState !== 'bottom') return '';
+  const balls = g.balls == null ? null : Number(g.balls);
+  const strikes = g.strikes == null ? null : Number(g.strikes);
+  if (!Number.isFinite(balls) || !Number.isFinite(strikes)) return '';
+  return `${balls}-${strikes}`;
+}
 
 function shouldShowExplain(game) {
   const side = game.bet_side;
@@ -2754,16 +2776,22 @@ function renderGameCards(games) {
     const awayName = teamName(awayAbbr);
     const homeName = teamName(homeAbbr);
     const finished = g.home_win != null;
+    const live = isGameLive(g);
+    const scored = hasScore(g);
     const homeWon = g.home_win === true;
     const awayWon = g.home_win === false;
 
-    const rightTop = finished
+    const rightTop = finished || live || scored
       ? `<span class="game-card-score${awayWon ? ' winner' : ' loser'}">${g.away_score}</span>`
       : `<span class="game-card-time">${formatLocalTime(g.game_time_utc)}</span>`;
-    const rightBot = finished
+    const rightBot = finished || live || scored
       ? `<span class="game-card-score${homeWon ? ' winner' : ' loser'}">${g.home_score}</span>`
       : '';
-    const statusLine = finished ? '<div style="text-align:center;padding-top:2px"><span class="game-card-final">Final</span></div>' : '';
+    const status = gameStatusLine(g);
+    const count = countText(g);
+    const statusLine = status
+      ? `<div style="text-align:center;padding-top:2px"><span class="game-card-final">${status}${count ? ` • ${count}` : ''}</span></div>`
+      : '';
     const explainBtn = shouldShowExplain(g)
       ? `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

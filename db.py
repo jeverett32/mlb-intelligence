@@ -481,6 +481,64 @@ def get_complete_game_pks(season: int) -> set:
         conn.close()
 
 
+def apply_live_game_updates(updates: list[dict]) -> int:
+    """Update scores/status/inning metadata from MLB live schedule data."""
+    if not updates:
+        return 0
+    values = []
+    for item in updates:
+        extra = {
+            k: v
+            for k, v in {
+                "game_status": item.get("game_status"),
+                "game_state": item.get("game_state"),
+                "detailed_state": item.get("detailed_state"),
+                "inning": item.get("inning"),
+                "inning_ordinal": item.get("inning_ordinal"),
+                "inning_state": item.get("inning_state"),
+                "is_top_inning": item.get("is_top_inning"),
+                "outs": item.get("outs"),
+                "balls": item.get("balls"),
+                "strikes": item.get("strikes"),
+                "live_status_text": item.get("live_status_text"),
+                "live_updated_at": item.get("live_updated_at"),
+            }.items()
+            if v is not None
+        }
+        values.append(
+            (
+                int(item["game_pk"]),
+                item.get("home_score"),
+                item.get("away_score"),
+                item.get("home_win"),
+                json.dumps(extra),
+            )
+        )
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            execute_values(
+                cur,
+                """
+                UPDATE games g
+                SET home_score = COALESCE(v.home_score::double precision, g.home_score),
+                    away_score = COALESCE(v.away_score::double precision, g.away_score),
+                    home_win = COALESCE(v.home_win::boolean, g.home_win),
+                    extra = COALESCE(g.extra, '{}'::jsonb) || v.extra::jsonb,
+                    updated_at = NOW()
+                FROM (VALUES %s) AS v(game_pk, home_score, away_score, home_win, extra)
+                WHERE g.game_pk = v.game_pk::bigint
+                """,
+                values,
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # bets table
 # ---------------------------------------------------------------------------

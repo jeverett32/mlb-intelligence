@@ -21,6 +21,7 @@ import db as DB
 from config import ACTIVE_SEASON
 from fetch.fetch_balance import fetch_balance_for_account
 from fetch.fetch_live_positions import refresh_due_orders
+from fetch.fetch_live_scores import refresh_scores_for_date
 
 import bcrypt as _bcrypt
 import numpy as np
@@ -1497,6 +1498,11 @@ def get_games_by_date(
         return JSONResponse({"error": "Invalid date format"}, status_code=400)
 
     try:
+        refresh_scores_for_date(date)
+    except Exception as exc:
+        print(f"Live score refresh skipped for {date}: {exc}")
+
+    try:
         games_df = DB.get_games_df(season=ACTIVE_SEASON)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -1561,6 +1567,9 @@ def get_games_by_date(
     cols = [
         "game_pk", "game_date", "game_time_utc", "home_team", "away_team",
         "home_score", "away_score", "home_win",
+        "game_status", "game_state", "detailed_state", "inning",
+        "inning_ordinal", "inning_state", "is_top_inning", "outs",
+        "balls", "strikes", "live_status_text", "live_updated_at",
         "home_implied_prob", "away_implied_prob", "close_home_ml", "close_away_ml",
         "predicted_prob", "edge", "bet_side", "bet_frac", "bet_dollars",
         "n_contracts", "result", "kalshi_order_id", "status", "dry_run",
@@ -1574,6 +1583,11 @@ def get_games_by_date(
 
 @app.get("/api/upcoming")
 def get_upcoming(user: dict = Depends(require_approved_user)):
+    try:
+        refresh_scores_for_date()
+    except Exception as exc:
+        print(f"Live score refresh skipped for upcoming: {exc}")
+
     try:
         games_df = DB.get_games_df(season=ACTIVE_SEASON, upcoming_only=True)
     except Exception as e:
@@ -1673,6 +1687,21 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
         "game_time_utc",
         "home_team",
         "away_team",
+        "home_score",
+        "away_score",
+        "home_win",
+        "game_status",
+        "game_state",
+        "detailed_state",
+        "inning",
+        "inning_ordinal",
+        "inning_state",
+        "is_top_inning",
+        "outs",
+        "balls",
+        "strikes",
+        "live_status_text",
+        "live_updated_at",
         "home_implied_prob",
         "away_implied_prob",
         "close_home_ml",

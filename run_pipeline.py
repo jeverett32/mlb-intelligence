@@ -43,6 +43,7 @@ from model import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
 from fetch.fetch_live_positions import refresh_due_orders  # noqa: E402
+from fetch.fetch_live_scores import refresh_scores_for_date  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
@@ -57,9 +58,11 @@ MIN_GAME_TIME_MINUTES = 0
 # Skip the pre-batch schedule refresh if we fetched more recently than this
 FETCH_STALE_SECONDS = 300
 LIVE_POSITION_REFRESH_SECONDS = 300
+LIVE_SCORE_REFRESH_SECONDS = 300
 
 _LAST_FETCH_TS: float = 0.0
 _LAST_LIVE_POSITION_REFRESH_TS: float = 0.0
+_LAST_LIVE_SCORE_REFRESH_TS: float = 0.0
 
 
 def _sd_notify(state: str) -> None:
@@ -93,6 +96,20 @@ def refresh_live_positions_if_due(force: bool = False) -> None:
         print(f"  Live position refresh failed: {e}")
 
 
+def refresh_live_scores_if_due(force: bool = False) -> None:
+    global _LAST_LIVE_SCORE_REFRESH_TS
+    now = time.time()
+    if not force and now - _LAST_LIVE_SCORE_REFRESH_TS < LIVE_SCORE_REFRESH_SECONDS:
+        return
+    _LAST_LIVE_SCORE_REFRESH_TS = now
+    try:
+        count = refresh_scores_for_date()
+        if count:
+            print(f"Live score refresh: updated={count}")
+    except Exception as e:
+        print(f"  Live score refresh failed: {e}")
+
+
 def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
     """Sleep in chunks, pinging the systemd watchdog between chunks."""
     remaining = max(0.0, total_secs)
@@ -102,6 +119,7 @@ def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
         remaining -= chunk
         _sd_notify("WATCHDOG=1")
         refresh_live_positions_if_due()
+        refresh_live_scores_if_due()
 
 
 def _mark_fetched() -> None:
@@ -463,6 +481,7 @@ def main():
         _sd_notify("WATCHDOG=1")
         settle_completed_games()
         refresh_live_positions_if_due(force=True)
+        refresh_live_scores_if_due(force=True)
 
         if _fetch_is_fresh():
             print(
