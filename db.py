@@ -845,6 +845,27 @@ def get_model_picks() -> pd.DataFrame:
 # settings table
 # ---------------------------------------------------------------------------
 
+USER_SETTING_COLUMNS = {
+    "live_betting": "live_betting",
+    "dashboard_timezone": "dashboard_timezone",
+    "execution_mode": "execution_mode",
+    "self_custody_last_seen_at": "self_custody_last_seen_at",
+    "self_custody_last_error": "self_custody_last_error",
+    "self_custody_kalshi_env": "self_custody_kalshi_env",
+    "self_custody_client_version": "self_custody_client_version",
+}
+
+
+def _stringify_user_setting(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
 def get_setting(key: str, default: str = "") -> str:
     conn = get_connection()
     try:
@@ -897,7 +918,7 @@ BROWSE_TABLE_ORDER_BY = {
     "settings": "updated_at DESC NULLS LAST, key ASC",
     "app_users": "created_at DESC NULLS LAST, email ASC",
     "app_sessions": "created_at DESC NULLS LAST, session_id DESC",
-    "user_settings": "updated_at DESC NULLS LAST, email ASC, key ASC",
+    "user_settings": "updated_at DESC NULLS LAST, email ASC",
     "kalshi_accounts": "updated_at DESC NULLS LAST, created_at DESC NULLS LAST, email ASC",
     "user_balance": "recorded_at DESC NULLS LAST, id DESC",
     "user_orders": "created_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
@@ -1195,15 +1216,60 @@ def init_auth_tables():
                 )
             """)
             cur.execute(f"ALTER TABLE {APP_API_TOKENS_TABLE} ADD COLUMN IF NOT EXISTS token_suffix TEXT NOT NULL DEFAULT ''")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'user_settings'
+                          AND column_name = 'key'
+                    ) THEN
+                        DROP TABLE IF EXISTS user_settings_kv_backup;
+                        ALTER TABLE user_settings RENAME TO user_settings_kv_backup;
+                    END IF;
+                END $$;
+                """
+            )
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS user_settings (
-                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
-                    key TEXT NOT NULL,
-                    value TEXT NOT NULL,
+                    email TEXT PRIMARY KEY REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    live_betting BOOLEAN NOT NULL DEFAULT FALSE,
+                    dashboard_timezone TEXT NOT NULL DEFAULT 'America/Denver',
+                    execution_mode TEXT NOT NULL DEFAULT 'server_managed',
+                    self_custody_last_seen_at TIMESTAMPTZ,
+                    self_custody_last_error TEXT,
+                    self_custody_kalshi_env TEXT,
+                    self_custody_client_version TEXT,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    PRIMARY KEY (email, key)
+                    CONSTRAINT user_settings_execution_mode_check
+                    CHECK (execution_mode IN ('server_managed', 'self_custody', 'paper_only'))
                 )
             """)
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS live_betting BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS dashboard_timezone TEXT NOT NULL DEFAULT 'America/Denver'")
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS execution_mode TEXT NOT NULL DEFAULT 'server_managed'")
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS self_custody_last_seen_at TIMESTAMPTZ")
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS self_custody_last_error TEXT")
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS self_custody_kalshi_env TEXT")
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS self_custody_client_version TEXT")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'user_settings_execution_mode_check'
+                    ) THEN
+                        ALTER TABLE user_settings
+                        ADD CONSTRAINT user_settings_execution_mode_check
+                        CHECK (execution_mode IN ('server_managed', 'self_custody', 'paper_only'));
+                    END IF;
+                END $$;
+                """
+            )
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS kalshi_accounts (
                     email TEXT PRIMARY KEY REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
@@ -1404,13 +1470,46 @@ def init_auth_tables():
                 """
             )
             cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF to_regclass('user_settings_kv_backup') IS NOT NULL THEN
+                INSERT INTO user_settings (
+                    email,
+                    live_betting,
+                    dashboard_timezone,
+                    execution_mode,
+                    self_custody_last_seen_at,
+                    self_custody_last_error,
+                    self_custody_kalshi_env,
+                    self_custody_client_version,
+                    updated_at
+                )
+                SELECT
+                    email,
+                    COALESCE(MAX(value) FILTER (WHERE key = 'live_betting') = 'true', FALSE),
+                    COALESCE(MAX(value) FILTER (WHERE key = 'dashboard_timezone'), 'America/Denver'),
+                    COALESCE(MAX(value) FILTER (WHERE key = 'execution_mode'), 'server_managed'),
+                    NULLIF(MAX(value) FILTER (WHERE key = 'self_custody_last_seen_at'), '')::timestamptz,
+                    NULLIF(MAX(value) FILTER (WHERE key = 'self_custody_last_error'), ''),
+                    NULLIF(MAX(value) FILTER (WHERE key = 'self_custody_kalshi_env'), ''),
+                    NULLIF(MAX(value) FILTER (WHERE key = 'self_custody_client_version'), ''),
+                    COALESCE(MAX(updated_at), NOW())
+                FROM user_settings_kv_backup
+                GROUP BY email
+                ON CONFLICT (email) DO NOTHING;
+                    END IF;
+                END $$;
+                """
+            )
+            cur.execute(
                 f"""
-                INSERT INTO user_settings (email, key, value, updated_at)
-                SELECT email, 'live_betting',
-                       COALESCE((SELECT value FROM settings WHERE key = 'global_live_betting'), 'false'),
+                INSERT INTO user_settings (email, live_betting, updated_at)
+                SELECT email,
+                       COALESCE((SELECT value FROM settings WHERE key = 'global_live_betting'), 'false') = 'true',
                        NOW()
                 FROM {APP_USERS_TABLE}
-                ON CONFLICT (email, key) DO NOTHING
+                ON CONFLICT (email) DO NOTHING
                 """
             )
         conn.commit()
@@ -1480,9 +1579,9 @@ def create_pending_user(email: str, password_hash: str, full_name: str = "") -> 
             if created:
                 cur.execute(
                     """
-                    INSERT INTO user_settings (email, key, value, updated_at)
-                    VALUES (%s, 'live_betting', 'false', NOW())
-                    ON CONFLICT (email, key) DO NOTHING
+                    INSERT INTO user_settings (email, live_betting, updated_at)
+                    VALUES (%s, FALSE, NOW())
+                    ON CONFLICT (email) DO NOTHING
                     """,
                     (email,),
                 )
@@ -1844,32 +1943,52 @@ def purge_expired_sessions() -> int:
 
 def get_user_setting(email: str, key: str, default: str = "") -> str:
     email = _norm_email(email)
+    column = USER_SETTING_COLUMNS.get(key)
+    if not column:
+        return default
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT value FROM user_settings WHERE email = %s AND key = %s",
-                (email, key),
+                f"SELECT {column} FROM user_settings WHERE email = %s",
+                (email,),
             )
             row = cur.fetchone()
-            return row[0] if row else default
+            if not row:
+                return default
+            value = _stringify_user_setting(row[0])
+            return value if value else default
     finally:
         conn.close()
 
 
 def set_user_setting(email: str, key: str, value: str):
     email = _norm_email(email)
+    column = USER_SETTING_COLUMNS.get(key)
+    if not column:
+        raise ValueError(f"Unknown user setting: {key}")
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            db_value = value
+            if key == "live_betting":
+                db_value = str(value).lower() == "true"
+            elif key == "self_custody_last_seen_at" and not value:
+                db_value = None
+            elif key in {
+                "self_custody_last_error",
+                "self_custody_kalshi_env",
+                "self_custody_client_version",
+            } and value == "":
+                db_value = None
             cur.execute(
-                """
-                INSERT INTO user_settings (email, key, value, updated_at)
-                VALUES (%s, %s, %s, NOW())
-                ON CONFLICT (email, key)
-                DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                f"""
+                INSERT INTO user_settings (email, {column}, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (email)
+                DO UPDATE SET {column} = EXCLUDED.{column}, updated_at = NOW()
                 """,
-                (email, key, value),
+                (email, db_value),
             )
         conn.commit()
     finally:
