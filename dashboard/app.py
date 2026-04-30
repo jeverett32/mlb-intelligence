@@ -2,7 +2,7 @@
 dashboard/app.py — FastAPI backend for the MLB betting dashboard.
 Serves the frontend at / and JSON data at /api/*.
 
-Run from project root: uv run uvicorn dashboard.app:app --host <bind_addr> --port 8080
+Run from project root: uv run uvicorn dashboard.app:app --host <bind_addr> --port <port>
 """
 
 import html

@@ -27,8 +27,8 @@ Create `.env` from `.env.example` if needed.
 
 ```env
 HOMELAB_HOST=<app-ssh-host>
-HOMELAB_PORT=22
-HOMELAB_USER=root
+HOMELAB_PORT=<ssh_port>
+HOMELAB_USER=<ssh_user>
 HOMELAB_PASSWORD=<optional-if-not-using-keys>
 
 # Optional key auth:
@@ -45,8 +45,8 @@ HOMELAB_SSH_KEY_PASSPHRASE=<optional>
 HOMELAB_DB_SSH_HOST=<db-ssh-host>
 
 # DB SSH creds can be distinct; fall back to HOMELAB_USER/HOMELAB_PASSWORD.
-HOMELAB_DB_SSH_PORT=22
-HOMELAB_DB_SSH_USER=root
+HOMELAB_DB_SSH_PORT=<ssh_port>
+HOMELAB_DB_SSH_USER=<ssh_user>
 HOMELAB_DB_SSH_PASSWORD=<optional-if-not-using-keys>
 
 # Optional key auth (falls back to HOMELAB_SSH_KEY_PATH/PASSPHRASE):
@@ -63,7 +63,7 @@ Run from repo root.
 ```bash
 python3 homelab.py app "systemctl status mlb-dashboard --no-pager -l | tail -40"
 python3 homelab.py app "journalctl -u mlb-dashboard -n 100 --no-pager"
-python3 homelab.py app "curl -s http://localhost:<REDACTED_PORT>/health"
+python3 homelab.py app "curl -s http://localhost:<port>/health"
 ```
 
 ### 2) Run a command on the db target
@@ -105,7 +105,7 @@ python3 homelab.py push db  --local ./tmp.sql       --remote /tmp/tmp.sql
 Env vars are preferred, but you can override per-invocation:
 
 ```bash
-python3 homelab.py app --host <app-ssh-host> --user <REDACTED_USER> --port <REDACTED_PORT> "uptime"
+python3 homelab.py app --host <app-ssh-host> --user <REDACTED_USER> --port <ssh_port> "uptime"
 python3 homelab.py db  --ssh-key ~/.ssh/id_ed25519 "pg_isready"
 ```
 

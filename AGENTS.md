@@ -13,7 +13,7 @@ db.py                # All DB access (postgres via psycopg2)
 bet/place_bet.py     # Kalshi bet placement
 fetch/               # Data fetchers (stats, odds, weather, balance)
 model/               # LightGBM/XGBoost training + prediction
-dashboard/app.py     # FastAPI dashboard (deployed on app LXC, port <REDACTED_PORT>)
+dashboard/app.py     # FastAPI dashboard (deployed on app LXC, configurable port)
 settle_games.py      # Post-game settlement
 scripts/             # One-off ops scripts
 tests/               # pytest suite
@@ -52,7 +52,7 @@ Commit frequently after tested, coherent checkpoints so deployable fixes do not 
 # App LXC — reads HOMELAB_HOST / HOMELAB_USER / HOMELAB_PASSWORD from .env
 python3 homelab.py app "systemctl status mlb-dashboard --no-pager -l | tail -40"
 python3 homelab.py app "journalctl -u mlb-dashboard -n 100 --no-pager"
-python3 homelab.py app "curl -s http://localhost:<REDACTED_PORT>/health"
+python3 homelab.py app "curl -s http://localhost:<port>/health"
 
 # DB LXC — reads HOMELAB_DB_SSH_HOST (or DB_HOST) + HOMELAB_DB_SSH_USER/PASSWORD
 # Falls back to HOMELAB_USER / HOMELAB_PASSWORD if no DB-specific SSH creds set

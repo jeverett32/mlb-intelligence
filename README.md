@@ -36,7 +36,7 @@ MLB Pipeline predicts MLB game outcomes using ML models and executes trades on [
 
 ## Architecture
 
-- **Dashboard** — FastAPI app serving public analytics + private operator controls (port <REDACTED_PORT>)
+- **Dashboard** — FastAPI app serving public analytics + private operator controls (configurable port)
 - **Pipeline** — Orchestrator that runs 15 min before each game, executes predictions and bets in parallel
 - **Model** — Logistic Regression (default) with isotonic calibration, plus LightGBM, XGBoost, MLP, or ensemble options; walk-forward validation
 - **DB** — PostgreSQL for bets, balances, and history
@@ -58,7 +58,7 @@ fetch/            # Data ingestion — odds, weather, stats
 ```bash
 uv sync
 uv run pytest -q tests/
-uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <REDACTED_PORT>
+uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>
 uv run run_pipeline.py
 ```
 

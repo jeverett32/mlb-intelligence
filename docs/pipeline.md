@@ -119,13 +119,17 @@ Outputs:
 
 ### Step C — Kalshi: balances + orders
 
-Kalshi integration details (auth, balance, orders, credential storage):
+Kalshi integration is implemented in code via `kalshi_client.py` (request signing) and is orchestrated through DB-backed workflows.
 
-- `docs/kalshi.md`
+Key points:
 
-The pipeline is DB-first:
-- Balances recorded in `user_balance`
-- Orders recorded in `user_orders`
+- Per-user Kalshi credentials are stored in Postgres in `kalshi_accounts`.
+  - `key_id` (API key id)
+  - `key_path` (path on the deployed machine to the PEM private key)
+  - `kalshi_env` (e.g. prod vs demo)
+- If `ENCRYPTION_KEY` is set in `.env`, sensitive credential fields can be encrypted at rest in the DB (see `db.py`).
+- Balances are recorded in `user_balance`.
+- Orders are recorded in `user_orders`.
 
 To place a bet manually for one user:
 
@@ -138,7 +142,7 @@ uv run bet/place_bet.py --game_pk <game_pk> --email <user_email>
 Dev server:
 
 ```bash
-uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <REDACTED_PORT>
+uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>
 ```
 
 ## Auto-deploy
@@ -153,7 +157,7 @@ Operational notes:
 - Use a dedicated, minimally-privileged runner user.
 - Scope sudo permissions tightly to only what deployment needs.
 
-See: `docs/auto_deploy.md`
+(See `.github/workflows/deploy.yml` for the exact runner expectations and steps.)
 
 ## Homelab SSH helper
 
