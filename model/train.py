@@ -1073,6 +1073,10 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
     last_probs = None
     last_y = None
     last_mkt = None
+    monthly_dates = []
+    monthly_probs = []
+    monthly_y = []
+    monthly_mkt = []
 
     for fold_idx, (train_end, val_start, val_end) in enumerate(folds):
         print(f"\n{'='*60}")
@@ -1235,6 +1239,11 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
 
         probs_val[~early_vl.values] = p_vl
 
+        monthly_dates.append(val_df["game_date"].values)
+        monthly_probs.append(probs_val.copy())
+        monthly_y.append(y_val.copy())
+        monthly_mkt.append(mkt_val.copy())
+
         brier, roi, n_bets = evaluate(probs_val, y_val, mkt_val, is_warmup=wu_val)
         print(f"  brier={brier:.4f}  roi={roi:.4f}  n_bets={n_bets}")
 
@@ -1290,6 +1299,44 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
                         "low_n": int(low.sum()),
                     }
         extras["feature_accuracy"] = buckets
+
+    if monthly_dates:
+        all_dates = pd.to_datetime(np.concatenate(monthly_dates))
+        all_probs = np.concatenate(monthly_probs).astype(float)
+        all_y = np.concatenate(monthly_y).astype(float)
+        all_mkt = np.concatenate(monthly_mkt).astype(float)
+        years = all_dates.year.values
+        months = all_dates.month.values
+        keys = years * 100 + months
+        monthly = []
+        for key in sorted(set(int(k) for k in keys)):
+            mask = keys == key
+            yr = int(key // 100)
+            mo = int(key % 100)
+            n = int(mask.sum())
+            y = all_y[mask]
+            p = all_probs[mask]
+            mk = all_mkt[mask]
+            mk_valid = ~np.isnan(mk)
+            brier = float(np.mean((p - y) ** 2))
+            accuracy = float(np.mean((p > 0.5) == (y > 0.5)))
+            if mk_valid.any():
+                market_brier = float(np.mean((mk[mk_valid] - y[mk_valid]) ** 2))
+                market_accuracy = float(np.mean((mk[mk_valid] > 0.5) == (y[mk_valid] > 0.5)))
+            else:
+                market_brier = None
+                market_accuracy = None
+            monthly.append({
+                "year": yr,
+                "month": mo,
+                "year_month": f"{yr:04d}-{mo:02d}",
+                "count": n,
+                "brier": round(brier, 6),
+                "accuracy": round(accuracy, 6),
+                "market_brier": round(market_brier, 6) if market_brier is not None else None,
+                "market_accuracy": round(market_accuracy, 6) if market_accuracy is not None else None,
+            })
+        extras["monthly_accuracy"] = monthly
 
     return fold_results, extras
 
@@ -1393,6 +1440,7 @@ if __name__ == "__main__":
                 "metric_folds": metric_folds,
             },
             "feature_accuracy": extras.get("feature_accuracy", {}),
+            "monthly_accuracy": extras.get("monthly_accuracy", []),
         }
         run_id = db.save_model_metric_snapshot(run_data)
         print(f"Model metric snapshot saved to DB (id={run_id})")

@@ -773,6 +773,20 @@
         <div class="panel-header">Edge Distribution</div>
         <div class="chart-wrap"><canvas id="chart-edge"></canvas></div>
       </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Monthly Model Accuracy</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <label style="font-size:0.72rem;">Year:
+              <select id="acc-month-year" style="font-size:0.72rem;padding:2px 6px;">
+                <option value="">All</option>
+              </select>
+            </label>
+            <span class="info-icon" tabindex="0" data-tooltip="Per-month accuracy and Brier score from the latest training run's walk-forward validation predictions across all training years. Filter to a single year, or view the full history.">i</span>
+          </span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-accuracy-by-month"></canvas></div>
+      </div>
     </div>
 
     <div class="panel-row">
@@ -784,26 +798,6 @@
         <div class="panel-header">Training History — ROI</div>
         <div class="chart-wrap"><canvas id="chart-roi-history"></canvas></div>
       </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-header">
-        <span>Monthly Model Accuracy</span>
-        <span style="display:inline-flex;align-items:center;gap:6px;">
-          <label style="font-size:0.72rem;">Model:
-            <select id="acc-month-artifact" style="font-size:0.72rem;padding:2px 6px;">
-              <option value="">All</option>
-            </select>
-          </label>
-          <label style="font-size:0.72rem;">Year:
-            <select id="acc-month-year" style="font-size:0.72rem;padding:2px 6px;">
-              <option value="">All</option>
-            </select>
-          </label>
-          <span class="info-icon" tabindex="0" data-tooltip="Per-month accuracy and Brier score on settled predictions. Filter by training artifact (model version) or single year.">i</span>
-        </span>
-      </div>
-      <div class="chart-wrap"><canvas id="chart-accuracy-by-month"></canvas></div>
     </div>
 
     <div class="panel">
@@ -1456,30 +1450,15 @@ function closeFiProdModal() {
 
 let _accMonthInit = false;
 async function loadAccuracyByMonth() {
-  const artSel = document.getElementById('acc-month-artifact');
   const yrSel = document.getElementById('acc-month-year');
-  if (!artSel || !yrSel) return;
+  if (!yrSel) return;
 
   if (!_accMonthInit) {
     _accMonthInit = true;
-    try {
-      const r = await fetch('/api/admin/model-artifacts/fi-history');
-      if (r.ok) {
-        const { artifacts } = await r.json();
-        const opts = (artifacts || []).map(a => {
-          const d = a.created_at ? a.created_at.slice(0, 10) : '?';
-          const t = (a.model_type || '').toUpperCase();
-          return `<option value="${a.id}">#${a.id} — ${t} ${d}</option>`;
-        }).join('');
-        artSel.insertAdjacentHTML('beforeend', opts);
-      }
-    } catch (e) { /* non-fatal */ }
-    artSel.addEventListener('change', loadAccuracyByMonth);
     yrSel.addEventListener('change', loadAccuracyByMonth);
   }
 
   const params = new URLSearchParams();
-  if (artSel.value) params.set('artifact_id', artSel.value);
   if (yrSel.value) params.set('year', yrSel.value);
   const url = '/api/admin/model-accuracy-by-month' + (params.toString() ? '?' + params : '');
 

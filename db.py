@@ -3281,8 +3281,13 @@ def init_model_metrics_table():
                     fold_results JSONB,
                     edge_distribution JSONB,
                     config JSONB,
-                    feature_accuracy JSONB
+                    feature_accuracy JSONB,
+                    monthly_accuracy JSONB
                 )
+            """)
+            cur.execute(f"""
+                ALTER TABLE {MODEL_METRIC_SNAPSHOTS_TABLE}
+                ADD COLUMN IF NOT EXISTS monthly_accuracy JSONB
             """)
             cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_mms_trained_at
@@ -3302,8 +3307,8 @@ def save_model_metric_snapshot(data: dict) -> int:
                     (model_type, git_commit, num_features, training_rows, val_rows,
                      num_folds, mean_brier, mean_roi, total_bets, duration_seconds,
                      feature_importances, fold_results, edge_distribution, config,
-                     feature_accuracy)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     feature_accuracy, monthly_accuracy)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             """, (
                 data.get("model_type"),
@@ -3321,6 +3326,7 @@ def save_model_metric_snapshot(data: dict) -> int:
                 json.dumps(data.get("edge_distribution", {})),
                 json.dumps(data.get("config", {})),
                 json.dumps(data.get("feature_accuracy", {})),
+                json.dumps(data.get("monthly_accuracy", [])),
             ))
             run_id = cur.fetchone()[0]
         conn.commit()
@@ -3478,90 +3484,6 @@ def save_model_artifact(data: dict) -> int:
             artifact_id = cur.fetchone()[0]
         conn.commit()
         return int(artifact_id)
-    finally:
-        conn.close()
-
-
-def get_model_accuracy_by_month(
-    artifact_id: int | None = None,
-    year: int | None = None,
-) -> list[dict]:
-    """
-    Per-month model accuracy / Brier on settled predictions.
-    Optional filters: model artifact id and game-date year.
-    """
-    where = ["b.predicted_prob IS NOT NULL", "g.home_win IS NOT NULL"]
-    params: list = []
-    if artifact_id is not None:
-        where.append("b.model_artifact_id = %s")
-        params.append(int(artifact_id))
-    if year is not None:
-        where.append("EXTRACT(YEAR FROM b.game_date) = %s")
-        params.append(int(year))
-    where_sql = " AND ".join(where)
-
-    sql = f"""
-        SELECT
-          EXTRACT(YEAR FROM b.game_date)::int  AS year,
-          EXTRACT(MONTH FROM b.game_date)::int AS month,
-          COUNT(*) AS n,
-          AVG(POWER(b.predicted_prob - (CASE WHEN g.home_win THEN 1.0 ELSE 0.0 END), 2)) AS brier,
-          AVG(CASE WHEN (b.predicted_prob > 0.5) = g.home_win THEN 1.0 ELSE 0.0 END) AS accuracy,
-          AVG(CASE WHEN b.market_implied_prob IS NOT NULL
-                   THEN POWER(b.market_implied_prob - (CASE WHEN g.home_win THEN 1.0 ELSE 0.0 END), 2)
-                   END) AS market_brier,
-          AVG(CASE WHEN b.market_implied_prob IS NOT NULL
-                   THEN (CASE WHEN (b.market_implied_prob > 0.5) = g.home_win THEN 1.0 ELSE 0.0 END)
-                   END) AS market_accuracy
-        FROM bets b
-        JOIN games g ON b.game_pk = g.game_pk
-        WHERE {where_sql}
-        GROUP BY year, month
-        ORDER BY year, month
-    """
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql, tuple(params))
-            rows = [dict(r) for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-    out = []
-    for r in rows:
-        y = int(r["year"])
-        m = int(r["month"])
-        out.append({
-            "year": y,
-            "month": m,
-            "year_month": f"{y:04d}-{m:02d}",
-            "count": int(r["n"]),
-            "brier": float(r["brier"]) if r["brier"] is not None else None,
-            "accuracy": float(r["accuracy"]) if r["accuracy"] is not None else None,
-            "market_brier": float(r["market_brier"]) if r["market_brier"] is not None else None,
-            "market_accuracy": float(r["market_accuracy"]) if r["market_accuracy"] is not None else None,
-        })
-    return out
-
-
-def get_model_accuracy_available_years(artifact_id: int | None = None) -> list[int]:
-    where = ["b.predicted_prob IS NOT NULL", "g.home_win IS NOT NULL"]
-    params: list = []
-    if artifact_id is not None:
-        where.append("b.model_artifact_id = %s")
-        params.append(int(artifact_id))
-    sql = f"""
-        SELECT DISTINCT EXTRACT(YEAR FROM b.game_date)::int AS year
-        FROM bets b
-        JOIN games g ON b.game_pk = g.game_pk
-        WHERE {" AND ".join(where)}
-        ORDER BY year
-    """
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            return [int(r[0]) for r in cur.fetchall() if r[0] is not None]
     finally:
         conn.close()
 

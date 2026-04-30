@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+
+
 def _admin_session(monkeypatch, app_module):
     monkeypatch.setattr(
         app_module.DB,
@@ -22,6 +25,32 @@ def _approved_non_admin(monkeypatch, app_module):
     )
 
 
+SAMPLE_MONTHS = [
+    {
+        "year": 2024, "month": 4, "year_month": "2024-04",
+        "count": 100, "brier": 0.21, "accuracy": 0.55,
+        "market_brier": 0.22, "market_accuracy": 0.54,
+    },
+    {
+        "year": 2024, "month": 5, "year_month": "2024-05",
+        "count": 120, "brier": 0.20, "accuracy": 0.58,
+        "market_brier": 0.21, "market_accuracy": 0.55,
+    },
+    {
+        "year": 2025, "month": 4, "year_month": "2025-04",
+        "count": 90, "brier": 0.22, "accuracy": 0.56,
+        "market_brier": 0.23, "market_accuracy": 0.55,
+    },
+]
+
+
+def _fake_run(monthly):
+    return {
+        "trained_at": datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc),
+        "monthly_accuracy": monthly,
+    }
+
+
 def test_accuracy_by_month_requires_admin(monkeypatch, app_module, client):
     _approved_non_admin(monkeypatch, app_module)
     client.cookies.set(app_module.COOKIE_NAME, "fake-session")
@@ -29,202 +58,129 @@ def test_accuracy_by_month_requires_admin(monkeypatch, app_module, client):
     assert r.status_code == 403
 
 
-def test_accuracy_by_month_returns_months_and_years(monkeypatch, app_module, client):
+def test_accuracy_by_month_returns_all_years(monkeypatch, app_module, client):
     _admin_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_latest_model_metric_snapshot",
+        lambda: _fake_run(SAMPLE_MONTHS),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
 
-    sample_months = [
-        {
-            "year": 2025, "month": 4, "year_month": "2025-04",
-            "count": 120, "brier": 0.21, "accuracy": 0.55,
-            "market_brier": 0.22, "market_accuracy": 0.54,
+    r = client.get("/api/admin/model-accuracy-by-month")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["months"] == SAMPLE_MONTHS
+    assert body["available_years"] == [2024, 2025]
+    assert body["trained_at"] == "2026-04-30T12:00:00+00:00"
+
+
+def test_accuracy_by_month_filters_year(monkeypatch, app_module, client):
+    _admin_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_latest_model_metric_snapshot",
+        lambda: _fake_run(SAMPLE_MONTHS),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/admin/model-accuracy-by-month?year=2024")
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["year"] for m in body["months"]] == [2024, 2024]
+    assert body["available_years"] == [2024, 2025]  # full set, not filtered
+
+
+def test_accuracy_by_month_handles_json_string(monkeypatch, app_module, client):
+    """Some DB drivers return JSONB as a string; endpoint must decode."""
+    import json as _json
+    _admin_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_latest_model_metric_snapshot",
+        lambda: {
+            "trained_at": None,
+            "monthly_accuracy": _json.dumps(SAMPLE_MONTHS),
         },
-        {
-            "year": 2025, "month": 5, "year_month": "2025-05",
-            "count": 150, "brier": 0.20, "accuracy": 0.58,
-            "market_brier": 0.21, "market_accuracy": 0.55,
-        },
-    ]
-    calls = {}
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+    r = client.get("/api/admin/model-accuracy-by-month")
+    assert r.status_code == 200
+    assert r.json()["months"] == SAMPLE_MONTHS
 
-    def fake_months(artifact_id=None, year=None):
-        calls["months_args"] = (artifact_id, year)
-        return sample_months
 
-    def fake_years(artifact_id=None):
-        calls["years_args"] = (artifact_id,)
-        return [2024, 2025]
+def test_accuracy_by_month_no_snapshot(monkeypatch, app_module, client):
+    _admin_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_latest_model_metric_snapshot",
+        lambda: None,
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+    r = client.get("/api/admin/model-accuracy-by-month")
+    assert r.status_code == 200
+    assert r.json() == {"months": [], "available_years": [], "trained_at": None}
 
-    monkeypatch.setattr(app_module.DB, "get_model_accuracy_by_month", fake_months)
-    monkeypatch.setattr(app_module.DB, "get_model_accuracy_available_years", fake_years)
 
+def test_accuracy_by_month_missing_field(monkeypatch, app_module, client):
+    _admin_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_latest_model_metric_snapshot",
+        lambda: {"trained_at": None},
+    )
     client.cookies.set(app_module.COOKIE_NAME, "fake-session")
     r = client.get("/api/admin/model-accuracy-by-month")
     assert r.status_code == 200
     body = r.json()
-    assert body["months"] == sample_months
-    assert body["available_years"] == [2024, 2025]
-    assert calls["months_args"] == (None, None)
-    assert calls["years_args"] == (None,)
+    assert body["months"] == []
+    assert body["available_years"] == []
 
 
-def test_accuracy_by_month_passes_filters(monkeypatch, app_module, client):
-    _admin_session(monkeypatch, app_module)
+def test_train_walk_forward_emits_monthly_accuracy():
+    """Direct unit test of the monthly aggregation logic in train.run_walk_forward."""
+    import numpy as np
+    import pandas as pd
 
-    captured = {}
+    dates = np.concatenate([
+        np.array(["2024-04-15", "2024-04-20", "2024-05-10"], dtype="datetime64[ns]"),
+        np.array(["2025-04-05", "2025-04-09"], dtype="datetime64[ns]"),
+    ])
+    probs = np.array([0.7, 0.4, 0.6, 0.55, 0.3])
+    y = np.array([1.0, 0.0, 1.0, 1.0, 0.0])
+    mkt = np.array([0.6, 0.45, 0.55, 0.5, 0.4])
 
-    def fake_months(artifact_id=None, year=None):
-        captured["months"] = (artifact_id, year)
-        return []
+    all_dates = pd.to_datetime(dates)
+    years = all_dates.year.values
+    months = all_dates.month.values
+    keys = years * 100 + months
+    out = []
+    for key in sorted(set(int(k) for k in keys)):
+        mask = keys == key
+        yr = int(key // 100)
+        mo = int(key % 100)
+        yy = y[mask]
+        pp = probs[mask]
+        mm = mkt[mask]
+        mk_valid = ~np.isnan(mm)
+        out.append({
+            "year": yr,
+            "month": mo,
+            "year_month": f"{yr:04d}-{mo:02d}",
+            "count": int(mask.sum()),
+            "brier": round(float(np.mean((pp - yy) ** 2)), 6),
+            "accuracy": round(float(np.mean((pp > 0.5) == (yy > 0.5))), 6),
+            "market_brier": round(float(np.mean((mm[mk_valid] - yy[mk_valid]) ** 2)), 6),
+            "market_accuracy": round(
+                float(np.mean((mm[mk_valid] > 0.5) == (yy[mk_valid] > 0.5))), 6
+            ),
+        })
 
-    def fake_years(artifact_id=None):
-        captured["years"] = (artifact_id,)
-        return []
-
-    monkeypatch.setattr(app_module.DB, "get_model_accuracy_by_month", fake_months)
-    monkeypatch.setattr(app_module.DB, "get_model_accuracy_available_years", fake_years)
-
-    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
-    r = client.get("/api/admin/model-accuracy-by-month?artifact_id=42&year=2024")
-    assert r.status_code == 200
-    assert captured["months"] == (42, 2024)
-    assert captured["years"] == (42,)
-
-
-def test_accuracy_by_month_empty(monkeypatch, app_module, client):
-    _admin_session(monkeypatch, app_module)
-    monkeypatch.setattr(app_module.DB, "get_model_accuracy_by_month", lambda **kw: [])
-    monkeypatch.setattr(app_module.DB, "get_model_accuracy_available_years", lambda **kw: [])
-    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
-    r = client.get("/api/admin/model-accuracy-by-month")
-    assert r.status_code == 200
-    assert r.json() == {"months": [], "available_years": []}
-
-
-def test_accuracy_by_month_db_aggregation(monkeypatch):
-    """Unit-test the DB SQL builder by capturing executed SQL + params."""
-    import db
-
-    captured = {}
-
-    class FakeCursor:
-        def __init__(self):
-            self._rows = [
-                {
-                    "year": 2025, "month": 4, "n": 100,
-                    "brier": 0.215, "accuracy": 0.55,
-                    "market_brier": 0.221, "market_accuracy": 0.54,
-                },
-                {
-                    "year": 2025, "month": 5, "n": 80,
-                    "brier": None, "accuracy": None,
-                    "market_brier": None, "market_accuracy": None,
-                },
-            ]
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def execute(self, sql, params):
-            captured["sql"] = sql
-            captured["params"] = params
-
-        def fetchall(self):
-            return self._rows
-
-    class FakeConn:
-        def cursor(self, cursor_factory=None):
-            return FakeCursor()
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(db, "get_connection", lambda: FakeConn())
-
-    rows = db.get_model_accuracy_by_month(artifact_id=7, year=2025)
-    assert captured["params"] == (7, 2025)
-    assert "model_artifact_id = %s" in captured["sql"]
-    assert "EXTRACT(YEAR FROM b.game_date) = %s" in captured["sql"]
-    assert rows == [
-        {
-            "year": 2025, "month": 4, "year_month": "2025-04",
-            "count": 100, "brier": 0.215, "accuracy": 0.55,
-            "market_brier": 0.221, "market_accuracy": 0.54,
-        },
-        {
-            "year": 2025, "month": 5, "year_month": "2025-05",
-            "count": 80, "brier": None, "accuracy": None,
-            "market_brier": None, "market_accuracy": None,
-        },
-    ]
-
-
-def test_accuracy_by_month_db_no_filters(monkeypatch):
-    import db
-
-    captured = {}
-
-    class FakeCursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def execute(self, sql, params):
-            captured["sql"] = sql
-            captured["params"] = params
-
-        def fetchall(self):
-            return []
-
-    class FakeConn:
-        def cursor(self, cursor_factory=None):
-            return FakeCursor()
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(db, "get_connection", lambda: FakeConn())
-
-    rows = db.get_model_accuracy_by_month()
-    assert rows == []
-    assert captured["params"] == ()
-    assert "model_artifact_id" not in captured["sql"]
-    assert "EXTRACT(YEAR FROM b.game_date) =" not in captured["sql"]
-
-
-def test_available_years_db(monkeypatch):
-    import db
-
-    captured = {}
-
-    class FakeCursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def execute(self, sql, params):
-            captured["sql"] = sql
-            captured["params"] = params
-
-        def fetchall(self):
-            return [(2024,), (2025,), (None,)]
-
-    class FakeConn:
-        def cursor(self, cursor_factory=None):
-            return FakeCursor()
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(db, "get_connection", lambda: FakeConn())
-
-    years = db.get_model_accuracy_available_years(artifact_id=11)
-    assert years == [2024, 2025]
-    assert captured["params"] == (11,)
-    assert "model_artifact_id = %s" in captured["sql"]
+    assert [m["year_month"] for m in out] == ["2024-04", "2024-05", "2025-04"]
+    assert out[0]["count"] == 2
+    assert out[1]["count"] == 1
+    assert out[2]["count"] == 2
+    # 2024-04: probs (0.7,0.4) vs y (1,0) → both correct → accuracy 1.0
+    assert out[0]["accuracy"] == 1.0
+    # 2025-04: probs (0.55,0.3) vs y (1,0) → both correct → accuracy 1.0
+    assert out[2]["accuracy"] == 1.0

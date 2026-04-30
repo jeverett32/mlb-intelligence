@@ -2359,13 +2359,32 @@ def get_admin_model_artifact_fi_history(user: dict = Depends(require_admin)):
 
 @app.get("/api/admin/model-accuracy-by-month")
 def get_admin_model_accuracy_by_month(
-    artifact_id: int | None = None,
     year: int | None = None,
     user: dict = Depends(require_admin),
 ):
-    months = DB.get_model_accuracy_by_month(artifact_id=artifact_id, year=year)
-    years = DB.get_model_accuracy_available_years(artifact_id=artifact_id)
-    return {"months": months, "available_years": years}
+    """
+    Per-month accuracy/Brier from latest training run's walk-forward
+    validation predictions across all training years.
+    """
+    run = DB.get_latest_model_metric_snapshot()
+    raw = (run or {}).get("monthly_accuracy") or []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            raw = []
+    months = list(raw) if isinstance(raw, list) else []
+    available_years = sorted({m["year"] for m in months if m.get("year") is not None})
+    if year is not None:
+        months = [m for m in months if m.get("year") == int(year)]
+    trained_at = (run or {}).get("trained_at")
+    if hasattr(trained_at, "isoformat"):
+        trained_at = trained_at.isoformat()
+    return {
+        "months": months,
+        "available_years": available_years,
+        "trained_at": trained_at,
+    }
 
 
 @app.get("/api/admin/model-metrics/latest")
