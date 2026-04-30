@@ -64,16 +64,27 @@ uv run pytest -q tests/
 
 ## Data rules
 
-- Never open large `*.csv` / `*.parquet` directly with file-read tools.
-- Prefer SQL via `db.py` when possible.
-- If you must inspect a file, use pandas and read *only what you need* (columns/rows).
+- **Source of truth is Postgres**. Prefer DB reads via `db.py`.
+- Treat files under `data/` (CSV/Parquet/TSV) as caches/backups and **possibly stale**.
+- Avoid opening large `*.csv` / `*.parquet` with file-read tools.
 
-Example (targeted):
+Example (targeted DB query):
 ```python
 import pandas as pd
+import db
 
-df = pd.read_csv("data/some_file.csv", usecols=["game_id", "home_team", "away_team"], nrows=2000)
-print(df.tail(20))
+with db.pooled_connection() as conn:
+    df = pd.read_sql_query(
+        """
+        SELECT game_id, game_date, home_team, away_team
+        FROM games
+        ORDER BY game_date DESC
+        LIMIT 50
+        """,
+        conn,
+    )
+
+print(df.head())
 ```
 
 ## Secrets

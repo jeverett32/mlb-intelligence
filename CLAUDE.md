@@ -44,19 +44,22 @@ Shell commands auto-route through `rtk` via hook. Prefer `rg`/`find` over openin
 
 ## Data handling (avoid huge reads)
 
-- Never open large `*.csv`/`*.parquet` with file-read tools.
-- Prefer SQL via `db.py`.
-- If you must inspect files under `data/`, use pandas and read only needed rows/cols.
+- **Prefer DB reads via `db.py`** — Postgres is the source of truth.
+- Treat `data/*.csv` / `data/*.parquet` as caches/backups and **possibly stale**.
+- Avoid opening large data files with file-read tools.
 
-Example (targeted):
+Example (targeted DB query):
 ```python
 import pandas as pd
+import db
 
-df = pd.read_parquet(
-    "data/some_file.parquet",
-    columns=["game_id", "home_team", "away_team"],
-)
-print(df.tail(20))
+with db.pooled_connection() as conn:
+    df = pd.read_sql_query(
+        "SELECT game_id, game_date, home_team, away_team FROM games ORDER BY game_date DESC LIMIT 50",
+        conn,
+    )
+
+print(df.head())
 ```
 
 ## Secrets
