@@ -3376,6 +3376,7 @@ def init_model_artifacts_table():
                     early_feature_columns JSONB NOT NULL,
                     feature_config JSONB NOT NULL,
                     metrics JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                    feature_importances JSONB NOT NULL DEFAULT '[]'::jsonb,
                     git_commit TEXT,
                     is_active BOOLEAN NOT NULL DEFAULT FALSE
                 )
@@ -3388,6 +3389,10 @@ def init_model_artifacts_table():
                 CREATE INDEX IF NOT EXISTS idx_model_artifacts_active
                 ON {MODEL_ARTIFACTS_TABLE} (is_active, created_at DESC)
             """)
+            cur.execute(
+                f"ALTER TABLE {MODEL_ARTIFACTS_TABLE} "
+                "ADD COLUMN IF NOT EXISTS feature_importances JSONB NOT NULL DEFAULT '[]'::jsonb"
+            )
             conn.commit()
             try:
                 cur.execute("ALTER TABLE IF EXISTS bets ADD COLUMN IF NOT EXISTS model_artifact_id BIGINT")
@@ -3444,9 +3449,9 @@ def save_model_artifact(data: dict) -> int:
                     artifact_bytes, artifact_sha256, settled_row_count,
                     max_settled_game_date, active_season, target_train_cutoff,
                     num_features, feature_columns, early_feature_columns,
-                    feature_config, metrics, git_commit, is_active
+                    feature_config, metrics, feature_importances, git_commit, is_active
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
                 ON CONFLICT (training_fingerprint) DO UPDATE SET
                     is_active = TRUE
                 RETURNING id
@@ -3466,12 +3471,33 @@ def save_model_artifact(data: dict) -> int:
                     json.dumps(data.get("early_feature_columns", [])),
                     json.dumps(data.get("feature_config", {})),
                     json.dumps(data.get("metrics", {})),
+                    json.dumps(data.get("feature_importances", [])),
                     data.get("git_commit"),
                 ),
             )
             artifact_id = cur.fetchone()[0]
         conn.commit()
         return int(artifact_id)
+    finally:
+        conn.close()
+
+
+def get_model_artifact_fi_history(limit: int = 50) -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT id, created_at, model_type, training_fingerprint,
+                       num_features, settled_row_count, max_settled_game_date,
+                       feature_importances
+                FROM {MODEL_ARTIFACTS_TABLE}
+                ORDER BY created_at DESC NULLS LAST, id DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 

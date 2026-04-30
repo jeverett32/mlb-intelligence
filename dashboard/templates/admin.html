@@ -754,11 +754,21 @@
     <div class="panel-row">
       <div class="panel">
         <div class="panel-header">
-          <span>Feature Importances Over Time</span>
+          <span>Production Model — FI Over Time (Live Artifacts)</span>
+          <button class="btn secondary" onclick="openFiProdModal()" style="font-size:0.72rem;padding:4px 10px;">Expand</button>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-fi-prod"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Walk-Forward Snapshot — FI Over Time</span>
           <button class="btn secondary" onclick="openFiModal()" style="font-size:0.72rem;padding:4px 10px;">Expand</button>
         </div>
         <div class="chart-wrap"><canvas id="chart-fi"></canvas></div>
       </div>
+    </div>
+
+    <div class="panel-row">
       <div class="panel">
         <div class="panel-header">Edge Distribution</div>
         <div class="chart-wrap"><canvas id="chart-edge"></canvas></div>
@@ -813,10 +823,21 @@
   <div id="fi-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeFiModal()">
     <div class="fi-modal">
       <div class="fi-modal-header">
-        <span>Feature Importances Over Time</span>
+        <span>Walk-Forward Snapshot — FI Over Time</span>
         <button class="btn secondary" onclick="closeFiModal()" style="font-size:0.8rem;padding:4px 12px;">Close</button>
       </div>
       <div class="fi-modal-body"><canvas id="chart-fi-modal"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Production Artifact FI modal -->
+  <div id="fi-prod-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeFiProdModal()">
+    <div class="fi-modal">
+      <div class="fi-modal-header">
+        <span>Production Model — FI Over Time (Live Artifacts)</span>
+        <button class="btn secondary" onclick="closeFiProdModal()" style="font-size:0.8rem;padding:4px 12px;">Close</button>
+      </div>
+      <div class="fi-modal-body"><canvas id="chart-fi-prod-modal"></canvas></div>
     </div>
   </div>
 
@@ -1198,6 +1219,7 @@ async function loadModelInsights() {
     if (!latestResp.ok || !allResp.ok) return;
     const { run: latest } = await latestResp.json();
     const { runs } = await allResp.json();
+    loadProductionFi();
     if (!latest) {
       document.getElementById('model-summary-cards').innerHTML = '<div class="empty" style="grid-column:1/-1">No model metric snapshots recorded yet. Re-run model metrics to populate this tab.</div>';
       return;
@@ -1321,6 +1343,93 @@ function openFiModal() {
 
 function closeFiModal() {
   document.getElementById('fi-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+let _fiProdChartConfig = null;
+
+async function loadProductionFi() {
+  try {
+    const resp = await fetch('/api/admin/model-artifacts/fi-history');
+    if (!resp.ok) return;
+    const { artifacts } = await resp.json();
+    renderProductionFi(artifacts || []);
+  } catch (e) {
+    console.error('production FI load failed', e);
+  }
+}
+
+function renderProductionFi(artifacts) {
+  if (!artifacts.length) return;
+  const sorted = [...artifacts].reverse();
+  const latest = sorted[sorted.length - 1];
+  const latestFi = (latest && latest.feature_importances) || [];
+  if (!latestFi.length) return;
+  const topFeatures = latestFi.slice(0, 10).map(f => f.feature);
+
+  const labels = sorted.map(r => r.created_at ? r.created_at.slice(0, 10) : '?');
+  const colors = [
+    '#4a6b8a', '#587a5f', '#a85a5a', '#3d556e', '#6b6560',
+    '#8aa9c7', '#98b8a0', '#d49a9a', '#36506a', '#9c9690',
+  ];
+  const datasets = topFeatures.map((feat, i) => ({
+    label: feat,
+    data: sorted.map(r => {
+      const fi = r.feature_importances || [];
+      const m = fi.find(f => f.feature === feat);
+      return m ? m.importance : null;
+    }),
+    borderColor: colors[i % colors.length],
+    backgroundColor: colors[i % colors.length],
+    tension: 0.3,
+    pointRadius: 2,
+    borderWidth: 2,
+    fill: false,
+  }));
+
+  _fiProdChartConfig = { labels, datasets };
+
+  makeModelChart('chart-fi-prod', {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12, padding: 8 } } },
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.1)' } },
+      },
+    },
+  });
+}
+
+function openFiProdModal() {
+  if (!_fiProdChartConfig) return;
+  document.getElementById('fi-prod-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => {
+    makeModelChart('chart-fi-prod-modal', {
+      type: 'line',
+      data: {
+        labels: _fiProdChartConfig.labels,
+        datasets: _fiProdChartConfig.datasets.map(d => ({...d, pointRadius: 3, borderWidth: 2.5})),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14, padding: 10 } } },
+        scales: {
+          x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { display: false } },
+          y: { ticks: { font: { size: 11 } }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        },
+      },
+    });
+  }, 50);
+}
+
+function closeFiProdModal() {
+  document.getElementById('fi-prod-modal').classList.remove('open');
   document.body.style.overflow = '';
 }
 

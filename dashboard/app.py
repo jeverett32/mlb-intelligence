@@ -2346,6 +2346,17 @@ def get_admin_model_metrics(user: dict = Depends(require_admin)):
     return {"runs": runs}
 
 
+@app.get("/api/admin/model-artifacts/fi-history")
+def get_admin_model_artifact_fi_history(user: dict = Depends(require_admin)):
+    rows = DB.get_model_artifact_fi_history(limit=100)
+    for r in rows:
+        if r.get("created_at"):
+            r["created_at"] = r["created_at"].isoformat()
+        if r.get("max_settled_game_date"):
+            r["max_settled_game_date"] = r["max_settled_game_date"].isoformat()
+    return {"artifacts": rows}
+
+
 @app.get("/api/admin/model-metrics/latest")
 def get_admin_model_metrics_latest(user: dict = Depends(require_admin)):
     run = DB.get_latest_model_metric_snapshot()

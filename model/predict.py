@@ -181,6 +181,30 @@ def _deserialize_artifact(row: dict, expected_fingerprint: str) -> dict:
 # For away-side signals we negate contributions (away win == not home win).
 # ---------------------------------------------------------------------------
 
+def _artifact_feature_importances(clf, active_feats: list[str]) -> list[dict]:
+    """Best-effort feature importances for the production model artifact.
+    Returns [] if shape unsupported."""
+    try:
+        pipe = _extract_lr_pipeline_for_explainability(clf)
+        if pipe is None or not hasattr(pipe, "named_steps"):
+            return []
+        mdl = pipe.named_steps.get("mdl")
+        imp = pipe.named_steps.get("imp")
+        if mdl is None:
+            return []
+        feats = list(active_feats)
+        stats = getattr(imp, "statistics_", None) if imp is not None else None
+        if stats is not None:
+            survived = np.isfinite(np.asarray(stats))
+            n_in = getattr(mdl, "n_features_in_", None)
+            if len(survived) == len(feats) and (n_in is None or int(survived.sum()) == int(n_in)):
+                feats = [f for f, keep in zip(feats, survived) if keep]
+        from train import extract_feature_importance
+        return extract_feature_importance(mdl, feats) or []
+    except Exception:
+        return []
+
+
 def _extract_lr_pipeline_for_explainability(clf):
     """
     Return a fitted sklearn Pipeline with steps: imp, scl, mdl (LogisticRegression),
@@ -682,6 +706,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
                     "created_at_utc": datetime.now(timezone.utc).isoformat(),
                 }
                 artifact_bytes, artifact_sha256 = _serialize_artifact(bundle)
+                fi_list = _artifact_feature_importances(clf, active_feats)
                 artifact_id = DB.save_model_artifact({
                     "model_type": T.MODEL,
                     "training_fingerprint": fingerprint,
@@ -697,6 +722,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
                     "early_feature_columns": early_feats,
                     "feature_config": fp_meta["feature_config"],
                     "metrics": {"source": "prediction_batch"},
+                    "feature_importances": fi_list,
                     "git_commit": fp_meta["git_commit"],
                 })
                 print(f"  Saved model artifact id={artifact_id} ({T.MODEL}, fingerprint={fingerprint[:12]}).")
