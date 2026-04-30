@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MLB Intelligence — Admin console</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link rel="icon" href="../../assets/logo.svg">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); min-height: 100vh; }
+
+/* ── Topbar ───────────────────────────────── */
+.a-topbar { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 14px 36px 0; }
+.a-topbar-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; }
+.a-brand { display: flex; align-items: center; gap: 10px; }
+.a-mark { width: 28px; height: 28px; border-radius: 6px; background: #1a1814; color: #fff; display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+.a-title { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+.a-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--text-secondary); text-decoration: none; padding: 6px 0; }
+.a-back:hover { color: var(--accent); }
+.a-back svg { width: 14px; height: 14px; }
+
+.a-tabs { display: flex; gap: 28px; }
+.a-tab { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-decoration: none; padding: 10px 0 14px; border-bottom: 2px solid transparent; cursor: pointer; background: none; border-left: 0; border-right: 0; border-top: 0; font-family: inherit; }
+.a-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.a-tab:hover { color: var(--text-primary); }
+
+main { max-width: 1180px; margin: 28px auto 64px; padding: 0 36px; }
+
+.a-kicker { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+
+/* ── Panels ───────────────────────────────── */
+.a-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-sm); margin-bottom: 16px; overflow: hidden; }
+.a-panel-head { background: var(--bg-elevated); border-bottom: 1px solid var(--border); padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.a-panel-head .ctrls { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.a-panel-head .ctrls .lab { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.a-select { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 26px 5px 10px; font: inherit; font-size: 12px; color: var(--text-primary); appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' fill='none' stroke='%236b6560' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right 8px center; }
+.a-empty { padding: 56px 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* ── Approval queue ──────────────────────── */
+.queue-row { display: grid; grid-template-columns: 1fr 200px 220px auto; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.queue-row:last-child { border-bottom: 0; }
+.queue-row .name { font-weight: 600; color: var(--text-primary); }
+.queue-row .email { color: var(--text-secondary); font-feature-settings: 'tnum'; font-size: 12px; }
+.queue-row .ts { color: var(--text-muted); font-size: 12px; font-feature-settings: 'tnum'; }
+.queue-row .actions { display: flex; gap: 8px; }
+.btn-approve, .btn-reject { padding: 6px 14px; border-radius: 999px; border: 1px solid; font-size: 12px; font-weight: 700; cursor: pointer; background: transparent; }
+.btn-approve { color: var(--success); border-color: var(--success); }
+.btn-reject { color: var(--danger); border-color: var(--danger); }
+
+/* ── Database ─────────────────────────────── */
+.db-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); }
+.db-table th { padding: 10px 14px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--bg-elevated); font-family: var(--font-sans); font-weight: 600; }
+.db-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+.db-table tr:last-child td { border-bottom: 0; }
+
+/* ── Model insights ──────────────────────── */
+.insights-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+.insight { padding: 18px 22px; border-right: 1px solid var(--border); }
+.insight:last-child { border-right: 0; }
+.insight strong { display: block; font-size: 1.7rem; font-weight: 600; letter-spacing: -0.04em; font-feature-settings: 'tnum'; margin: 8px 0; }
+.insight p { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+/* ── Errors ───────────────────────────────── */
+.error-row { padding: 12px 18px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+.error-row:last-child { border-bottom: 0; }
+.error-row .ts { color: var(--text-muted); }
+.error-row .lvl { display: inline-block; padding: 1px 6px; border-radius: 4px; font-weight: 700; margin: 0 8px; font-size: 10px; }
+.error-row .lvl.err { background: rgba(168,90,90,0.18); color: var(--danger); }
+.error-row .lvl.warn { background: rgba(184,134,11,0.18); color: var(--accent-strong); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel">
+const { useState } = React;
+
+const TABS = ['Access Requests', 'Database', 'Model Insights', 'Errors'];
+
+function Topbar({ active, onChange }) {
+  return (
+    <header className="a-topbar">
+      <div className="a-topbar-row">
+        <div className="a-brand">
+          <span className="a-mark">M</span>
+          <span className="a-title">Admin</span>
+        </div>
+        <a className="a-back" href="#dashboard">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M10 3l-5 5 5 5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Operator dashboard
+        </a>
+      </div>
+      <nav className="a-tabs">
+        {TABS.map(t => (
+          <button key={t} className={`a-tab ${t === active ? 'active' : ''}`} onClick={() => onChange(t)}>{t}</button>
+        ))}
+      </nav>
+    </header>
+  );
+}
+
+function AccessRequests() {
+  const [filter, setFilter] = useState('pending');
+  const all = {
+    pending: [
+      { name: 'Maria Velasquez', email: 'm.velasquez@example.com', ts: '2026-04-28 14:02 UTC', reason: 'Reason: research' },
+      { name: 'Tom Becker', email: 'tbecker@example.com', ts: '2026-04-28 11:48 UTC', reason: 'Reason: betting follower' },
+      { name: 'Anh Nguyen', email: 'anh@example.com', ts: '2026-04-28 09:14 UTC', reason: 'Reason: model audit' },
+    ],
+    approved: [],
+    rejected: [],
+  };
+  const rows = all[filter];
+  return (
+    <section className="a-panel">
+      <header className="a-panel-head">
+        <span className="a-kicker">Users</span>
+        <div className="ctrls">
+          <span className="lab">Filter</span>
+          <select className="a-select" value={filter} onChange={e => setFilter(e.target.value)}>
+            <option value="pending">pending</option>
+            <option value="approved">approved</option>
+            <option value="rejected">rejected</option>
+          </select>
+        </div>
+      </header>
+      {rows.length === 0 ? (
+        <div className="a-empty">No users in this state</div>
+      ) : (
+        <div>
+          {rows.map(r => (
+            <div key={r.email} className="queue-row">
+              <div><div className="name">{r.name}</div><div className="email">{r.email}</div></div>
+              <div className="email">{r.ts}</div>
+              <div className="ts">{r.reason}</div>
+              <div className="actions">
+                <button className="btn-approve">Approve</button>
+                <button className="btn-reject">Reject</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Database() {
+  const [table, setTable] = useState('bets');
+  return (
+    <section className="a-panel">
+      <header className="a-panel-head">
+        <span className="a-kicker">Tables</span>
+        <div className="ctrls">
+          <span className="lab">Table</span>
+          <select className="a-select" value={table} onChange={e => setTable(e.target.value)}>
+            <option>bets</option><option>users</option><option>games</option><option>predictions</option>
+          </select>
+        </div>
+      </header>
+      <table className="db-table">
+        <thead><tr><th>id</th><th>game</th><th>side</th><th>stake</th><th>result</th><th>placed_at</th></tr></thead>
+        <tbody>
+          <tr><td>4821</td><td>NYY@BOS</td><td>NYY</td><td>48.20</td><td>W</td><td>2026-04-28 19:05</td></tr>
+          <tr><td>4820</td><td>LAD@SDP</td><td>LAD</td><td>52.00</td><td>L</td><td>2026-04-27 22:14</td></tr>
+          <tr><td>4819</td><td>HOU@SEA</td><td>HOU</td><td>36.00</td><td>W</td><td>2026-04-27 21:48</td></tr>
+          <tr><td>4818</td><td>CHC@PHI</td><td>PHI</td><td>41.10</td><td>W</td><td>2026-04-26 18:32</td></tr>
+          <tr><td>4817</td><td>ATL@MIA</td><td>ATL</td><td>33.00</td><td>L</td><td>2026-04-26 18:10</td></tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function ModelInsights() {
+  return (
+    <section className="a-panel">
+      <header className="a-panel-head"><span className="a-kicker">Last 30 days</span></header>
+      <div className="insights-grid">
+        <div className="insight"><span className="a-kicker">Calibration error</span><strong>2.4%</strong><p>Mean absolute deviation between predicted probability and observed frequency.</p></div>
+        <div className="insight"><span className="a-kicker">Top feature</span><strong>park_factor</strong><p>Highest SHAP attribution across the last 30 days of predictions.</p></div>
+        <div className="insight"><span className="a-kicker">Predictions</span><strong>1,418</strong><p>Total game-level predictions emitted in the period.</p></div>
+      </div>
+    </section>
+  );
+}
+
+function Errors() {
+  return (
+    <section className="a-panel">
+      <header className="a-panel-head"><span className="a-kicker">Last 24h · 3 events</span></header>
+      <div>
+        <div className="error-row"><span className="ts">14:22:01</span><span className="lvl err">ERR</span><span>kalshi.place_bet: 429 rate limited (retry in 8s)</span></div>
+        <div className="error-row"><span className="ts">11:08:44</span><span className="lvl warn">WARN</span><span>fetch.weather: slow response (4.2s) for game_id 728341</span></div>
+        <div className="error-row"><span className="ts">04:01:12</span><span className="lvl err">ERR</span><span>model.predict: feature 'pitcher_era_l30' missing for ATH; fallback used</span></div>
+      </div>
+    </section>
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState('Access Requests');
+  return (
+    <div data-screen-label="03 Admin console">
+      <Topbar active={tab} onChange={setTab} />
+      <main>
+        {tab === 'Access Requests' && <AccessRequests />}
+        {tab === 'Database' && <Database />}
+        {tab === 'Model Insights' && <ModelInsights />}
+        {tab === 'Errors' && <Errors />}
+      </main>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

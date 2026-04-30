@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 24px; background: #faf9f7; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .box { width: 72px; height: 72px; background: var(--bg-card); border: 1px solid var(--border); display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+  <span class="eyebrow" style="margin-bottom: 14px; display: block;">Radii vocabulary</span>
+  <div class="row">
+    <div class="box" style="border-radius: 4px;">4</div>
+    <div class="box" style="border-radius: 8px;">8</div>
+    <div class="box" style="border-radius: 12px;">12</div>
+    <div class="box" style="border-radius: 18px;">18</div>
+    <div class="box" style="border-radius: 24px;">24</div>
+    <div class="box" style="border-radius: 999px;">pill</div>
+  </div>
+  <p style="margin-top: 16px; font-size: 12px; color: var(--text-muted);">Buttons → pill · Inputs → 14 · Cards → 12-22 · Hero glass → 24-32</p>
+</body>
+</html>

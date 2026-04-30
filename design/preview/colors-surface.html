@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 20px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: var(--shadow-sm); }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .swatch { aspect-ratio: 1.4; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; font-family: var(--font-mono); font-size: 10px; }
+  .label { display: block; font-weight: 700; color: inherit; }
+  .hex { color: rgba(255,255,255,0.7); }
+  .dark .hex { color: rgba(0,0,0,0.55); }
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="eyebrow" style="margin-bottom: 12px; display: block;">Surface & Ink — Light</span>
+  <div class="grid">
+    <div class="swatch" style="background: #f4f3f1; color: #1a1814;"><span class="label">bg-primary</span><span class="hex" style="color: #6b6560;">#f4f3f1</span></div>
+    <div class="swatch" style="background: #ffffff; color: #1a1814;"><span class="label">bg-card</span><span class="hex" style="color: #6b6560;">#ffffff</span></div>
+    <div class="swatch" style="background: #ececea; color: #1a1814;"><span class="label">bg-elevated</span><span class="hex" style="color: #6b6560;">#ececea</span></div>
+    <div class="swatch dark" style="background: #1a1814; color: #faf9f7;"><span class="label">text-primary</span><span class="hex">#1a1814</span></div>
+    <div class="swatch" style="background: #6b6560; color: #faf9f7;"><span class="label">text-secondary</span><span class="hex">#6b6560</span></div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 24px; background: #faf9f7; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .stat-card-header { background: var(--bg-elevated); color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+  .stat-card-body { padding: 18px 16px; }
+  .big { font-size: 28px; font-weight: 600; line-height: 1.1; font-feature-settings: 'tnum'; letter-spacing: -0.04em; }
+  .delta { font-size: 12px; margin-top: 6px; }
+  .pos { color: var(--success); }
+  .neg { color: var(--danger); }
+</style>
+</head>
+<body>
+  <div class="stat-card">
+    <div class="stat-card-header"><span>Cumulative ROI</span><span>↗</span></div>
+    <div class="stat-card-body"><div class="big">+12.4%</div><div class="delta pos">+0.8% this week</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-header"><span>Settled Bets</span><span>·</span></div>
+    <div class="stat-card-body"><div class="big">1,247</div><div class="delta">over 142 days</div></div>
+  </div>
+</body>
+</html>

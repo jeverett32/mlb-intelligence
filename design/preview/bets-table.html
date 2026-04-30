@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 20px; background: #faf9f7; }
+  table { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; font-size: 13px; }
+  th { padding: 12px 14px; border-bottom: 1px solid var(--border); text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); background: var(--bg-elevated); }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-feature-settings: 'tnum'; color: var(--text-primary); }
+  tr:last-child td { border-bottom: 0; }
+  .pill { display: inline-flex; min-width: 28px; justify-content: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+  .win { color: var(--success); background: rgba(45,106,79,0.12); }
+  .loss { color: var(--danger); background: rgba(155,35,53,0.12); }
+  .pos { color: var(--success); }
+  .neg { color: var(--danger); }
+</style>
+</head>
+<body>
+  <table>
+    <thead><tr><th>Date</th><th>Matchup</th><th>Result</th><th>Edge</th><th>Return</th></tr></thead>
+    <tbody>
+      <tr><td>Apr 28</td><td>NYY @ BOS</td><td><span class="pill win">W</span></td><td>4.2 pts</td><td class="pos">+8.1%</td></tr>
+      <tr><td>Apr 27</td><td>LAD @ SDP</td><td><span class="pill loss">L</span></td><td>2.8 pts</td><td class="neg">−4.0%</td></tr>
+      <tr><td>Apr 27</td><td>HOU @ SEA</td><td><span class="pill win">W</span></td><td>3.6 pts</td><td class="pos">+5.4%</td></tr>
+    </tbody>
+  </table>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 20px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: var(--shadow-sm); }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .swatch { aspect-ratio: 1.4; border-radius: 8px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; font-family: var(--font-mono); font-size: 10px; color: #fff; }
+  .label { display: block; font-weight: 700; }
+  .hex { color: rgba(255,255,255,0.78); }
+  .light { color: #1a1814; }
+  .light .hex { color: #6b6560; }
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="eyebrow" style="margin-bottom: 12px; display: block;">Brand & Semantic — quieter palette</span>
+  <div class="grid">
+    <div class="swatch" style="background: #4a6b8a;"><span class="label">accent</span><span class="hex">#4a6b8a</span></div>
+    <div class="swatch" style="background: #36506a;"><span class="label">accent-strong</span><span class="hex">#36506a</span></div>
+    <div class="swatch light" style="background: #dde4ec;"><span class="label">accent-light</span><span class="hex">#dde4ec</span></div>
+    <div class="swatch" style="background: #587a5f;"><span class="label">success</span><span class="hex">#587a5f</span></div>
+    <div class="swatch" style="background: #a85a5a;"><span class="label">danger</span><span class="hex">#a85a5a</span></div>
+  </div>
+</div>
+</body>
+</html>

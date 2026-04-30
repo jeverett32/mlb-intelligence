@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MLB Intelligence — Operator dashboard</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<link rel="icon" href="../../assets/logo.svg">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); min-height: 100vh; }
+.lab { color: var(--text-muted); font-size: 12px; }
+
+.d-topbar { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 14px 36px 0; }
+.d-topbar-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; }
+.d-brand { display: flex; align-items: baseline; gap: 12px; }
+.d-logo { font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+.d-season { font-size: 12px; color: var(--text-muted); letter-spacing: 0.04em; }
+.d-balance-wrap { display: flex; align-items: center; gap: 14px; }
+.d-balance strong { font-feature-settings: 'tnum'; font-weight: 600; color: var(--text-primary); }
+.d-gear { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); display: grid; place-items: center; cursor: pointer; }
+.d-gear:hover { color: var(--accent); }
+
+.d-tabs-row { display: flex; justify-content: space-between; align-items: center; }
+.d-tabs { display: flex; gap: 28px; }
+.d-tab { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-decoration: none; padding: 10px 0 14px; border-bottom: 2px solid transparent; }
+.d-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.d-tab:hover { color: var(--text-primary); }
+.d-view-toggle { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; }
+.d-view-toggle .lab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; }
+.seg { display: inline-flex; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
+.seg button { border: 0; background: transparent; padding: 5px 14px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600; color: var(--text-secondary); cursor: pointer; }
+.seg button.on { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+
+main { max-width: 1180px; margin: 28px auto 64px; padding: 0 36px; }
+
+.d-kicker { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+
+.d-hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 18px; margin-bottom: 18px; }
+.d-snapshot { background: linear-gradient(135deg, #fff 0%, var(--bg-elevated) 100%); border: 1px solid var(--border); border-radius: 14px; padding: 28px 30px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
+.d-snap-h { font-family: var(--font-display); font-size: 2rem; line-height: 1.1; letter-spacing: -0.04em; margin-bottom: 8px; }
+.d-snap-p { color: var(--text-secondary); font-size: 14px; margin-bottom: 22px; }
+.d-snap-p strong { color: var(--text-primary); font-weight: 600; }
+.d-snap-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 380px; }
+.d-mini { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.d-mini .lab { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 6px; }
+.d-mini strong { font-size: 17px; font-weight: 600; font-feature-settings: 'tnum'; }
+
+.d-chart { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; }
+.d-chart-legend { display: flex; gap: 14px; justify-content: center; margin: 6px 0 8px; font-size: 11px; color: var(--text-secondary); }
+.d-chart-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+.d-chart-svg { width: 100%; height: 200px; }
+
+.d-kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+.d-kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.d-kpi .d-kicker { color: var(--text-muted); margin-bottom: 8px; }
+.d-kpi-val { display: block; font-size: 1.8rem; font-weight: 600; letter-spacing: -0.04em; font-feature-settings: 'tnum'; line-height: 1.05; margin-bottom: 8px; color: var(--text-primary); }
+.d-kpi-val.pos { color: var(--success); }
+.d-kpi-val.neg { color: var(--danger); }
+.d-kpi p { font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
+
+.d-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-sm); }
+.d-panel-head { background: var(--bg-elevated); border-bottom: 1px solid var(--border); padding: 12px 18px; border-radius: 12px 12px 0 0; }
+.d-panel-head .d-kicker { color: var(--text-muted); margin: 0; }
+.d-empty { padding: 56px 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="Components.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+function App() {
+  const [tab, setTab] = useState('Overview');
+  const [view, setView] = useState('Paper');
+  return (
+    <div data-screen-label="02 User dashboard">
+      <TopNav active={tab} onChange={setTab} view={view} onView={setView} />
+      <main>
+        <section className="d-hero">
+          <SnapshotCard />
+          <ChartCard />
+        </section>
+        <KPIStrip />
+        <PositionsPanel />
+      </main>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

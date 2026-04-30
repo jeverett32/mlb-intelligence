@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 20px; background: #12171c; }
+  .card { background: #1a2128; border: 1px solid #313c45; border-radius: 14px; padding: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .swatch { aspect-ratio: 1.4; border-radius: 8px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; font-family: var(--font-mono); font-size: 10px; }
+  .label { display: block; font-weight: 700; }
+  .hex { opacity: 0.75; }
+  .eb { color: #8aa9c7; font-family: 'DM Sans', sans-serif; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 12px; display: block; }
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="eb">Dark theme — same quieter palette</span>
+  <div class="grid">
+    <div class="swatch" style="background: #12171c; color: #f4efe7; border: 1px solid #313c45;"><span class="label">bg-primary</span><span class="hex">#12171c</span></div>
+    <div class="swatch" style="background: #1a2128; color: #f4efe7; border: 1px solid #313c45;"><span class="label">bg-card</span><span class="hex">#1a2128</span></div>
+    <div class="swatch" style="background: #8aa9c7; color: #12171c;"><span class="label">accent</span><span class="hex">#8aa9c7</span></div>
+    <div class="swatch" style="background: #98b8a0; color: #12171c;"><span class="label">success</span><span class="hex">#98b8a0</span></div>
+    <div class="swatch" style="background: #d49a9a; color: #12171c;"><span class="label">danger</span><span class="hex">#d49a9a</span></div>
+  </div>
+</div>
+</body>
+</html>
