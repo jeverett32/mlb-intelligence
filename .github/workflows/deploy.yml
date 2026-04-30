@@ -39,8 +39,13 @@ jobs:
           id || true
           ls -ld .git .git/objects .git/objects/pack 2>/dev/null || true
 
-          # Try to repair simple permission drift without sudo (sudo may be locked down on the runner)
+          # Repair permission/ownership drift on .git so deploy can fast-forward
+          # instead of falling through to archive sync (which leaves HEAD stuck).
           chmod -R u+rwX .git || true
+          if command -v sudo >/dev/null 2>&1; then
+            sudo chown -R mlb:mlb /opt/mlb/pipeline/.git 2>/dev/null || true
+            sudo chmod -R u+rwX /opt/mlb/pipeline/.git 2>/dev/null || true
+          fi
 
           echo "Git dir write tests:" 
           for p in .git .git/objects .git/objects/pack .git/refs .git/logs; do

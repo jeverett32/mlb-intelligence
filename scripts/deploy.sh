@@ -88,21 +88,21 @@ check_repo_state() {
 }
 
 ensure_repo_aligned() {
-    # Best-effort: if we can write git metadata, make the on-disk tree match origin/main.
-    # This prevents "archive deploy" drift where files update but HEAD stays old.
+    # Make on-disk tree and git index match origin/main exactly. This prevents
+    # "archive deploy" drift where files update but HEAD stays at an old commit.
     if [[ ! -d "${REPO_DIR}/.git" ]]; then
-        log WARN "No .git directory found; cannot align repository metadata"
-        return 0
+        log ERROR "No .git directory found; cannot align repository metadata"
+        return 1
     fi
 
     if ! repair_git_permissions; then
-        log WARN "Git metadata not writable; cannot align HEAD to origin/main"
-        return 0
+        log ERROR "Git metadata not writable; cannot align HEAD to origin/main"
+        return 1
     fi
 
     if ! git -C "$REPO_DIR" fetch origin main; then
-        log WARN "git fetch failed; cannot align HEAD to origin/main"
-        return 0
+        log ERROR "git fetch failed; cannot align HEAD to origin/main"
+        return 1
     fi
 
     git -C "$REPO_DIR" reset --hard origin/main || return 1
@@ -134,6 +134,19 @@ repair_git_permissions() {
 
     [[ -d "$git_dir" ]] || return 1
     [[ -d "$objects_dir" ]] || return 1
+
+    if touch "${objects_dir}/.permtest" 2>/dev/null; then
+        rm -f "${objects_dir}/.permtest"
+        return 0
+    fi
+
+    # Try to self-heal ownership/perms via sudo so HEAD can be advanced
+    # rather than silently leaving git index behind on archive deploys.
+    if command -v sudo >/dev/null 2>&1; then
+        log WARN "Repairing ${git_dir} ownership via sudo"
+        sudo chown -R "$(whoami):$(id -gn)" "$git_dir" 2>/dev/null || true
+        sudo chmod -R u+rwX "$git_dir" 2>/dev/null || true
+    fi
 
     if touch "${objects_dir}/.permtest" 2>/dev/null; then
         rm -f "${objects_dir}/.permtest"

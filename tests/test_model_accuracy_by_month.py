@@ -70,7 +70,17 @@ def test_accuracy_by_month_returns_all_years(monkeypatch, app_module, client):
     r = client.get("/api/admin/model-accuracy-by-month")
     assert r.status_code == 200
     body = r.json()
-    assert body["months"] == SAMPLE_MONTHS
+    months = body["months"]
+    assert [m["month"] for m in months] == [4, 5]
+    assert all(m["year"] is None for m in months)
+    assert [m["year_month"] for m in months] == ["04", "05"]
+    # April: weighted across 2024 (n=100) and 2025 (n=90)
+    assert months[0]["count"] == 190
+    assert months[0]["accuracy"] == (0.55 * 100 + 0.56 * 90) / 190
+    assert months[0]["brier"] == (0.21 * 100 + 0.22 * 90) / 190
+    # May: only 2024 (n=120)
+    assert months[1]["count"] == 120
+    assert months[1]["accuracy"] == 0.58
     assert body["available_years"] == [2024, 2025]
     assert body["trained_at"] == "2026-04-30T12:00:00+00:00"
 
@@ -104,9 +114,9 @@ def test_accuracy_by_month_handles_json_string(monkeypatch, app_module, client):
         },
     )
     client.cookies.set(app_module.COOKIE_NAME, "fake-session")
-    r = client.get("/api/admin/model-accuracy-by-month")
+    r = client.get("/api/admin/model-accuracy-by-month?year=2024")
     assert r.status_code == 200
-    assert r.json()["months"] == SAMPLE_MONTHS
+    assert r.json()["months"] == [m for m in SAMPLE_MONTHS if m["year"] == 2024]
 
 
 def test_accuracy_by_month_no_snapshot(monkeypatch, app_module, client):
