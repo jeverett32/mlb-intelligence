@@ -142,7 +142,8 @@ uv run bet/place_bet.py --game_pk <game_pk> --email <user_email>
 Dev server:
 
 ```bash
-uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>
+uv run dashboard/app.py --reload --host <bind_addr> --port <port>
+# (Equivalent: uv run uvicorn dashboard.app:app --reload ...)
 ```
 
 ## Auto-deploy

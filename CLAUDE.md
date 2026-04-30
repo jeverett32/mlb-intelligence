@@ -30,7 +30,8 @@ uv sync
 uv run run_pipeline.py
 
 # Dashboard (dev)
-uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>
+uv run dashboard/app.py --reload --host <bind_addr> --port <port>
+# (Equivalent: uv run uvicorn dashboard.app:app --reload ...)
 
 # Tests
 uv run pytest -q tests/

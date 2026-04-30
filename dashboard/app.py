@@ -2465,3 +2465,48 @@ def _safe_records(df: pd.DataFrame) -> list:
             d[k] = _safe_value(v)
         records.append(d)
     return records
+
+
+# ---------------------------------------------------------------------------
+# Local dev server wrapper
+# ---------------------------------------------------------------------------
+
+
+def _run_dev_server() -> None:
+    """Run the FastAPI app via uvicorn.
+
+    This is a convenience wrapper so you can run:
+        uv run dashboard/app.py --reload --host 0.0.0.0 --port 8000
+
+    (Equivalent to: uv run uvicorn dashboard.app:app ...)
+    """
+
+    import argparse
+
+    try:
+        import uvicorn
+    except Exception as e:  # pragma: no cover
+        raise SystemExit(f"uvicorn is required to run the dashboard: {e}")
+
+    parser = argparse.ArgumentParser(description="Run the MLB dashboard (uvicorn)")
+    parser.add_argument("--host", default=os.environ.get("DASHBOARD_HOST", "127.0.0.1"))
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("DASHBOARD_PORT", "8000")),
+    )
+    parser.add_argument("--reload", action="store_true")
+    parser.add_argument("--log-level", default=os.environ.get("UVICORN_LOG_LEVEL", "info"))
+    args = parser.parse_args()
+
+    uvicorn.run(
+        "dashboard.app:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level=args.log_level,
+    )
+
+
+if __name__ == "__main__":
+    _run_dev_server()

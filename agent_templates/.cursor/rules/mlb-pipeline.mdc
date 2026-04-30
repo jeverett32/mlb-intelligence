@@ -10,7 +10,7 @@ Canonical high-level guide: **AGENTS.md**.
 ## Commands (run from repo root)
 
 - Full pipeline: `uv run run_pipeline.py`
-- Dashboard dev server: `uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>`
+- Dashboard dev server: `uv run dashboard/app.py --reload --host <bind_addr> --port <port>`
 - Tests: `uv run pytest -q tests/`
 
 ## Data rules
