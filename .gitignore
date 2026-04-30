@@ -16,12 +16,12 @@ tmp/
 *.tsv
 data/cache/
 
-# ── IDE / editor ─────────────────────────────────────────────────────────────
-.claude/
-.claudeignore
-.clauderules
-.cursor/
-.cursorignore
+# ── IDE / editor / agent state (keep local; do not commit) ───────────────────
+/.claude/
+/.claudeignore
+/.clauderules
+/.cursor/
+/.cursorignore
 .idea/
 .vscode/
 *.swp
