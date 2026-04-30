@@ -398,11 +398,12 @@ deploy() {
         log INFO "No pipeline files changed - mlb-pipeline.service will not be restarted"
     fi
 
-    # Fast-forward only keeps deploy history linear and avoids accidental merges
-    git merge --ff-only origin/main || {
-        log ERROR "Failed to fast-forward to origin/main"
+    # Reset hard to origin/main so force-pushes (rewritten history) deploy cleanly.
+    # Backup created above covers rollback if downstream steps fail.
+    git reset --hard origin/main || {
+        log ERROR "Failed to reset to origin/main"
         rollback
-        error_exit "Fast-forward failed and rollback completed"
+        error_exit "Reset to origin/main failed and rollback completed"
     }
 
     if ! ensure_repo_aligned; then
