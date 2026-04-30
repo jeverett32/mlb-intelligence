@@ -776,11 +776,20 @@
       <div class="panel">
         <div class="panel-header">
           <span>Monthly Model Accuracy</span>
-          <span style="display:inline-flex;align-items:center;gap:6px;">
+          <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <label style="font-size:0.72rem;">Year:
               <select id="acc-month-year" style="font-size:0.72rem;padding:2px 6px;">
                 <option value="">All</option>
               </select>
+            </label>
+            <label style="font-size:0.72rem;display:inline-flex;align-items:center;gap:3px;">
+              <input type="checkbox" id="acc-month-show-model" checked> Model
+            </label>
+            <label style="font-size:0.72rem;display:inline-flex;align-items:center;gap:3px;">
+              <input type="checkbox" id="acc-month-show-market" checked> Market
+            </label>
+            <label style="font-size:0.72rem;display:inline-flex;align-items:center;gap:3px;">
+              <input type="checkbox" id="acc-month-show-brier" checked> Brier
             </label>
             <span class="info-icon" tabindex="0" data-tooltip="Per-month accuracy and Brier score from the latest training run's walk-forward validation predictions across all training years. Filter to a single year, or view the full history.">i</span>
           </span>
@@ -1456,6 +1465,10 @@ async function loadAccuracyByMonth() {
   if (!_accMonthInit) {
     _accMonthInit = true;
     yrSel.addEventListener('change', loadAccuracyByMonth);
+    ['acc-month-show-model','acc-month-show-market','acc-month-show-brier'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', loadAccuracyByMonth);
+    });
   }
 
   const params = new URLSearchParams();
@@ -1485,54 +1498,54 @@ async function loadAccuracyByMonth() {
   }
 }
 
+const _MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 function renderAccuracyByMonth(months) {
-  const labels = months.map(m => m.year_month);
+  const labels = months.map(m => {
+    const mo = m.month;
+    return (mo != null && mo >= 1 && mo <= 12) ? _MONTH_NAMES[mo - 1] : (m.year_month || '');
+  });
   const accuracy = months.map(m => m.accuracy != null ? +(m.accuracy * 100).toFixed(2) : null);
   const marketAcc = months.map(m => m.market_accuracy != null ? +(m.market_accuracy * 100).toFixed(2) : null);
   const brier = months.map(m => m.brier != null ? +m.brier.toFixed(4) : null);
   const counts = months.map(m => m.count);
 
+  const showModel = document.getElementById('acc-month-show-model')?.checked ?? true;
+  const showMarket = document.getElementById('acc-month-show-market')?.checked ?? true;
+  const showBrier = document.getElementById('acc-month-show-brier')?.checked ?? true;
+
+  const datasets = [];
+  if (showModel) datasets.push({
+    label: 'Model Accuracy (%)',
+    data: accuracy,
+    borderColor: '#4a6b8a',
+    backgroundColor: '#4a6b8a',
+    tension: 0.3, pointRadius: 3, borderWidth: 2,
+    yAxisID: 'y', fill: false,
+  });
+  if (showMarket) datasets.push({
+    label: 'Market Accuracy (%)',
+    data: marketAcc,
+    borderColor: '#a85a5a',
+    backgroundColor: '#a85a5a',
+    tension: 0.3, pointRadius: 3, borderWidth: 2,
+    borderDash: [4, 4],
+    yAxisID: 'y', fill: false,
+  });
+  if (showBrier) datasets.push({
+    label: 'Brier Score',
+    data: brier,
+    borderColor: '#587a5f',
+    backgroundColor: '#587a5f',
+    tension: 0.3, pointRadius: 3, borderWidth: 2,
+    yAxisID: 'y1', fill: false,
+  });
+
+  const showAccAxis = showModel || showMarket;
+
   makeModelChart('chart-accuracy-by-month', {
     type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Model Accuracy (%)',
-          data: accuracy,
-          borderColor: '#4a6b8a',
-          backgroundColor: '#4a6b8a',
-          tension: 0.3,
-          pointRadius: 3,
-          borderWidth: 2,
-          yAxisID: 'y',
-          fill: false,
-        },
-        {
-          label: 'Market Accuracy (%)',
-          data: marketAcc,
-          borderColor: '#a85a5a',
-          backgroundColor: '#a85a5a',
-          tension: 0.3,
-          pointRadius: 3,
-          borderWidth: 2,
-          borderDash: [4, 4],
-          yAxisID: 'y',
-          fill: false,
-        },
-        {
-          label: 'Brier Score',
-          data: brier,
-          borderColor: '#587a5f',
-          backgroundColor: '#587a5f',
-          tension: 0.3,
-          pointRadius: 3,
-          borderWidth: 2,
-          yAxisID: 'y1',
-          fill: false,
-        },
-      ],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -1551,6 +1564,7 @@ function renderAccuracyByMonth(months) {
       scales: {
         x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
         y: {
+          display: showAccAxis,
           position: 'left',
           title: { display: true, text: 'Accuracy (%)', font: { size: 10 } },
           ticks: { font: { size: 10 } },
@@ -1558,6 +1572,7 @@ function renderAccuracyByMonth(months) {
           grace: '5%',
         },
         y1: {
+          display: showBrier,
           position: 'right',
           title: { display: true, text: 'Brier', font: { size: 10 } },
           ticks: { font: { size: 10 } },
