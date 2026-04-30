@@ -7,13 +7,13 @@
 <p align="center">MLB betting intelligence system with ML-driven predictions, live execution on Kalshi, and transparent performance analytics.</p>
 
 <p align="center">
-  <a href="https://github.com/jeverett32/mlb-pipeline/actions/workflows/test.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/jeverett32/mlb-pipeline/test.yml?branch=main&label=tests" alt="Tests">
+  <a href="/actions/workflows/test.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/<owner>/<repo>/test.yml?branch=main&label=tests" alt="Tests">
   </a>
   <a href="#license">
     <img src="https://img.shields.io/badge/license-AGPL--3.0-4b5563" alt="AGPL-3.0">
   </a>
-  <a href="https://github.com/jeverett32/mlb-pipeline">
+  <a href="https://github.com/<owner>/<repo>">
     <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
   </a>
 </p>
@@ -58,17 +58,17 @@ fetch/            # Data ingestion — odds, weather, stats
 ```bash
 uv sync
 uv run pytest -q tests/
-uv run uvicorn dashboard.app:app --reload --host <REDACTED_IP> --port <REDACTED_PORT>
+uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <REDACTED_PORT>
 uv run run_pipeline.py
 ```
 
-See [.env.example](/home/everjohn/projects/mlb-pipeline/.env.example) for required environment variables.
+See [.env.example](./.env.example) for required environment variables.
 
 ## Deployed
 
 Push to GitHub → auto-deploys to homelab LXC. Dashboard lives at the deployed URL.
 
-SSH debugging via [`homelab.py`](/home/everjohn/projects/mlb-pipeline/homelab.py):
+SSH debugging via [`homelab.py`](./homelab.py):
 
 ```bash
 python3 homelab.py app "systemctl status mlb-dashboard --no-pager -l | tail -40"
@@ -85,9 +85,10 @@ python3 homelab.py app "journalctl -u mlb-dashboard -n 100 --no-pager"
 
 ## Docs
 
-- [Program overview](/home/everjohn/projects/mlb-pipeline/docs/PROGRAM.md)
-- [Model workflow](/home/everjohn/projects/mlb-pipeline/docs/run_model.md)
-- [Auto-deploy](/home/everjohn/projects/mlb-pipeline/docs/auto_deploy.md)
+- [Program overview](./docs/PROGRAM.md)
+- [Model workflow](./docs/run_model.md)
+- [Kalshi integration](./docs/kalshi.md)
+- [Auto-deploy](./docs/auto_deploy.md)
 
 ## License
 

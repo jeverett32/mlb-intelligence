@@ -62,7 +62,7 @@ python3 homelab.py db "pg_lsclusters"
 # Load them locally and inject into the remote command string, e.g.:
 #   from dotenv import load_dotenv; load_dotenv(); import os
 #   pw = os.getenv("DB_PASSWORD"); user = os.getenv("DB_USER"); db = os.getenv("DB_NAME")
-#   run: python3 homelab.py db f"PGPASSWORD={pw} psql -U {user} -d {db} -h <REDACTED_IP> -c '\\dt'"
+#   run: python3 homelab.py db f"PGPASSWORD={pw} psql -U {user} -d {db} -h localhost -c '\\dt'"
 ```
 
 Set these in `.env` for DB SSH if credentials differ from app:

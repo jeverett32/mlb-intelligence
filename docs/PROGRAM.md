@@ -1,91 +1,60 @@
 # MLB Automated Betting Pipeline — Orchestration Guide
 
-This document is the master instruction set for the automated agent. Follow steps 1–5 in order for every game run.
+This document describes how the pipeline runs today.
 
----
+## Secrets / hygiene
 
-## Running the pipeline
+- Do not put secrets, hostnames, or IP addresses in docs.
+- Infrastructure secrets live in `.env` (DB creds, encryption key, etc.).
+- Per-user Kalshi account configuration is stored in Postgres and can be encrypted at rest.
 
-Start the orchestrator once and it handles everything automatically:
+## Primary entry point
+
+Run the orchestrator:
+
 ```bash
 uv run run_pipeline.py
 ```
 
-To run immediately for a specific game (testing / manual override):
+One-off modes:
+
 ```bash
-uv run run_pipeline.py --game_pk 12345
-uv run run_pipeline.py --now
+uv run run_pipeline.py --game_pk <game_pk>   # run immediately for a specific game
+uv run run_pipeline.py --now                 # run immediately for the next upcoming game
 ```
 
 ## Overview
 
-The orchestrator runs automatically **5 minutes before each scheduled MLB game**. Each run is scoped to one specific game. The run order is driven by `data/mlb_2026.csv`.
+The orchestrator continuously:
 
-**Key files (all in `data/`):**
-| File | Purpose |
-|---|---|
-| `data/mlb_2026.csv` | Current season game data + features (written by fetch step) |
-| `data/master_mlb.csv` | Full historical data used to train the model — **you supply this** |
-| `data/games.csv` | One row per game the system has run on; tracks prediction, bet, result |
-| `data/balance.csv` | Kalshi account balance history (one row per run) |
-| `data/results.tsv` | Walk-forward validation results log (written by train.py) |
+1. Identifies upcoming games that need predictions.
+2. Runs the data refresh (MLB schedule/odds/stats).
+3. Fetches balances (Kalshi) for configured user accounts.
+4. Runs model inference.
+5. Places bets for approved users (when a bet is indicated).
+6. Periodically refreshes live positions and scores.
 
----
+Implementation notes (from `run_pipeline.py`):
 
-## Step 1 — Initialize the Game Row
+- The pipeline triggers a fixed lead time before first pitch (`LEAD_MINUTES`).
+- Games sharing the same scheduled start minute are treated as a batch:
+  - data refresh runs once per batch
+  - per-game prediction + bet placement can run in parallel
 
-Before anything else, add a row to `data/games.csv` for the upcoming game.
+## Data storage
 
-`data/games.csv` already exists with headers. If for any reason it is missing, recreate it with these columns:
-```
-game_pk,game_date,home_team,away_team,predicted_prob,edge,bet_side,bet_frac,market_implied_prob,kalshi_order_id,bet_dollars,n_contracts,result
-```
+The pipeline is **DB-first**.
 
-Find the next game from `data/mlb_2026.csv` whose `game_date` (UTC) is within the next 10 minutes. Add a row for it with `game_pk`, `game_date`, `home_team`, `away_team` filled in; leave all other columns blank.
+- `fetch/fetch_data.py` upserts the season’s game rows into the `games` table.
+- `model/predict.py` writes predictions/sizing back into the DB.
+- `bet/place_bet.py` records orders into `user_orders`.
+- `fetch/fetch_balance.py` records balances into `user_balance`.
 
----
+A local CSV (`data/mlb_<season>.csv`) exists as a fallback cache if the DB is temporarily unavailable.
 
-## Step 2 — Fetch Data
+## Related docs
 
-**Instruction file:** `1_fetch_data/FETCH_MLB_DATA.md`
-
-Run the data pipeline to refresh `data/mlb_2026.csv`. This fetches:
-- Schedule and scores from the MLB Stats API
-- Moneyline and total odds from Sportsbook Review
-- Pitcher stats and weather
-- FanGraphs team batting/pitching stats
-
-Also fetch the current Kalshi account balance and append to `data/balance.csv`.
-
-**Instruction file:** `1_fetch_data/FETCH_KALSHI_DATA.md`
-
----
-
-## Step 3 — Run Model
-
-**Instruction file:** `2_run_model/RUN_MODEL.md`
-
-Run `predict.py` for the target game. This trains the model on all historical data, predicts the probability of the home team winning, calculates edge vs. the market, and writes the Kelly bet fraction to `data/games.csv`.
-
----
-
-## Step 4 — Place Bet
-
-**Instruction file:** `3_place_bet/PLACE_BET.md`
-
-Read `data/games.csv` for the current game. If `bet_frac > 0`, find the game on Kalshi and place the bet.
-
----
-
-## Step 5 — Schedule Next Run
-
-Determine the next upcoming game from `data/mlb_2026.csv` (first row with a future `game_date` that has not yet been initialized in `data/games.csv`). Schedule the pipeline to run again 5 minutes before that game's UTC start time.
-
----
-
-## Notes
-
-- All times in `data/mlb_2026.csv` are **UTC**.
-- A game is considered "complete" when `home_score`, `away_score`, and `home_win` are populated.
-- After a completed game, update the `result` column in `data/games.csv` (`win` / `loss` / `push`) based on the bet side and final score.
-- Never skip the fetch step — odds close to game time are the most accurate and the model depends on closing line data.
+- MLB data ingest: `docs/fetch_mlb_data.md`
+- Model inference: `docs/run_model.md`
+- Kalshi integration: `docs/kalshi.md`
+- Homelab SSH helper: `docs/homelab_access.md`
