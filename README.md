@@ -22,54 +22,83 @@
   <img src="docs/images/dashboard-overview.png" alt="MLB Pipeline dashboard" width="100%">
 </p>
 
-## What It Does
+## Problem
 
-MLB Pipeline predicts MLB game outcomes using ML models and executes trades on [Kalshi](https://kalshi.com):
+Sports betting (especially MLB) has a few persistent problems:
 
-1. **Data collection** — fetches schedules, odds, weather, pitcher stats, team statistics
-2. **Feature engineering** — builds 80+ game-level features from multiple data sources
-3. **Prediction** — Logistic Regression (default), LightGBM, XGBoost, or MLP models
-4. **Early-season specialist** — separate LR model for teams with <25 games played
-5. **Market comparison** — model predictions vs. market odds find edge
-6. **Execution** — places bets on Kalshi (live or dry-run)
-7. **Settlement** — resolves bets post-game, tracks ROI
+- **Too much data, too little time** — schedule context, pitcher changes, weather, team form, and live odds all move quickly.
+- **Execution is the hard part** — even good models fail if betting decisions aren’t consistent, timed correctly, and recorded.
+- **Post-hoc analysis is usually missing** — without clean history, you can’t answer “did this strategy work?” with confidence.
 
-## Architecture
+## Action
 
-- **Dashboard** — FastAPI app serving public analytics + private operator controls (configurable port)
-- **Pipeline** — Orchestrator that runs 15 min before each game, executes predictions and bets in parallel
-- **Model** — Logistic Regression (default) with isotonic calibration, plus LightGBM, XGBoost, MLP, or ensemble options; walk-forward validation
-- **DB** — PostgreSQL for bets, balances, and history
+MLB Pipeline turns the day-to-day work into a repeatable system:
 
-## Key Components
+1. **Ingest** schedules, odds, weather, pitcher stats, and team stats
+2. **Engineer features** (80+ game-level features)
+3. **Predict** win probabilities (LR default; optional LightGBM/XGBoost/MLP/ensemble)
+4. **Compare to the market** to identify edge
+5. **Execute** on Kalshi (live or dry-run)
+6. **Settle + audit** results and ROI in a single database
+
+## Solution
+
+MLB Pipeline is an end-to-end stack for MLB trading:
+
+- **One orchestrator** that runs the full workflow (`run_pipeline.py`)
+- **A dashboard** (FastAPI) for transparent performance analytics + operator controls
+- **A Postgres-backed history** for bets, balances, orders, and model artifacts
+- **A public modeling snapshot** (`data/master_mlb.csv`) that can be updated periodically (not continuously)
+
+## What’s inside
+
+- **Dashboard** — FastAPI app serving public analytics + private operator controls
+- **Pipeline** — runs ahead of scheduled first pitch; predicts and places bets in parallel
+- **Model** — calibrated classifiers + walk-forward validation; Kelly stake sizing
+- **DB** — PostgreSQL source of truth for games, bets, and run history
+
+Key components:
 
 ```text
-run_pipeline.py     # Main orchestrator — runs prediction + bet pipeline
-dashboard/app.py     # FastAPI dashboard — public analytics, private controls
-model/train.py     # Model training — LR/LightGBM/XGBoost/MLP/ensemble + walk-forward
-model/predict.py  # Inference — produces win probabilities + Kelly stake sizing
-bet/place_bet.py  # Bet execution — Kalshi API integration
-db.py             # PostgreSQL access
-fetch/            # Data ingestion — odds, weather, stats
+run_pipeline.py       # Main orchestrator
+fetch/                # Data ingestion — odds, weather, stats
+model/train.py        # Model training + walk-forward evaluation
+model/predict.py      # Inference — win probabilities + sizing
+bet/place_bet.py      # Kalshi execution
+settle_games.py       # Post-game settlement
+dashboard/app.py      # Dashboard API
+homelab.py            # SSH helper for app/db LXCs
 ```
 
-## Running Locally
+## Data model philosophy
 
-Note: Postgres is the source of truth. Files under `data/` are caches/backups (and may be stale), except `data/master_mlb.csv` which is a periodically-updated public snapshot.
+- **Postgres is the source of truth.**
+- Files under `data/` are primarily **caches/backups** and may be stale.
+- `data/master_mlb.csv` is intended as a **public snapshot** of modeling data and can be refreshed on a controlled cadence.
+
+## Docs
+
+- [Pipeline (end-to-end)](./docs/pipeline.md)
+- [Homelab SSH helper](./docs/homelab_access.md)
+
+## Developer quickstart
 
 ```bash
 uv sync
 uv run pytest -q tests/
+
+# Dashboard (dev)
 uv run dashboard/app.py --reload --host <bind_addr> --port <port>
-# (Equivalent: uv run uvicorn dashboard.app:app --reload ...)
+
+# Pipeline
 uv run run_pipeline.py
 ```
 
 See [.env.example](./.env.example) for required environment variables.
 
-## Deployed
+## Deployment
 
-Push to GitHub → auto-deploys to homelab LXC. Dashboard lives at the deployed URL.
+Push to GitHub → GitHub Actions runner auto-deploys to homelab LXC.
 
 SSH debugging via [`homelab.py`](./homelab.py):
 
@@ -78,18 +107,13 @@ python3 homelab.py app "systemctl status mlb-dashboard --no-pager -l | tail -40"
 python3 homelab.py app "journalctl -u mlb-dashboard -n 100 --no-pager"
 ```
 
-## Data Sources
+## Data sources
 
 - [MLB Stats API](https://statsapi.mlb.com)
 - [The Odds API](https://the-odds-api.com)
 - [Kalshi](https://kalshi.com)
 - [Open-Meteo](https://open-meteo.com)
 - [FanGraphs](https://www.fangraphs.com)
-
-## Docs
-
-- [Pipeline (end-to-end)](./docs/pipeline.md)
-- [Homelab SSH helper](./docs/homelab_access.md)
 
 ## License
 
