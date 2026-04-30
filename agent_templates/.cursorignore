@@ -1,0 +1,30 @@
+# Cursor context ignore — keep tokens focused on source code
+
+# ── Python / env ─────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+uv.lock
+
+# ── Generated data / large artifacts ─────────────────────────────────────────
+data/
+*.csv
+*.parquet
+*.tsv
+*.feather
+*.pkl
+*.joblib
+*.zip
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+.env
+*.pem
+
+# ── Local agent/editor state (kept out of git) ───────────────────────────────
+.claude/
+.cursor/

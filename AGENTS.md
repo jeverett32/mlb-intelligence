@@ -1,48 +1,90 @@
 # Agent Guide — MLB Betting Pipeline
 
+Canonical human-facing overview: **README.md**. Deeper system notes: **docs/pipeline.md**.
+
+## Agent config files (local-only)
+
+This repo uses local, gitignored agent/editor config files:
+
+- `/.clauderules` — primary agent operating rules
+- `/.claudeignore` — files to exclude from agent context
+- `/.cursor/rules/mlb-pipeline.mdc` — Cursor project rules
+- `/.cursorignore` — files to exclude from Cursor context
+
+These are intentionally **not committed**.
+
+If you clone this repo and they don’t exist yet, initialize them from templates:
+
+```bash
+python3 scripts/init_agent_files.py
+```
+
 ## Token efficiency
 
-Shell commands auto-route through `rtk` via hook — transparent, no overhead.
-For broad codebase exploration, use an Explore subagent to protect main context.
+- Shell commands auto-route through `rtk` via hook — transparent, no overhead.
+- Prefer `rg`/`find` to locate code rather than reading many files.
+- For broad exploration, use an Explore subagent to protect main context.
 
 ## Project layout
 
-```
+```text
 run_pipeline.py      # Orchestrator entry point
-db.py                # All DB access (postgres via psycopg2)
+config.py            # Runtime constants / season config
+db.py                # All DB access (Postgres via psycopg2)
+
 bet/place_bet.py     # Kalshi bet placement
 fetch/               # Data fetchers (stats, odds, weather, balance)
-model/               # LightGBM/XGBoost training + prediction
-dashboard/app.py     # FastAPI dashboard (deployed on app LXC, configurable port)
+model/               # Train + predict (LR/LightGBM/XGBoost/MLP/ensemble)
+
+dashboard/app.py     # FastAPI dashboard backend
 settle_games.py      # Post-game settlement
 scripts/             # One-off ops scripts
 tests/               # pytest suite
 ```
 
-## Running things
+## Setup
 
 ```bash
-uv run run_pipeline.py          # Full pipeline
-uv run dashboard/app.py         # Dev server
-uv run -m pytest tests/         # Tests
+uv sync
+```
+
+Copy `.env.example` → `.env` and fill values (never commit `.env`).
+
+## Running things (from repo root)
+
+```bash
+uv run run_pipeline.py
+
+# Dashboard (dev)
+uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>
+
+# Tests
+uv run pytest -q tests/
 ```
 
 ## Data rules
 
-Never read CSV/Parquet directly. Use pandas with targeted queries only.
+- Never open large `*.csv` / `*.parquet` directly with file-read tools.
+- Prefer SQL via `db.py` when possible.
+- If you must inspect a file, use pandas and read *only what you need* (columns/rows).
+
+Example (targeted):
+```python
+import pandas as pd
+
+df = pd.read_csv("data/some_file.csv", usecols=["game_id", "home_team", "away_team"], nrows=2000)
+print(df.tail(20))
+```
 
 ## Secrets
 
-`.env` holds all keys. `kalshi-key.pem` is the Kalshi private key — never read or output it.
-Check `.env.example` for variable names.
+- `.env` holds all keys — never read/print/log it.
+- `kalshi-key.pem` is the Kalshi private key — never read or output it.
+- Use `.env.example` for variable names.
 
 ## Deploy
 
 Push to GitHub → runner deploys automatically. No manual SSH needed for deploys.
-
-## Git workflow
-
-Commit frequently after tested, coherent checkpoints so deployable fixes do not sit uncommitted.
 
 ## SSH debugging
 
@@ -69,8 +111,14 @@ Set these in `.env` for DB SSH if credentials differ from app:
 - `HOMELAB_DB_SSH_HOST` (falls back to `DB_HOST`)
 - `HOMELAB_DB_SSH_USER`, `HOMELAB_DB_SSH_PASSWORD`, `HOMELAB_DB_SSH_PORT`
 
+## Repo hygiene
+
+Local agent/editor state is intentionally untracked and gitignored:
+- `/.claude/`, `/.cursor/`, `/.claudeignore`, `/.cursorignore`, `/.clauderules`
+
 ## Conventions
 
 - Python 3.10+, type hints, short functions
 - All datetimes UTC unless suffixed `_et`
-- argparse for CLI, pandas for I/O, pathlib for paths
+- `argparse` for CLI, pandas for I/O, `pathlib.Path` for paths
+- Keep DB access inside `db.py`

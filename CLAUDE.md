@@ -1,43 +1,79 @@
 # MLB Betting Pipeline
 
-Automated MLB betting pipeline: fetch data → train model → predict edge → place bets on Kalshi.
-Managed with `uv`. All commands: `uv run <script>`. See `.clauderules` for full conventions.
+This file is for the coding agent.
+
+Primary operating rules live in **`.clauderules`** (local-only / gitignored).
+If this is a fresh clone and the agent files don’t exist yet, initialize them from templates:
+
+```bash
+python3 scripts/init_agent_files.py
+```
+
+High-level guide: **AGENTS.md**.
+
+## What this repo does
+
+Automated MLB betting pipeline:
+- fetch data → build features → train/predict win probabilities
+- compare to market odds to find edge
+- place bets on Kalshi (or dry-run)
+- settle games and track ROI in Postgres
+
+Managed with `uv`.
+
+## Fast commands (run from repo root)
+
+```bash
+uv sync
+
+# Full pipeline
+uv run run_pipeline.py
+
+# Dashboard (dev)
+uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>
+
+# Tests
+uv run pytest -q tests/
+```
+
+For additional conventions and guardrails, see `.clauderules`.
 
 ## Token efficiency
 
-All shell commands run through `rtk` automatically via hook. No manual wrapping needed.
-For broad exploration, spawn an Explore subagent rather than reading many files raw.
+Shell commands auto-route through `rtk` via hook. Prefer `rg`/`find` over opening lots of files.
 
-## Data files — never read raw
+## Data handling (avoid huge reads)
 
-CSV/Parquet in `data/` can be huge. Query with pandas:
+- Never open large `*.csv`/`*.parquet` with file-read tools.
+- Prefer SQL via `db.py`.
+- If you must inspect files under `data/`, use pandas and read only needed rows/cols.
+
+Example (targeted):
 ```python
 import pandas as pd
-df = pd.read_csv("data/games.csv")
-print(df.tail(5))
+
+df = pd.read_parquet(
+    "data/some_file.parquet",
+    columns=["game_id", "home_team", "away_team"],
+)
+print(df.tail(20))
 ```
 
 ## Secrets
 
-- Keys in `.env` (python-dotenv). Never log or print.
-- `kalshi-key.pem` — never read or output contents.
+- Never read/print/log `.env`.
+- Never read/output any `*.pem` (especially `kalshi-key.pem`).
 - Use `.env.example` for variable names.
-
-## Deploy
-
-Push to GitHub → GitHub Actions runner deploys to app LXC automatically. No manual SSH needed for deploys.
-
-## Git workflow
-
-Commit frequently after tested, coherent checkpoints so deployable fixes do not sit uncommitted.
 
 ## Key entry points
 
-| File | Purpose |
+| Path | Purpose |
 |------|---------|
-| `run_pipeline.py` | Orchestrator |
-| `db.py` | All DB access |
-| `bet/place_bet.py` | Kalshi bet placement |
+| `run_pipeline.py` | Orchestrates end-to-end pipeline |
+| `db.py` | All Postgres access |
+| `fetch/` | Schedules, odds, weather, stats, balances |
+| `model/` | Training + inference |
+| `bet/place_bet.py` | Kalshi execution |
 | `dashboard/app.py` | FastAPI dashboard |
-| `settle_games.py` | Settlement logic |
-| `homelab.py` | Direct SSH into app/db LXCs for live debugging (`python3 homelab.py app "cmd"` / `db "cmd"`) |
+| `settle_games.py` | Post-game settlement |
+| `homelab.py` | SSH helper for app/db LXCs |

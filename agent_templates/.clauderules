@@ -1,0 +1,49 @@
+# MLB Betting Pipeline — Agent Rules
+
+Canonical high-level guide: **AGENTS.md**.
+
+## Commands (run from repo root)
+
+- Full pipeline: `uv run run_pipeline.py`
+- Dashboard dev server: `uv run uvicorn dashboard.app:app --reload --host <bind_addr> --port <port>`
+- Tests: `uv run pytest -q tests/`
+
+## Data rules
+
+- **Never** open large `*.csv` / `*.parquet` directly with file-read tools.
+- Prefer SQL via `db.py` or use pandas to read *only what you need* (rows/cols).
+
+Example (safe, targeted):
+```python
+import pandas as pd
+
+df = pd.read_parquet("data/some_file.parquet", columns=["game_id", "home_team", "away_team"])
+print(df.tail(20))
+```
+
+## Secrets
+
+- Never read, print, or log `.env`.
+- Never read or output any `*.pem` (especially `kalshi-key.pem`).
+- Use `.env.example` if you need variable names.
+
+## Project layout (high level)
+
+```text
+run_pipeline.py      # Orchestrator entry point
+db.py                # All DB access (postgres via psycopg2)
+bet/                 # Kalshi bet placement
+fetch/               # Data fetchers (stats, odds, weather, balance)
+model/               # Training + prediction
+dashboard/app.py     # FastAPI dashboard
+settle_games.py      # Post-game settlement
+scripts/             # One-off ops scripts
+tests/               # pytest suite
+```
+
+## Conventions
+
+- Python 3.10+, type hints, short functions.
+- All datetimes UTC unless suffixed `_et`.
+- Use `argparse` for CLIs, pandas for I/O, `pathlib.Path` for paths.
+- Keep DB access inside `db.py`.
