@@ -2377,6 +2377,39 @@ def get_admin_model_accuracy_by_month(
     available_years = sorted({m["year"] for m in months if m.get("year") is not None})
     if year is not None:
         months = [m for m in months if m.get("year") == int(year)]
+    else:
+        buckets: dict[int, list[dict]] = {}
+        for m in months:
+            mo = m.get("month")
+            if mo is None:
+                continue
+            buckets.setdefault(int(mo), []).append(m)
+        agg = []
+        for mo in sorted(buckets):
+            rows = buckets[mo]
+            total_n = sum(int(r.get("count") or 0) for r in rows)
+            def wavg(field: str) -> float | None:
+                num = 0.0
+                den = 0
+                for r in rows:
+                    v = r.get(field)
+                    n = int(r.get("count") or 0)
+                    if v is None or n <= 0:
+                        continue
+                    num += float(v) * n
+                    den += n
+                return (num / den) if den > 0 else None
+            agg.append({
+                "year": None,
+                "month": mo,
+                "year_month": f"{mo:02d}",
+                "count": total_n,
+                "accuracy": wavg("accuracy"),
+                "brier": wavg("brier"),
+                "market_accuracy": wavg("market_accuracy"),
+                "market_brier": wavg("market_brier"),
+            })
+        months = agg
     trained_at = (run or {}).get("trained_at")
     if hasattr(trained_at, "isoformat"):
         trained_at = trained_at.isoformat()
