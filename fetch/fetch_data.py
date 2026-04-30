@@ -190,6 +190,21 @@ def _parse_game_datetime(game_datetime_str):
         return None, 1
 
 
+def _normalize_schedule_status(status: dict) -> str:
+    """Return stable schedule status for DB filtering/display."""
+    detailed = str(status.get("detailedState") or "")
+    abstract = str(status.get("abstractGameState") or "")
+    raw = detailed or abstract
+    status_key = raw.lower().replace(" ", "_").replace("-", "_")
+    if "postponed" in status_key:
+        return "postponed"
+    if "cancelled" in status_key or "canceled" in status_key:
+        return "cancelled"
+    if status_key in {"final", "game_over"} or abstract.lower() == "final":
+        return "final"
+    return status_key
+
+
 def _api_get(url, params=None, timeout=15, retries=3):
     for attempt in range(retries):
         try:
@@ -284,8 +299,11 @@ def fetch_schedule():
         for g in date_info.get("games", []):
             if g.get("gameType") != "R":
                 continue
-            status = g.get("status", {}).get("detailedState", "")
-            completed = status == "Final"
+            status = g.get("status", {}) or {}
+            detailed_state = status.get("detailedState", "")
+            abstract_state = status.get("abstractGameState", "")
+            game_status = _normalize_schedule_status(status)
+            completed = abstract_state == "Final" or detailed_state == "Final"
 
             home_team_data = g.get("teams", {}).get("home", {})
             away_team_data = g.get("teams", {}).get("away", {})
@@ -317,6 +335,9 @@ def fetch_schedule():
                 "is_night_game": night_flag,
                 "home_probable_id": home_pp.get("id"),
                 "away_probable_id": away_pp.get("id"),
+                "game_status": game_status,
+                "game_state": abstract_state,
+                "detailed_state": detailed_state,
             })
 
     df = pd.DataFrame(rows)
@@ -1265,6 +1286,11 @@ def main():
     if full_schedule.empty:
         print("No games found. Exiting.")
         return
+    try:
+        DB.upsert_games(full_schedule)
+        print(f"  Schedule-only rows upserted: {len(full_schedule)}")
+    except Exception as e:
+        print(f"  WARNING: schedule DB upsert failed ({e}). Continuing with processing window.")
 
     # ── Only past games + today/tomorrow window (no full-season skeleton) ─
     past_games = full_schedule[full_schedule["game_date"] < today].copy()
