@@ -7,13 +7,13 @@
 <p align="center">MLB betting intelligence system with ML-driven predictions, live execution on Kalshi, and transparent performance analytics.</p>
 
 <p align="center">
-  <a href="/actions/workflows/test.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/<owner>/<repo>/test.yml?branch=main&label=tests" alt="Tests">
+  <a href="https://github.com/jeverett32/mlb-pipeline/actions/workflows/test.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/jeverett32/mlb-pipeline/test.yml?branch=main&label=tests" alt="Tests">
   </a>
   <a href="#license">
     <img src="https://img.shields.io/badge/license-AGPL--3.0-4b5563" alt="AGPL-3.0">
   </a>
-  <a href="https://github.com/<owner>/<repo>">
+  <a href="https://github.com/jeverett32/mlb-pipeline">
     <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
   </a>
 </p>
