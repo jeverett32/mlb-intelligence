@@ -55,6 +55,8 @@ fetch/            # Data ingestion — odds, weather, stats
 
 ## Running Locally
 
+Note: Postgres is the source of truth. Files under `data/` are caches/backups (and may be stale), except `data/master_mlb.csv` which is a periodically-updated public snapshot.
+
 ```bash
 uv sync
 uv run pytest -q tests/

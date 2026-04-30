@@ -111,8 +111,8 @@ uv run model/predict.py --game_date <YYYY-MM-DD> --home_team <HOME> --away_team 
 ```
 
 Inputs:
-- `data/master_mlb.csv` (historical training data)
-- Current season games from Postgres (`games`)
+- Postgres `games` table (source of truth)
+- `data/master_mlb.csv` only as a **public snapshot / bootstrap fallback** (used if DB is unavailable or to seed a new DB)
 
 Outputs:
 - Writes prediction + sizing back to Postgres (exact tables/columns handled by `db.py`).
