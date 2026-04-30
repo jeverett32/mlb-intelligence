@@ -2357,6 +2357,17 @@ def get_admin_model_artifact_fi_history(user: dict = Depends(require_admin)):
     return {"artifacts": rows}
 
 
+@app.get("/api/admin/model-accuracy-by-month")
+def get_admin_model_accuracy_by_month(
+    artifact_id: int | None = None,
+    year: int | None = None,
+    user: dict = Depends(require_admin),
+):
+    months = DB.get_model_accuracy_by_month(artifact_id=artifact_id, year=year)
+    years = DB.get_model_accuracy_available_years(artifact_id=artifact_id)
+    return {"months": months, "available_years": years}
+
+
 @app.get("/api/admin/model-metrics/latest")
 def get_admin_model_metrics_latest(user: dict = Depends(require_admin)):
     run = DB.get_latest_model_metric_snapshot()

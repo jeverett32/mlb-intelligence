@@ -788,6 +788,26 @@
 
     <div class="panel">
       <div class="panel-header">
+        <span>Monthly Model Accuracy</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          <label style="font-size:0.72rem;">Model:
+            <select id="acc-month-artifact" style="font-size:0.72rem;padding:2px 6px;">
+              <option value="">All</option>
+            </select>
+          </label>
+          <label style="font-size:0.72rem;">Year:
+            <select id="acc-month-year" style="font-size:0.72rem;padding:2px 6px;">
+              <option value="">All</option>
+            </select>
+          </label>
+          <span class="info-icon" tabindex="0" data-tooltip="Per-month accuracy and Brier score on settled predictions. Filter by training artifact (model version) or single year.">i</span>
+        </span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-accuracy-by-month"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
         <span>Feature Accuracy Breakdown (Latest Run)</span>
         <span style="display:inline-flex;align-items:center;gap:6px;">
           <span class="info-icon" tabindex="0" aria-label="Feature Accuracy info" data-tooltip="Splits validation games into two buckets per feature (above/below median) and measures model accuracy in each. A large gap between High and Low means the model is more reliable when that feature has a strong signal — e.g., big pitcher quality gaps produce more predictable games. Sorted by gap size.">i</span>
@@ -1220,6 +1240,7 @@ async function loadModelInsights() {
     const { run: latest } = await latestResp.json();
     const { runs } = await allResp.json();
     loadProductionFi();
+    loadAccuracyByMonth();
     if (!latest) {
       document.getElementById('model-summary-cards').innerHTML = '<div class="empty" style="grid-column:1/-1">No model metric snapshots recorded yet. Re-run model metrics to populate this tab.</div>';
       return;
@@ -1431,6 +1452,142 @@ function openFiProdModal() {
 function closeFiProdModal() {
   document.getElementById('fi-prod-modal').classList.remove('open');
   document.body.style.overflow = '';
+}
+
+let _accMonthInit = false;
+async function loadAccuracyByMonth() {
+  const artSel = document.getElementById('acc-month-artifact');
+  const yrSel = document.getElementById('acc-month-year');
+  if (!artSel || !yrSel) return;
+
+  if (!_accMonthInit) {
+    _accMonthInit = true;
+    try {
+      const r = await fetch('/api/admin/model-artifacts/fi-history');
+      if (r.ok) {
+        const { artifacts } = await r.json();
+        const opts = (artifacts || []).map(a => {
+          const d = a.created_at ? a.created_at.slice(0, 10) : '?';
+          const t = (a.model_type || '').toUpperCase();
+          return `<option value="${a.id}">#${a.id} — ${t} ${d}</option>`;
+        }).join('');
+        artSel.insertAdjacentHTML('beforeend', opts);
+      }
+    } catch (e) { /* non-fatal */ }
+    artSel.addEventListener('change', loadAccuracyByMonth);
+    yrSel.addEventListener('change', loadAccuracyByMonth);
+  }
+
+  const params = new URLSearchParams();
+  if (artSel.value) params.set('artifact_id', artSel.value);
+  if (yrSel.value) params.set('year', yrSel.value);
+  const url = '/api/admin/model-accuracy-by-month' + (params.toString() ? '?' + params : '');
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return;
+    const { months, available_years } = await resp.json();
+
+    const currentYear = yrSel.value;
+    const seen = new Set([...yrSel.options].map(o => o.value));
+    (available_years || []).forEach(y => {
+      if (!seen.has(String(y))) {
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        yrSel.appendChild(opt);
+      }
+    });
+    if (currentYear) yrSel.value = currentYear;
+
+    renderAccuracyByMonth(months || []);
+  } catch (e) {
+    console.error('accuracy-by-month load failed', e);
+  }
+}
+
+function renderAccuracyByMonth(months) {
+  const labels = months.map(m => m.year_month);
+  const accuracy = months.map(m => m.accuracy != null ? +(m.accuracy * 100).toFixed(2) : null);
+  const marketAcc = months.map(m => m.market_accuracy != null ? +(m.market_accuracy * 100).toFixed(2) : null);
+  const brier = months.map(m => m.brier != null ? +m.brier.toFixed(4) : null);
+  const counts = months.map(m => m.count);
+
+  makeModelChart('chart-accuracy-by-month', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Model Accuracy (%)',
+          data: accuracy,
+          borderColor: '#4a6b8a',
+          backgroundColor: '#4a6b8a',
+          tension: 0.3,
+          pointRadius: 3,
+          borderWidth: 2,
+          yAxisID: 'y',
+          fill: false,
+        },
+        {
+          label: 'Market Accuracy (%)',
+          data: marketAcc,
+          borderColor: '#a85a5a',
+          backgroundColor: '#a85a5a',
+          tension: 0.3,
+          pointRadius: 3,
+          borderWidth: 2,
+          borderDash: [4, 4],
+          yAxisID: 'y',
+          fill: false,
+        },
+        {
+          label: 'Brier Score',
+          data: brier,
+          borderColor: '#587a5f',
+          backgroundColor: '#587a5f',
+          tension: 0.3,
+          pointRadius: 3,
+          borderWidth: 2,
+          yAxisID: 'y1',
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12, padding: 8 } },
+        tooltip: {
+          callbacks: {
+            afterBody: (items) => {
+              const i = items[0]?.dataIndex;
+              return (i != null && counts[i] != null) ? `n = ${counts[i]}` : '';
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
+        y: {
+          position: 'left',
+          title: { display: true, text: 'Accuracy (%)', font: { size: 10 } },
+          ticks: { font: { size: 10 } },
+          grid: { color: 'rgba(128,128,128,0.1)' },
+          suggestedMin: 0, suggestedMax: 100,
+        },
+        y1: {
+          position: 'right',
+          title: { display: true, text: 'Brier', font: { size: 10 } },
+          ticks: { font: { size: 10 } },
+          grid: { display: false },
+          suggestedMin: 0, suggestedMax: 0.3,
+        },
+      },
+    },
+  });
 }
 
 function getFeatureDict() {
