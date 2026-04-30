@@ -85,10 +85,8 @@ python3 homelab.py app "journalctl -u mlb-dashboard -n 100 --no-pager"
 
 ## Docs
 
-- [Program overview](./docs/PROGRAM.md)
-- [Model workflow](./docs/run_model.md)
-- [Kalshi integration](./docs/kalshi.md)
-- [Auto-deploy](./docs/auto_deploy.md)
+- [Pipeline (end-to-end)](./docs/pipeline.md)
+- [Homelab SSH helper](./docs/homelab_access.md)
 
 ## License
 
