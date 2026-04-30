@@ -27,6 +27,8 @@ from sklearn.pipeline import Pipeline
 import lightgbm as lgb
 import xgboost as xgb
 
+import asb
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import ACTIVE_SEASON, CURRENT_CSV
 
@@ -84,14 +86,7 @@ PARK_FACTORS = {
     "TBR": 97,  "SFG": 96,  "SDP": 96,  "MIA": 95,  "ATH": 94,
 }
 
-# All-Star break dates by season (for days_since_asb feature)
-ASB_DATES = {
-    2010: "2010-07-13", 2011: "2011-07-12", 2012: "2012-07-10",
-    2013: "2013-07-16", 2014: "2014-07-15", 2015: "2015-07-14",
-    2016: "2016-07-12", 2017: "2017-07-11", 2018: "2018-07-17",
-    2019: "2019-07-09", 2021: "2021-07-13", 2022: "2022-07-19",
-    2023: "2023-07-11", 2024: "2024-07-16", 2025: "2025-07-15",
-}
+ASB_DATES = asb.ASB_DATES
 
 # ---------------------------------------------------------------------------
 # FEATURE COLUMNS — the agent prunes/adds column names here.
