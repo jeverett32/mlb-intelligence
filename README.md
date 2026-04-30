@@ -81,20 +81,9 @@ homelab.py            # SSH helper for app/db LXCs
 - [Pipeline (end-to-end)](./docs/pipeline.md)
 - [Homelab SSH helper](./docs/homelab_access.md)
 
-## Developer quickstart
+## Contributing / local development
 
-```bash
-uv sync
-uv run pytest -q tests/
-
-# Dashboard (dev)
-uv run dashboard/app.py --reload --host <bind_addr> --port <port>
-
-# Pipeline
-uv run run_pipeline.py
-```
-
-See [.env.example](./.env.example) for required environment variables.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, testing, and dev commands.
 
 ## Deployment
 
