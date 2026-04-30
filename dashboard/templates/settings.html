@@ -518,32 +518,70 @@
       <div class="settings-tab-pane" id="tab-kalshi">
         <section class="settings-section">
           <div class="settings-section-title">Kalshi Account</div>
-          <p>Connect your Kalshi credentials. Used only for your balance refreshes and order execution.</p>
-          <div class="settings-row">
-            <label class="settings-label" for="kalshi-label">Label</label>
-            <input class="settings-input" id="kalshi-label" type="text" placeholder="Primary account">
+          <p>Connect your Kalshi credentials in three steps. Need help? <a href="/docs/kalshi" target="_blank" rel="noreferrer" style="color:var(--accent);text-decoration:underline">Open the setup guide</a>.</p>
+
+          <div class="kalshi-status-card" id="kalshi-status-card" style="margin:14px 0;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--muted-panel)">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span class="kalshi-status-dot" id="kalshi-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--faint);display:inline-block"></span>
+              <strong id="kalshi-status-copy">No Kalshi account connected.</strong>
+            </div>
+            <div id="kalshi-balance-copy" style="margin-top:6px;color:var(--muted);font-size:0.92rem"></div>
           </div>
-          <div class="settings-row">
-            <label class="settings-label" for="kalshi-key-id">Key ID</label>
-            <input class="settings-input" id="kalshi-key-id" type="text" placeholder="Kalshi access key ID">
-          </div>
-          <div class="settings-row">
-            <label class="settings-label" for="kalshi-env">Environment</label>
-            <select class="settings-input" id="kalshi-env">
-              <option value="prod">prod</option>
-              <option value="demo">demo</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <label class="settings-label" for="kalshi-private-key">Private Key PEM</label>
-            <textarea class="settings-input" id="kalshi-private-key" rows="8" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
-          </div>
-          <div class="settings-actions">
+
+          <ol class="kalshi-wizard" style="list-style:none;padding:0;margin:0;display:grid;gap:18px">
+            <li class="kalshi-step" style="border:1px solid var(--border);border-radius:8px;padding:14px">
+              <div style="display:flex;gap:10px;align-items:baseline">
+                <span style="background:var(--accent);color:#fff;border-radius:50%;min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem">1</span>
+                <strong>Generate a Kalshi API key</strong>
+              </div>
+              <p style="margin:8px 0 10px;color:var(--muted)">Open the Kalshi API keys page, create a new key, and download the private key PEM file.</p>
+              <a class="settings-action" href="https://kalshi.com/account/profile" target="_blank" rel="noreferrer" style="display:inline-block;text-decoration:none">Open Kalshi profile</a>
+            </li>
+
+            <li class="kalshi-step" style="border:1px solid var(--border);border-radius:8px;padding:14px">
+              <div style="display:flex;gap:10px;align-items:baseline">
+                <span style="background:var(--accent);color:#fff;border-radius:50%;min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem">2</span>
+                <strong>Enter key details</strong>
+              </div>
+              <div class="settings-row" style="margin-top:10px">
+                <label class="settings-label" for="kalshi-label">Label</label>
+                <input class="settings-input" id="kalshi-label" type="text" placeholder="Primary account">
+              </div>
+              <div class="settings-row">
+                <label class="settings-label" for="kalshi-key-id">Key ID</label>
+                <input class="settings-input" id="kalshi-key-id" type="text" placeholder="Paste Kalshi access key ID">
+              </div>
+              <div class="settings-row">
+                <label class="settings-label" for="kalshi-env">Environment</label>
+                <select class="settings-input" id="kalshi-env">
+                  <option value="prod">prod</option>
+                  <option value="demo">demo</option>
+                </select>
+              </div>
+            </li>
+
+            <li class="kalshi-step" style="border:1px solid var(--border);border-radius:8px;padding:14px">
+              <div style="display:flex;gap:10px;align-items:baseline">
+                <span style="background:var(--accent);color:#fff;border-radius:50%;min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem">3</span>
+                <strong>Add private key PEM</strong>
+              </div>
+              <p style="margin:8px 0 10px;color:var(--muted)">Drag the <code>.pem</code> file here, click to choose, or paste the contents below.</p>
+              <div id="kalshi-pem-drop" style="border:2px dashed var(--border);border-radius:8px;padding:18px;text-align:center;cursor:pointer;background:var(--panel);transition:background 0.15s,border-color 0.15s">
+                <div id="kalshi-pem-drop-copy" style="color:var(--muted);font-size:0.92rem">Drop <code>kalshi-key.pem</code> here or click to browse</div>
+                <input id="kalshi-pem-file" type="file" accept=".pem,.key,.txt,application/x-pem-file" style="display:none">
+              </div>
+              <div class="settings-row" style="margin-top:10px">
+                <label class="settings-label" for="kalshi-private-key">Or paste PEM contents</label>
+                <textarea class="settings-input" id="kalshi-private-key" rows="6" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+              </div>
+            </li>
+          </ol>
+
+          <div class="settings-actions" style="margin-top:18px">
             <button class="settings-action" type="button" onclick="connectKalshi()">Connect &amp; Test</button>
             <button class="settings-action" type="button" onclick="disconnectKalshi()" style="background:var(--danger)">Disconnect</button>
           </div>
           <div class="settings-feedback" id="kalshi-feedback"></div>
-          <div class="settings-hint" id="kalshi-status-copy" style="margin-top:8px">No Kalshi account connected.</div>
         </section>
       </div>
 
@@ -749,6 +787,29 @@
     }
   }
 
+  function formatBalanceCents(cents) {
+    if (cents === null || cents === undefined) return '';
+    const dollars = Number(cents) / 100;
+    return dollars.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  }
+
+  function setKalshiStatus(connected, label, env, balanceCents) {
+    const dot = document.getElementById('kalshi-status-dot');
+    const copy = document.getElementById('kalshi-status-copy');
+    const bal = document.getElementById('kalshi-balance-copy');
+    if (connected) {
+      dot.style.background = 'var(--success, #2e7d32)';
+      copy.textContent = `Connected: ${label || 'Primary account'} (${env})`;
+      bal.textContent = balanceCents !== undefined && balanceCents !== null
+        ? `Kalshi balance: ${formatBalanceCents(balanceCents)}`
+        : '';
+    } else {
+      dot.style.background = 'var(--faint)';
+      copy.textContent = 'No Kalshi account connected.';
+      bal.textContent = '';
+    }
+  }
+
   async function connectKalshi() {
     const body = {
       key_id: document.getElementById('kalshi-key-id').value.trim(),
@@ -757,24 +818,63 @@
       label: document.getElementById('kalshi-label').value.trim() || 'Primary account',
       private_key_pem: document.getElementById('kalshi-private-key').value.trim(),
     };
+    if (!body.key_id) { feedback('kalshi-feedback', 'Key ID required.', false); return; }
+    if (!body.private_key_pem) { feedback('kalshi-feedback', 'Private key PEM required.', false); return; }
     try {
       const r = await api('POST', '/api/account/kalshi', body);
-      document.getElementById('kalshi-status-copy').textContent = r.connected
-        ? `Connected: ${r.label || 'Primary account'} (${r.kalshi_env})`
-        : 'Connection failed — check credentials.';
-      feedback('kalshi-feedback', r.connected ? 'Connected successfully.' : 'Connection test failed.', r.connected);
+      setKalshiStatus(r.connected, r.label, r.kalshi_env, r.balance_cents);
+      const msg = r.connected
+        ? `Connected. Balance: ${formatBalanceCents(r.balance_cents)}.`
+        : 'Connection test failed.';
+      feedback('kalshi-feedback', msg, r.connected);
+      if (r.connected) document.getElementById('kalshi-private-key').value = '';
     } catch (e) {
       feedback('kalshi-feedback', e?.detail || 'Connection failed.', false);
     }
   }
 
   async function disconnectKalshi() {
+    if (!confirm('Disconnect Kalshi account? Stored key will be deleted.')) return;
     try {
       await api('DELETE', '/api/account/kalshi');
-      document.getElementById('kalshi-status-copy').textContent = 'No Kalshi account connected.';
+      setKalshiStatus(false);
+      document.getElementById('kalshi-key-id').value = '';
+      document.getElementById('kalshi-label').value = '';
+      document.getElementById('kalshi-private-key').value = '';
       feedback('kalshi-feedback', 'Disconnected.', true);
     } catch { feedback('kalshi-feedback', 'Disconnect failed.', false); }
   }
+
+  function wireKalshiPemDrop() {
+    const drop = document.getElementById('kalshi-pem-drop');
+    const file = document.getElementById('kalshi-pem-file');
+    const copy = document.getElementById('kalshi-pem-drop-copy');
+    const ta = document.getElementById('kalshi-private-key');
+    if (!drop || !file) return;
+    const readFile = (f) => {
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        ta.value = String(reader.result || '').trim();
+        copy.innerHTML = `Loaded <strong>${f.name}</strong>`;
+      };
+      reader.readAsText(f);
+    };
+    drop.addEventListener('click', () => file.click());
+    file.addEventListener('change', (e) => readFile(e.target.files[0]));
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      drop.style.borderColor = 'var(--accent)';
+      drop.style.background = 'var(--muted-panel)';
+    }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      drop.style.borderColor = 'var(--border)';
+      drop.style.background = 'var(--panel)';
+    }));
+    drop.addEventListener('drop', (e) => readFile(e.dataTransfer.files[0]));
+  }
+  document.addEventListener('DOMContentLoaded', wireKalshiPemDrop);
 
   let currentApiToken = '';
   let currentApiTokenMasked = 'No API key yet';
@@ -902,11 +1002,12 @@
 
       // Kalshi account
       if (account && account.connected) {
-        document.getElementById('kalshi-status-copy').textContent =
-          `Connected: ${account.label || 'Primary account'} (${account.kalshi_env})`;
+        setKalshiStatus(true, account.label, account.kalshi_env, account.balance_cents);
         document.getElementById('kalshi-key-id').value = account.key_id || '';
         document.getElementById('kalshi-env').value = account.kalshi_env || 'prod';
         document.getElementById('kalshi-label').value = account.label || '';
+      } else {
+        setKalshiStatus(false);
       }
 
       renderApiToken(apiTokens.tokens || []);

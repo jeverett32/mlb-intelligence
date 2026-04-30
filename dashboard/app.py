@@ -341,6 +341,11 @@ def api_docs_page():
     return _render_template("api-docs.html")
 
 
+@app.get("/docs/kalshi", response_class=HTMLResponse)
+def kalshi_docs_page():
+    return _render_template("kalshi-setup.html")
+
+
 @app.post("/login")
 @limiter.limit("10/minute")
 async def login(
@@ -786,6 +791,10 @@ def get_kalshi_account(user: dict = Depends(require_approved_user)):
     account = DB.get_kalshi_account(user["email"])
     if not account:
         return {"connected": False}
+    try:
+        balance_cents = DB.get_last_user_balance_cents(user["email"])
+    except Exception:
+        balance_cents = None
     return {
         "connected": True,
         "label": account["label"],
@@ -794,6 +803,7 @@ def get_kalshi_account(user: dict = Depends(require_approved_user)):
         "is_active": account["is_active"],
         "last_verified_at": account["last_verified_at"],
         "last_error": account["last_error"],
+        "balance_cents": balance_cents,
     }
 
 
