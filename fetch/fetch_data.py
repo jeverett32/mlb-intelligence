@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
 from config import ACTIVE_SEASON, CURRENT_CSV
