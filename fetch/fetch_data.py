@@ -17,6 +17,7 @@ Usage:
 """
 
 import os, sys, json, time, random, asyncio, warnings, argparse, functools
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1461,31 +1462,31 @@ def main():
 
     odds_refresh_games, frozen_odds_pks = _split_odds_refresh_games(to_process)
 
+    print_lock = threading.Lock()
+
+    def _print_step_header(title):
+        with print_lock:
+            print("\n" + "=" * 60)
+            print(title)
+            print("=" * 60)
+
     def _run_odds():
-        print("\n" + "=" * 60)
-        print("STEP 2/6: Fetching odds")
-        print("=" * 60)
+        _print_step_header("STEP 2/6: Fetching odds")
         return fetch_odds(odds_refresh_games, today_only=args.today_only)
 
     def _run_pitchers():
-        print("\n" + "=" * 60)
-        print("STEP 3/6: Fetching pitcher data")
-        print("=" * 60)
+        _print_step_header("STEP 3/6: Fetching pitcher data")
         starters = fetch_starters(to_process)
         features = fetch_pitcher_features(starters, to_process)
         print(f"  Pitcher features: {features.shape}")
         return features
 
     def _run_weather():
-        print("\n" + "=" * 60)
-        print("STEP 4/6: Fetching weather")
-        print("=" * 60)
+        _print_step_header("STEP 4/6: Fetching weather")
         return fetch_weather(to_process, refresh_dates={today.date(), tomorrow.date()})
 
     def _run_fangraphs():
-        print("\n" + "=" * 60)
-        print("STEP 5/6: Fetching FanGraphs team stats")
-        print("=" * 60)
+        _print_step_header("STEP 5/6: Fetching FanGraphs team stats")
         return fetch_fangraphs_stats()
 
     fetch_jobs = {
@@ -1502,9 +1503,11 @@ def main():
             name = futures[fut]
             try:
                 fetch_results[name] = fut.result()
-                print(f"  {name} done.")
+                with print_lock:
+                    print(f"  {name} done.")
             except Exception as e:
-                print(f"  ERROR: {name} fetch failed: {e}")
+                with print_lock:
+                    print(f"  ERROR: {name} fetch failed: {e}")
                 raise
 
     odds_df = fetch_results["odds"]
