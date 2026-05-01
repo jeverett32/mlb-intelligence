@@ -910,6 +910,7 @@ BROWSABLE_TABLES = {
     "model_metric_snapshots",
     "model_artifacts",
     "admin_notes",
+    "pipeline_runs",
 }
 
 BROWSE_TABLE_ORDER_BY = {
@@ -926,6 +927,7 @@ BROWSE_TABLE_ORDER_BY = {
     "model_metric_snapshots": "trained_at DESC NULLS LAST, id DESC",
     "model_artifacts": "created_at DESC NULLS LAST, id DESC",
     "admin_notes": "sort_order ASC NULLS LAST, updated_at DESC NULLS LAST, id DESC",
+    "pipeline_runs": "started_at DESC NULLS LAST, id DESC",
 }
 
 
