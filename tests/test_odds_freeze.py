@@ -144,3 +144,29 @@ def test_build_odds_update_rows_is_minimal():
     assert rows.iloc[0]["over_under"] == 8.0
     assert "temp_c" not in rows.columns
     assert round(rows.iloc[0]["home_implied_prob"] + rows.iloc[0]["away_implied_prob"], 12) == 1
+
+
+def test_update_current_csv_odds_only_mutates_odds_fields(monkeypatch, tmp_path):
+    path = tmp_path / "mlb_2026.csv"
+    path.write_text(
+        "game_pk,game_date,home_team,close_home_ml,home_implied_prob\n"
+        "1,2026-04-01,NYY,-120,0.5\n"
+    )
+    monkeypatch.setattr(F, "OUTPUT_CSV", str(path))
+    rows = pd.DataFrame(
+        {
+            "game_pk": [1],
+            "game_date": [pd.Timestamp("2026-04-02")],
+            "home_team": ["BOS"],
+            "close_home_ml": [-130],
+            "home_implied_prob": [0.55],
+        }
+    )
+
+    F._update_current_csv_odds(rows)
+
+    out = pd.read_csv(path)
+    assert out.iloc[0]["game_date"] == "2026-04-01"
+    assert out.iloc[0]["home_team"] == "NYY"
+    assert out.iloc[0]["close_home_ml"] == -130
+    assert out.iloc[0]["home_implied_prob"] == 0.55

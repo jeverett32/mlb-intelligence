@@ -1461,11 +1461,16 @@ def _update_current_csv_odds(rows: pd.DataFrame) -> None:
     updates["game_pk"] = updates["game_pk"].astype(str)
     current = current.set_index("game_pk", drop=False)
     updates = updates.set_index("game_pk", drop=False)
+    mutable_cols = {
+        "open_home_ml", "open_away_ml", "close_home_ml", "close_away_ml",
+        "open_total", "close_total", "over_under", "odds_source",
+        "home_implied_prob", "away_implied_prob",
+    }
     for pk, row in updates.iterrows():
         if pk not in current.index:
             continue
         for col in updates.columns:
-            if col == "game_pk" or col not in current.columns:
+            if col not in mutable_cols or col not in current.columns:
                 continue
             val = row[col]
             if pd.notna(val):
