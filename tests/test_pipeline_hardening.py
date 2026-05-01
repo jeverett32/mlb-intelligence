@@ -404,3 +404,17 @@ def test_run_fetch_data_builds_odds_only_argv(monkeypatch):
     run_pipeline.run_fetch_data(odds_only=True, odds_game_pks=["1"])
 
     assert calls == [["fetch/fetch_data.py", "--odds-only", "--odds-game-pks", "1"]]
+
+
+def test_run_fetch_data_uses_in_memory_odds_games(monkeypatch):
+    calls = []
+    monkeypatch.setattr(run_pipeline, "fetch_data_main", lambda: calls.append("main"))
+    monkeypatch.setattr(
+        run_pipeline,
+        "refresh_odds_only",
+        lambda df: calls.append(df["game_pk"].tolist()),
+    )
+
+    run_pipeline.run_fetch_data(odds_only=True, odds_games=[{"game_pk": 1}])
+
+    assert calls == [[1]]

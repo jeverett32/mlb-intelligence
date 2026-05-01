@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent / "bet"))
 from model import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
-from fetch.fetch_data import main as fetch_data_main  # noqa: E402
+from fetch.fetch_data import main as fetch_data_main, refresh_odds_only  # noqa: E402
 from fetch.fetch_live_positions import refresh_due_orders  # noqa: E402
 from fetch.fetch_live_scores import refresh_scores_for_date  # noqa: E402
 
@@ -142,8 +142,15 @@ def run_fetch_data(
     skip_odds: bool = False,
     odds_only: bool = False,
     odds_game_pks: list[str] | None = None,
+    odds_games: list[dict] | None = None,
 ) -> None:
     """Run fetch_data in-process while isolating its argparse argv."""
+    if odds_only and odds_games is not None:
+        pks = ",".join(str(g.get("game_pk")) for g in odds_games)
+        print(f"\n>>> fetch.refresh_odds_only({pks})")
+        refresh_odds_only(pd.DataFrame(odds_games))
+        return
+
     argv = ["fetch/fetch_data.py"]
     if skip_odds:
         argv.append("--skip-odds")
@@ -172,6 +179,7 @@ def refresh_fetch_data_if_stale(
     skip_odds: bool = False,
     odds_only: bool = False,
     odds_game_pks: list[str] | None = None,
+    odds_games: list[dict] | None = None,
     force: bool = False,
 ) -> None:
     if not force and _fetch_is_fresh():
@@ -180,7 +188,12 @@ def refresh_fetch_data_if_stale(
             f"{int(time.time() - _LAST_FETCH_TS)}s ago."
         )
         return
-    run_fetch_data(skip_odds=skip_odds, odds_only=odds_only, odds_game_pks=odds_game_pks)
+    run_fetch_data(
+        skip_odds=skip_odds,
+        odds_only=odds_only,
+        odds_game_pks=odds_game_pks,
+        odds_games=odds_games,
+    )
     if not odds_only:
         _mark_fetched()
 
@@ -334,6 +347,7 @@ def run_batch(games: list[dict], dry_run: bool = False) -> None:
                 "Shared fetch",
                 odds_only=_fetch_is_fresh(),
                 odds_game_pks=pks_list,
+                odds_games=games,
                 force=True,
             )
         except Exception as e:
