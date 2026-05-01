@@ -14,6 +14,8 @@ CLI (for debug/one-off use):
 
 import argparse
 import hashlib
+import inspect
+import io
 import json
 import os
 import pickle
@@ -584,6 +586,27 @@ def _load_current() -> pd.DataFrame:
         return pd.read_csv(CURRENT_CSV, low_memory=False)
 
 
+def _engineered_feature_version() -> str:
+    """Hash of the engineer_features source code. Changes invalidate the cache."""
+    src = inspect.getsource(engineer_features)
+    return hashlib.sha256(src.encode("utf-8")).hexdigest()
+
+
+def _engineered_history_fingerprint(combined: pd.DataFrame) -> str:
+    """Cheap deterministic fingerprint of the engineering input."""
+    h = hashlib.sha256()
+    h.update(str(len(combined)).encode())
+    if "game_date" in combined.columns and len(combined):
+        h.update(str(combined["game_date"].max()).encode())
+        h.update(str(combined["game_date"].min()).encode())
+    if "game_pk" in combined.columns and len(combined):
+        h.update(str(int(pd.to_numeric(combined["game_pk"], errors="coerce").max() or 0)).encode())
+        h.update(str(int(pd.to_numeric(combined["game_pk"], errors="coerce").min() or 0)).encode())
+    if "home_win" in combined.columns:
+        h.update(str(int(combined["home_win"].notna().sum())).encode())
+    return h.hexdigest()
+
+
 def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     """
     Load data, engineer features, load or train model artifact. Returns a cache dict:
@@ -608,8 +631,32 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     combined["game_date"] = pd.to_datetime(combined["game_date"], errors="coerce")
     combined = combined.sort_values("game_date").reset_index(drop=True)
 
-    print(f"  Engineering features ({len(combined):,} rows)...")
-    df_feat = engineer_features(combined)
+    fv = _engineered_feature_version()
+    hf = _engineered_history_fingerprint(combined)
+    df_feat = None
+    try:
+        DB.init_engineered_feature_cache_table()
+        blob = DB.get_engineered_features(fv, hf)
+    except Exception as e:
+        print(f"  WARNING: engineered feature cache lookup failed ({e}).")
+        blob = None
+    if blob:
+        try:
+            df_feat = pd.read_parquet(io.BytesIO(blob))
+            print(f"  Engineered features cache HIT ({len(df_feat):,} rows, fv={fv[:8]}, hf={hf[:8]}).")
+        except Exception as e:
+            print(f"  WARNING: cached engineered features unreadable ({e}); recomputing.")
+            df_feat = None
+    if df_feat is None:
+        print(f"  Engineering features ({len(combined):,} rows)...")
+        df_feat = engineer_features(combined)
+        try:
+            buf = io.BytesIO()
+            df_feat.to_parquet(buf)
+            DB.save_engineered_features(fv, hf, len(df_feat), buf.getvalue())
+            print(f"  Engineered features cached (fv={fv[:8]}, hf={hf[:8]}, {len(buf.getvalue()) // 1024} KiB).")
+        except Exception as e:
+            print(f"  WARNING: engineered feature cache save failed ({e}).")
 
     train_df = df_feat[df_feat["home_win"].notna()].copy()
     active_feats = [c for c in T.FEATURE_COLUMNS       if c in df_feat.columns]

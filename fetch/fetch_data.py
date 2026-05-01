@@ -18,7 +18,7 @@ Usage:
 
 import os, sys, json, time, random, asyncio, warnings, argparse, functools
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -882,119 +882,176 @@ def fetch_pitcher_features(starters_df, schedule_df):
 # ═══════════════════════════════════════════════════════════════════════════
 # STEP 4: Weather from Open-Meteo
 # ═══════════════════════════════════════════════════════════════════════════
+WEATHER_REFRESH_MAX_AGE_MINUTES = 60
+
+
+def _fetch_weather_for_team(home_team, dates, today):
+    """Fetch weather for one team across given date strings. Returns list of row dicts."""
+    if home_team not in PARK_COORDS:
+        return []
+    lat, lon = PARK_COORDS[home_team]
+    past_dates = [d for d in dates if datetime.strptime(d, "%Y-%m-%d").date() < today]
+    future_dates = [d for d in dates if datetime.strptime(d, "%Y-%m-%d").date() >= today]
+    out = []
+
+    if past_dates:
+        try:
+            r = requests.get(
+                "https://archive-api.open-meteo.com/v1/archive",
+                params={
+                    "latitude": lat, "longitude": lon,
+                    "start_date": past_dates[0], "end_date": past_dates[-1],
+                    "daily": ("temperature_2m_max,wind_speed_10m_max,"
+                              "wind_direction_10m_dominant"),
+                    "temperature_unit": "celsius",
+                    "wind_speed_unit": "kmh", "timezone": "auto",
+                },
+                timeout=30,
+            )
+            r.raise_for_status()
+            data = r.json().get("daily", {})
+            dm = {d: j for j, d in enumerate(data.get("time", []))}
+            temps = data.get("temperature_2m_max", [])
+            winds = data.get("wind_speed_10m_max", [])
+            wdirs = data.get("wind_direction_10m_dominant", [])
+            for d in past_dates:
+                idx = dm.get(d)
+                if idx is None:
+                    continue
+                out.append({
+                    "game_date": d, "home_team": home_team,
+                    "temp_c": temps[idx] if idx < len(temps) else np.nan,
+                    "wind_speed_kmh": winds[idx] if idx < len(winds) else np.nan,
+                    "wind_dir_deg": wdirs[idx] if idx < len(wdirs) else np.nan,
+                })
+        except Exception as e:
+            print(f"  Weather archive error ({home_team}): {e}")
+
+    if future_dates:
+        try:
+            r = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat, "longitude": lon,
+                    "daily": ("temperature_2m_max,wind_speed_10m_max,"
+                              "wind_direction_10m_dominant"),
+                    "temperature_unit": "celsius",
+                    "wind_speed_unit": "kmh", "timezone": "auto",
+                    "forecast_days": 7,
+                },
+                timeout=30,
+            )
+            r.raise_for_status()
+            data = r.json().get("daily", {})
+            dm = {d: j for j, d in enumerate(data.get("time", []))}
+            temps = data.get("temperature_2m_max", [])
+            winds = data.get("wind_speed_10m_max", [])
+            wdirs = data.get("wind_direction_10m_dominant", [])
+            for d in future_dates:
+                idx = dm.get(d)
+                if idx is None:
+                    continue
+                out.append({
+                    "game_date": d, "home_team": home_team,
+                    "temp_c": temps[idx] if idx < len(temps) else np.nan,
+                    "wind_speed_kmh": winds[idx] if idx < len(winds) else np.nan,
+                    "wind_dir_deg": wdirs[idx] if idx < len(wdirs) else np.nan,
+                })
+        except Exception as e:
+            print(f"  Weather forecast error ({home_team}): {e}")
+
+    return out
+
+
 def fetch_weather(schedule_df, refresh_dates=None):
-    """Fetch weather for games in schedule_df, forcing re-fetch for refresh_dates."""
-    cache_path = CACHE_DIR / "weather.parquet"
-    cached = pd.read_parquet(cache_path) if cache_path.exists() else pd.DataFrame()
+    """
+    Fetch weather for games in schedule_df. Backed by Postgres (weather_cache).
+    Past dates: cached forever once retrieved.
+    Today/tomorrow (or refresh_dates): re-fetched only when cache row is older
+    than WEATHER_REFRESH_MAX_AGE_MINUTES.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import db as DB
 
-    if not cached.empty:
-        cached["game_date"] = pd.to_datetime(cached["game_date"])
-        if refresh_dates:
-            cached = cached[~cached["game_date"].dt.date.isin(refresh_dates)]
-        done = set(zip(cached["game_date"].dt.date, cached["home_team"]))
-    else:
-        done = set()
+    DB.init_weather_cache_table()
 
-    needed = schedule_df[["game_date", "home_team"]].drop_duplicates()
-    needed = needed[needed.apply(
-        lambda r: (r["game_date"].date(), r["home_team"]) not in done, axis=1)]
+    # One-shot migration from legacy parquet cache.
+    legacy_path = CACHE_DIR / "weather.parquet"
+    if legacy_path.exists() and not DB.get_weather_cache():
+        try:
+            legacy = pd.read_parquet(legacy_path)
+            legacy["game_date"] = pd.to_datetime(legacy["game_date"])
+            rows = [
+                {"game_date": r["game_date"].date(), "home_team": r["home_team"],
+                 "temp_c": r.get("temp_c"), "wind_speed_kmh": r.get("wind_speed_kmh"),
+                 "wind_dir_deg": r.get("wind_dir_deg")}
+                for _, r in legacy.iterrows()
+            ]
+            DB.upsert_weather_rows(rows)
+            print(f"  Weather: migrated {len(rows)} rows from parquet to DB.")
+        except Exception as e:
+            print(f"  warn: legacy weather migration failed: {e}")
 
-    if needed.empty:
-        print("  Weather already cached.")
-        return cached
+    cached_rows = DB.get_weather_cache()
+    cached_df = pd.DataFrame(cached_rows) if cached_rows else pd.DataFrame(
+        columns=["game_date", "home_team", "temp_c", "wind_speed_kmh", "wind_dir_deg", "fetched_at"]
+    )
+    if not cached_df.empty:
+        cached_df["game_date"] = pd.to_datetime(cached_df["game_date"])
 
     today = datetime.today().date()
-    new_rows = []
+    needed = schedule_df[["game_date", "home_team"]].drop_duplicates().copy()
+    needed["game_date"] = pd.to_datetime(needed["game_date"])
 
-    for i, (home_team, grp) in enumerate(needed.groupby("home_team")):
-        if home_team not in PARK_COORDS:
-            continue
-        lat, lon = PARK_COORDS[home_team]
-        dates = sorted(set(d.strftime("%Y-%m-%d") for d in grp["game_date"]))
-        past_dates = [d for d in dates
-                      if datetime.strptime(d, "%Y-%m-%d").date() < today]
-        future_dates = [d for d in dates
-                        if datetime.strptime(d, "%Y-%m-%d").date() >= today]
+    cache_keys = set()
+    fresh_until = datetime.now(timezone.utc) - timedelta(minutes=WEATHER_REFRESH_MAX_AGE_MINUTES)
+    forced = set(refresh_dates or [])
+    for r in cached_rows:
+        gd = r["game_date"]
+        # Force re-fetch if row is for refresh_dates AND stale.
+        if gd in forced:
+            ft = r.get("fetched_at")
+            if ft and ft >= fresh_until:
+                cache_keys.add((gd, r["home_team"]))
+        else:
+            cache_keys.add((gd, r["home_team"]))
 
-        if past_dates:
+    needed = needed[needed.apply(
+        lambda r: (r["game_date"].date(), r["home_team"]) not in cache_keys, axis=1)]
+
+    if needed.empty:
+        print(f"  Weather: cache hit ({len(cached_df)} rows, no fetch).")
+        return cached_df
+
+    teams = list(needed.groupby("home_team"))
+    print(f"  Weather: fetching {len(teams)} team(s)...")
+
+    new_rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {
+            ex.submit(_fetch_weather_for_team, ht,
+                      sorted(set(d.strftime("%Y-%m-%d") for d in grp["game_date"])),
+                      today): ht
+            for ht, grp in teams
+        }
+        for fut in as_completed(futures):
             try:
-                r = requests.get(
-                    "https://archive-api.open-meteo.com/v1/archive",
-                    params={
-                        "latitude": lat, "longitude": lon,
-                        "start_date": past_dates[0], "end_date": past_dates[-1],
-                        "daily": ("temperature_2m_max,wind_speed_10m_max,"
-                                  "wind_direction_10m_dominant"),
-                        "temperature_unit": "celsius",
-                        "wind_speed_unit": "kmh", "timezone": "auto",
-                    },
-                    timeout=30,
-                )
-                r.raise_for_status()
-                data = r.json().get("daily", {})
-                dm = {d: j for j, d in enumerate(data.get("time", []))}
-                temps = data.get("temperature_2m_max", [])
-                winds = data.get("wind_speed_10m_max", [])
-                wdirs = data.get("wind_direction_10m_dominant", [])
-                for d in past_dates:
-                    idx = dm.get(d)
-                    if idx is None:
-                        continue
-                    new_rows.append({
-                        "game_date": d, "home_team": home_team,
-                        "temp_c": temps[idx] if idx < len(temps) else np.nan,
-                        "wind_speed_kmh": winds[idx] if idx < len(winds) else np.nan,
-                        "wind_dir_deg": wdirs[idx] if idx < len(wdirs) else np.nan,
-                    })
+                new_rows.extend(fut.result())
             except Exception as e:
-                print(f"  Weather archive error ({home_team}): {e}")
-
-        if future_dates:
-            try:
-                r = requests.get(
-                    "https://api.open-meteo.com/v1/forecast",
-                    params={
-                        "latitude": lat, "longitude": lon,
-                        "daily": ("temperature_2m_max,wind_speed_10m_max,"
-                                  "wind_direction_10m_dominant"),
-                        "temperature_unit": "celsius",
-                        "wind_speed_unit": "kmh", "timezone": "auto",
-                        "forecast_days": 7,
-                    },
-                    timeout=30,
-                )
-                r.raise_for_status()
-                data = r.json().get("daily", {})
-                dm = {d: j for j, d in enumerate(data.get("time", []))}
-                temps = data.get("temperature_2m_max", [])
-                winds = data.get("wind_speed_10m_max", [])
-                wdirs = data.get("wind_direction_10m_dominant", [])
-                for d in future_dates:
-                    idx = dm.get(d)
-                    if idx is None:
-                        continue
-                    new_rows.append({
-                        "game_date": d, "home_team": home_team,
-                        "temp_c": temps[idx] if idx < len(temps) else np.nan,
-                        "wind_speed_kmh": winds[idx] if idx < len(winds) else np.nan,
-                        "wind_dir_deg": wdirs[idx] if idx < len(wdirs) else np.nan,
-                    })
-            except Exception as e:
-                print(f"  Weather forecast error ({home_team}): {e}")
-
-        time.sleep(0.5)
+                print(f"  Weather worker error ({futures[fut]}): {e}")
 
     if new_rows:
-        new_df = pd.DataFrame(new_rows)
-        new_df["game_date"] = pd.to_datetime(new_df["game_date"])
-        weather = pd.concat([cached, new_df], ignore_index=True)
-        weather = weather.drop_duplicates(subset=["game_date", "home_team"])
-        weather.to_parquet(cache_path)
-        print(f"  Weather: {len(weather)} rows cached")
-        return weather
-
-    print(f"  Weather: {len(cached)} rows (from cache)")
-    return cached
+        # Normalize dates for DB (DATE type) before upsert.
+        for r in new_rows:
+            r["game_date"] = datetime.strptime(r["game_date"], "%Y-%m-%d").date()
+        DB.upsert_weather_rows(new_rows)
+        print(f"  Weather: upserted {len(new_rows)} row(s) to DB.")
+        # Reload to return fresh combined view.
+        cached_rows = DB.get_weather_cache()
+        cached_df = pd.DataFrame(cached_rows)
+        cached_df["game_date"] = pd.to_datetime(cached_df["game_date"])
+    print(f"  Weather: {len(cached_df)} rows total.")
+    return cached_df
 
 
 # ═══════════════════════════════════════════════════════════════════════════

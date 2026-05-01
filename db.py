@@ -1521,6 +1521,8 @@ def init_auth_tables():
     init_model_artifacts_table()
     init_admin_notes_table()
     init_pipeline_runs_table()
+    init_weather_cache_table()
+    init_engineered_feature_cache_table()
 
 
 def upsert_user(
@@ -3536,6 +3538,139 @@ def finish_pipeline_run(run_id: int, status: str, duration_seconds: float, error
                     error = %s
                 WHERE id = %s
             """, (duration_seconds, status, error, run_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Weather cache
+# ---------------------------------------------------------------------------
+
+WEATHER_CACHE_TABLE = "weather_cache"
+
+
+def init_weather_cache_table():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {WEATHER_CACHE_TABLE} (
+                    game_date DATE NOT NULL,
+                    home_team TEXT NOT NULL,
+                    temp_c DOUBLE PRECISION,
+                    wind_speed_kmh DOUBLE PRECISION,
+                    wind_dir_deg DOUBLE PRECISION,
+                    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (game_date, home_team)
+                )
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_weather_cache() -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"""
+                SELECT game_date, home_team, temp_c, wind_speed_kmh, wind_dir_deg, fetched_at
+                FROM {WEATHER_CACHE_TABLE}
+            """)
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def upsert_weather_rows(rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            for r in rows:
+                cur.execute(f"""
+                    INSERT INTO {WEATHER_CACHE_TABLE}
+                        (game_date, home_team, temp_c, wind_speed_kmh, wind_dir_deg, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (game_date, home_team) DO UPDATE SET
+                        temp_c = EXCLUDED.temp_c,
+                        wind_speed_kmh = EXCLUDED.wind_speed_kmh,
+                        wind_dir_deg = EXCLUDED.wind_dir_deg,
+                        fetched_at = NOW()
+                """, (r["game_date"], r["home_team"], r.get("temp_c"),
+                      r.get("wind_speed_kmh"), r.get("wind_dir_deg")))
+        conn.commit()
+        return len(rows)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Engineered feature cache (parquet blob, keyed on feature+history fingerprints)
+# ---------------------------------------------------------------------------
+
+ENGINEERED_FEATURE_CACHE_TABLE = "engineered_feature_cache"
+ENGINEERED_FEATURE_CACHE_KEEP = 5
+
+
+def init_engineered_feature_cache_table():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {ENGINEERED_FEATURE_CACHE_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    feature_version TEXT NOT NULL,
+                    history_fingerprint TEXT NOT NULL,
+                    row_count INTEGER NOT NULL,
+                    payload BYTEA NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (feature_version, history_fingerprint)
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_efc_created_at
+                ON {ENGINEERED_FEATURE_CACHE_TABLE} (created_at DESC)
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_engineered_features(feature_version: str, history_fingerprint: str) -> bytes | None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT payload FROM {ENGINEERED_FEATURE_CACHE_TABLE}
+                WHERE feature_version = %s AND history_fingerprint = %s
+            """, (feature_version, history_fingerprint))
+            row = cur.fetchone()
+            return bytes(row[0]) if row else None
+    finally:
+        conn.close()
+
+
+def save_engineered_features(feature_version: str, history_fingerprint: str,
+                             row_count: int, payload: bytes) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                INSERT INTO {ENGINEERED_FEATURE_CACHE_TABLE}
+                    (feature_version, history_fingerprint, row_count, payload)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (feature_version, history_fingerprint) DO NOTHING
+            """, (feature_version, history_fingerprint, row_count, psycopg2.Binary(payload)))
+            cur.execute(f"""
+                DELETE FROM {ENGINEERED_FEATURE_CACHE_TABLE}
+                WHERE id NOT IN (
+                    SELECT id FROM {ENGINEERED_FEATURE_CACHE_TABLE}
+                    ORDER BY created_at DESC LIMIT %s
+                )
+            """, (ENGINEERED_FEATURE_CACHE_KEEP,))
         conn.commit()
     finally:
         conn.close()
