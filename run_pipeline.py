@@ -14,8 +14,8 @@ Usage:
 """
 
 import argparse
+import contextlib
 import os
-import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent / "bet"))
 from model import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
+from fetch.fetch_data import main as fetch_data_main  # noqa: E402
 from fetch.fetch_live_positions import refresh_due_orders  # noqa: E402
 from fetch.fetch_live_scores import refresh_scores_for_date  # noqa: E402
 
@@ -136,19 +137,21 @@ def _fetch_is_fresh() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def run_step(cmd: list[str]):
-    """Run a pipeline step as a subprocess. Raises RuntimeError on non-zero exit."""
-    if cmd[0] == "uv":
-        # Reuse the current interpreter so systemd services do not depend on a
-        # separate uv install or a specific HOME-owned binary path.
-        if len(cmd) >= 3 and cmd[1] == "run":
-            cmd = [sys.executable, cmd[2], *cmd[3:]]
-        else:
-            raise RuntimeError(f"Unsupported uv command: {' '.join(cmd)}")
-    print(f"\n>>> {' '.join(cmd)}")
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        raise RuntimeError(f"Step failed (exit {result.returncode}): {' '.join(cmd)}")
+def run_fetch_data() -> None:
+    """Run fetch_data in-process while isolating its argparse argv."""
+    print("\n>>> fetch.fetch_data.main()")
+    with _patched_argv(["fetch/fetch_data.py"]):
+        fetch_data_main()
+
+
+@contextlib.contextmanager
+def _patched_argv(argv: list[str]):
+    old_argv = sys.argv[:]
+    sys.argv = argv
+    try:
+        yield
+    finally:
+        sys.argv = old_argv
 
 
 def init_game_row(game: dict):
@@ -289,9 +292,9 @@ def run_batch(games: list[dict]) -> None:
 
     try:
         try:
-            run_step(["uv", "run", "fetch/fetch_data.py"])
+            run_fetch_data()
             _mark_fetched()
-        except RuntimeError as e:
+        except Exception as e:
             print(f"\nERROR in shared fetch step: {e}")
             print("Aborting batch.")
             NOTIFY.send(f":rotating_light: **Batch aborted** (fetch failed): `{e}`")
@@ -364,9 +367,9 @@ def run_pipeline_for_game(game_pk: str):
     err_msg: str | None = None
     try:
         try:
-            run_step(["uv", "run", "fetch/fetch_data.py"])
+            run_fetch_data()
             _mark_fetched()
-        except RuntimeError as e:
+        except Exception as e:
             print(f"\nERROR: {e}")
             status = "aborted"
             err_msg = f"fetch failed: {e}"
@@ -548,11 +551,8 @@ def main():
         else:
             print("Refreshing MLB schedule...")
             try:
-                rc = subprocess.run(
-                    [sys.executable, "fetch/fetch_data.py"], check=False
-                ).returncode
-                if rc == 0:
-                    _mark_fetched()
+                run_fetch_data()
+                _mark_fetched()
             except Exception as e:
                 print(f"  Schedule refresh failed: {e}")
 

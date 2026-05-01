@@ -559,8 +559,12 @@ def _align_odds_api_dates(api_df: pd.DataFrame, schedule_df: pd.DataFrame) -> pd
 
 def fetch_odds(schedule_df, today_only=False):
     """Fetch odds from SBR, supplementing gaps with The Odds API when needed."""
-    from scraper import scrape_range_async
-    from odds_api import fetch_odds_api
+    try:
+        from .scraper import scrape_range_async
+        from .odds_api import fetch_odds_api
+    except ImportError:
+        from scraper import scrape_range_async
+        from odds_api import fetch_odds_api
 
     odds_cache = CACHE_DIR / f"odds_{SEASON}.csv"
     cached = pd.read_csv(odds_cache) if odds_cache.exists() else pd.DataFrame()
