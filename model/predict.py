@@ -43,7 +43,7 @@ from config import ACTIVE_SEASON, CURRENT_CSV
 
 HISTORICAL_CSV = "data/master_mlb.csv"
 ARTIFACT_SCHEMA_VERSION = 1
-FEATURE_CACHE_SCHEMA_VERSION = 2
+FEATURE_CACHE_SCHEMA_VERSION = 3
 
 
 class PredictError(RuntimeError):
@@ -622,6 +622,18 @@ def _completed_training_input(combined: pd.DataFrame) -> pd.DataFrame:
     return combined[combined["home_win"].notna()].copy()
 
 
+def _feature_fingerprint_input(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop volatile operational columns that do not affect feature engineering."""
+    volatile = {
+        "balls", "strikes", "outs", "inning", "inning_ordinal", "inning_state",
+        "is_completed", "is_top_inning", "live_status_text", "live_updated_at",
+        "game_status", "game_state", "detailed_state", "status_code",
+        "odds_source",
+    }
+    keep = [c for c in df.columns if c not in volatile]
+    return df[keep].copy()
+
+
 def _target_engineering_context(combined: pd.DataFrame, game_pks: list[str],
                                 target_date: pd.Timestamp) -> pd.DataFrame:
     """Small context enough to engineer live target rows without full-history cost."""
@@ -681,7 +693,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
 
     fv = _engineered_feature_version()
     training_input = _completed_training_input(combined)
-    hf = _engineered_history_fingerprint(training_input)
+    hf = _engineered_history_fingerprint(_feature_fingerprint_input(training_input))
     train_df = None
     try:
         DB.init_engineered_feature_cache_table()
