@@ -3676,6 +3676,21 @@ def save_engineered_features(feature_version: str, history_fingerprint: str,
         conn.close()
 
 
+def delete_engineered_feature_caches_except(feature_version: str) -> int:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                DELETE FROM {ENGINEERED_FEATURE_CACHE_TABLE}
+                WHERE feature_version <> %s
+            """, (feature_version,))
+            deleted = cur.rowcount
+        conn.commit()
+        return int(deleted or 0)
+    finally:
+        conn.close()
+
+
 def get_pipeline_runs(limit: int = 200) -> list[dict]:
     conn = get_connection()
     try:

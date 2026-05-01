@@ -43,6 +43,7 @@ from config import ACTIVE_SEASON, CURRENT_CSV
 
 HISTORICAL_CSV = "data/master_mlb.csv"
 ARTIFACT_SCHEMA_VERSION = 1
+FEATURE_CACHE_SCHEMA_VERSION = 2
 
 
 class PredictError(RuntimeError):
@@ -587,8 +588,11 @@ def _load_current() -> pd.DataFrame:
 
 
 def _engineered_feature_version() -> str:
-    """Hash of the engineer_features source code. Changes invalidate the cache."""
-    src = inspect.getsource(engineer_features)
+    """Hash of feature code/cache schema. Changes invalidate the cache."""
+    src = "\n".join([
+        f"feature_cache_schema={FEATURE_CACHE_SCHEMA_VERSION}",
+        inspect.getsource(engineer_features),
+    ])
     return hashlib.sha256(src.encode("utf-8")).hexdigest()
 
 
@@ -610,6 +614,45 @@ def _engineered_history_fingerprint(combined: pd.DataFrame) -> str:
     h.update(",".join(str(dtype) for dtype in df.dtypes).encode())
     h.update(row_hashes.tobytes())
     return h.hexdigest()
+
+
+def _completed_training_input(combined: pd.DataFrame) -> pd.DataFrame:
+    if "home_win" not in combined.columns:
+        return combined.iloc[0:0].copy()
+    return combined[combined["home_win"].notna()].copy()
+
+
+def _target_engineering_context(combined: pd.DataFrame, game_pks: list[str],
+                                target_date: pd.Timestamp) -> pd.DataFrame:
+    """Small context enough to engineer live target rows without full-history cost."""
+    df = combined.copy()
+    df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
+    current_season = df[df["season"].astype(str) == str(ACTIVE_SEASON)].copy() if "season" in df else df[
+        df["game_date"].dt.year == ACTIVE_SEASON
+    ].copy()
+    current_season = current_season[current_season["game_date"] <= target_date].copy()
+
+    target_mask = current_season["game_pk"].astype(str).isin(set(game_pks))
+    target_rows = current_season[target_mask]
+    pitcher_ids: set[int] = set()
+    for col in ("home_starter_id", "away_starter_id"):
+        if col in target_rows.columns:
+            vals = pd.to_numeric(target_rows[col], errors="coerce").dropna().astype(int)
+            pitcher_ids.update(vals.tolist())
+
+    if pitcher_ids:
+        pitcher_mask = pd.Series(False, index=df.index)
+        for col in ("home_starter_id", "away_starter_id"):
+            if col in df.columns:
+                pitcher_mask = pitcher_mask | pd.to_numeric(df[col], errors="coerce").isin(pitcher_ids)
+        pitcher_history = df[pitcher_mask].copy()
+        context = pd.concat([current_season, pitcher_history], ignore_index=True)
+    else:
+        context = current_season
+
+    context = context.drop_duplicates(subset=["game_pk"], keep="last")
+    context = context.sort_values(["game_date", "game_pk"], kind="mergesort").reset_index(drop=True)
+    return context
 
 
 def prepare_shared(game_pks: list[str], game_date: str) -> dict:
@@ -637,35 +680,43 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     combined = combined.sort_values("game_date").reset_index(drop=True)
 
     fv = _engineered_feature_version()
-    hf = _engineered_history_fingerprint(combined)
-    df_feat = None
+    training_input = _completed_training_input(combined)
+    hf = _engineered_history_fingerprint(training_input)
+    train_df = None
     try:
         DB.init_engineered_feature_cache_table()
+        deleted = DB.delete_engineered_feature_caches_except(fv)
+        if deleted:
+            print(f"  Deleted {deleted} old engineered feature cache row(s).")
         blob = DB.get_engineered_features(fv, hf)
     except Exception as e:
         print(f"  WARNING: engineered feature cache lookup failed ({e}).")
         blob = None
     if blob:
         try:
-            df_feat = pd.read_parquet(io.BytesIO(blob))
-            print(f"  Engineered features cache HIT ({len(df_feat):,} rows, fv={fv[:8]}, hf={hf[:8]}).")
+            train_df = pd.read_parquet(io.BytesIO(blob))
+            print(f"  Training feature cache HIT ({len(train_df):,} rows, fv={fv[:8]}, hf={hf[:8]}).")
         except Exception as e:
-            print(f"  WARNING: cached engineered features unreadable ({e}); recomputing.")
-            df_feat = None
-    if df_feat is None:
-        print(f"  Engineering features ({len(combined):,} rows)...")
-        df_feat = engineer_features(combined)
+            print(f"  WARNING: cached training features unreadable ({e}); recomputing.")
+            train_df = None
+    if train_df is None:
+        print(f"  Engineering training features ({len(training_input):,} completed rows)...")
+        train_feat = engineer_features(training_input)
+        train_df = train_feat[train_feat["home_win"].notna()].copy()
         try:
             buf = io.BytesIO()
-            df_feat.to_parquet(buf)
-            DB.save_engineered_features(fv, hf, len(df_feat), buf.getvalue())
-            print(f"  Engineered features cached (fv={fv[:8]}, hf={hf[:8]}, {len(buf.getvalue()) // 1024} KiB).")
+            train_df.to_parquet(buf)
+            DB.save_engineered_features(fv, hf, len(train_df), buf.getvalue())
+            print(f"  Training features cached (fv={fv[:8]}, hf={hf[:8]}, {len(buf.getvalue()) // 1024} KiB).")
         except Exception as e:
-            print(f"  WARNING: engineered feature cache save failed ({e}).")
+            print(f"  WARNING: training feature cache save failed ({e}).")
 
-    train_df = df_feat[df_feat["home_win"].notna()].copy()
-    active_feats = [c for c in T.FEATURE_COLUMNS       if c in df_feat.columns]
-    early_feats  = [c for c in T.EARLY_FEATURE_COLUMNS if c in df_feat.columns]
+    print(f"  Engineering target features...")
+    target_context = _target_engineering_context(combined, game_pks, target_date)
+    target_feat = engineer_features(target_context)
+
+    active_feats = [c for c in T.FEATURE_COLUMNS       if c in train_df.columns]
+    early_feats  = [c for c in T.EARLY_FEATURE_COLUMNS if c in train_df.columns]
 
     req = ["home_win", "market_implied_prob", "game_date",
            "home_games_played", "away_games_played"]
@@ -782,9 +833,9 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
                 artifact_id = None
                 print(f"  WARNING: model artifact save failed ({e}); continuing with in-memory model.")
 
-    # Keep only target rows; drop the full df_feat to shrink the cache.
-    tgt_mask = df_feat["game_pk"].astype(str).isin(set(game_pks))
-    targets = df_feat[tgt_mask].copy()
+    # Keep only target rows; drop the full target feature frame to shrink the cache.
+    tgt_mask = target_feat["game_pk"].astype(str).isin(set(game_pks))
+    targets = target_feat[tgt_mask].copy()
     target_rows = {}
     for pk in game_pks:
         rows = targets[targets["game_pk"].astype(str) == pk]
