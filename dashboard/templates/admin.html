@@ -809,6 +809,13 @@
       </div>
     </div>
 
+    <div class="panel-row">
+      <div class="panel">
+        <div class="panel-header">Pipeline Run Duration <span class="info-icon" tabindex="0" data-tooltip="Wall-clock seconds for each model training / pipeline run, sourced from model_metric_snapshots.duration_seconds.">i</span></div>
+        <div class="chart-wrap"><canvas id="chart-duration-history"></canvas></div>
+      </div>
+    </div>
+
     <div class="panel">
       <div class="panel-header">
         <span>Feature Accuracy Breakdown (Latest Run)</span>
@@ -1715,6 +1722,7 @@ function renderHistoryCharts(runs) {
   const labels = sorted.map(r => r.trained_at ? r.trained_at.slice(0, 10) : '?');
   const briers = sorted.map(r => r.mean_brier);
   const rois = sorted.map(r => r.mean_roi != null ? r.mean_roi * 100 : null);
+  const durations = sorted.map(r => r.duration_seconds != null ? r.duration_seconds : null);
 
   const lineOpts = {
     responsive: true,
@@ -1756,6 +1764,45 @@ function renderHistoryCharts(runs) {
       }]
     },
     options: lineOpts,
+  });
+
+  makeModelChart('chart-duration-history', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Duration (s)',
+        data: durations,
+        borderColor: 'rgba(168,124,78,1)',
+        backgroundColor: 'rgba(168,124,78,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+      }]
+    },
+    options: {
+      ...lineOpts,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const s = ctx.parsed.y;
+              if (s == null) return 'n/a';
+              return s >= 60 ? `${(s/60).toFixed(1)} min (${s.toFixed(0)}s)` : `${s.toFixed(0)}s`;
+            }
+          }
+        }
+      },
+      scales: {
+        ...lineOpts.scales,
+        y: {
+          ...lineOpts.scales.y,
+          title: { display: true, text: 'seconds', font: { size: 10 } },
+          beginAtZero: true,
+        }
+      }
+    },
   });
 }
 
