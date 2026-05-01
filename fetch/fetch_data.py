@@ -449,6 +449,80 @@ def _merge_odds_into_cache(new_df, odds_cache):
     return combined
 
 
+ODDS_COLUMNS = [
+    "open_home_ml", "open_away_ml",
+    "close_home_ml", "close_away_ml",
+    "open_total", "close_total", "odds_source",
+]
+
+
+def _predicted_game_pks(game_pks) -> set:
+    pks = [int(pk) for pk in game_pks if pd.notna(pk)]
+    if not pks:
+        return set()
+    try:
+        with DB.pooled_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT game_pk
+                    FROM bets
+                    WHERE predicted_prob IS NOT NULL
+                      AND game_pk = ANY(%s)
+                    """,
+                    (pks,),
+                )
+                return {int(r[0]) for r in cur.fetchall()}
+    except Exception as e:
+        print(f"  WARNING: could not check predicted games for odds freeze ({e}).")
+        return set()
+
+
+def _split_odds_refresh_games(games_df: pd.DataFrame) -> tuple[pd.DataFrame, set]:
+    """Return games safe to refresh odds for, plus frozen game_pks."""
+    if games_df.empty:
+        return games_df, set()
+
+    games = games_df.copy()
+    started = pd.Series(False, index=games.index)
+    if "game_time_utc" in games.columns:
+        starts = pd.to_datetime(games["game_time_utc"], errors="coerce", utc=True)
+        started = starts.notna() & (starts <= pd.Timestamp.now(tz="UTC"))
+    if "is_completed" in games.columns:
+        started = started | games["is_completed"].fillna(False).astype(bool)
+
+    predicted = games["game_pk"].isin(_predicted_game_pks(games["game_pk"]))
+    frozen = started | predicted
+    frozen_pks = {int(pk) for pk in games.loc[frozen, "game_pk"].dropna()}
+
+    if frozen_pks:
+        print(
+            f"  Odds freeze: {len(frozen_pks)} game(s) already started/predicted; "
+            "keeping existing odds."
+        )
+    return games.loc[~frozen].copy(), frozen_pks
+
+
+def _preserve_frozen_odds(new_rows: pd.DataFrame, existing: pd.DataFrame,
+                          frozen_pks: set) -> pd.DataFrame:
+    if new_rows.empty or existing.empty or not frozen_pks:
+        return new_rows
+    out = new_rows.copy()
+    existing_by_pk = existing.set_index("game_pk", drop=False)
+    frozen_mask = out["game_pk"].isin(frozen_pks)
+    for idx, row in out.loc[frozen_mask].iterrows():
+        game_pk = row["game_pk"]
+        if game_pk not in existing_by_pk.index:
+            continue
+        old = existing_by_pk.loc[game_pk]
+        if isinstance(old, pd.DataFrame):
+            old = old.iloc[0]
+        for col in ODDS_COLUMNS:
+            if col in out.columns and col in old.index and pd.notna(old.get(col)):
+                out.at[idx, col] = old.get(col)
+    return out
+
+
 def _align_odds_api_dates(api_df: pd.DataFrame, schedule_df: pd.DataFrame) -> pd.DataFrame:
     """Use game start time to map Odds API UTC dates back to MLB slate dates."""
     if api_df.empty or "commence_time_utc" not in api_df.columns or "game_time_utc" not in schedule_df.columns:
@@ -1389,7 +1463,8 @@ def main():
     print("\n" + "=" * 60)
     print("STEP 2/6: Fetching odds")
     print("=" * 60)
-    odds_df = fetch_odds(to_process, today_only=args.today_only)
+    odds_refresh_games, frozen_odds_pks = _split_odds_refresh_games(to_process)
+    odds_df = fetch_odds(odds_refresh_games, today_only=args.today_only)
 
     # ── STEP 3: Pitcher data ─────────────────────────────────────────────
     print("\n" + "=" * 60)
@@ -1417,6 +1492,7 @@ def main():
     print("STEP 6/6: Assembling CSV")
     print("=" * 60)
     new_rows = assemble(to_process, odds_df, pitcher_df, weather_df, fg_df)
+    new_rows = _preserve_frozen_odds(new_rows, existing, frozen_odds_pks)
 
     # Keep existing complete rows that aren't being re-processed
     new_pks = set(to_process["game_pk"])
