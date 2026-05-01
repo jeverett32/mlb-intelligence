@@ -154,6 +154,17 @@ def _patched_argv(argv: list[str]):
         sys.argv = old_argv
 
 
+def refresh_fetch_data_if_stale(label: str = "Shared fetch") -> None:
+    if _fetch_is_fresh():
+        print(
+            f"{label} skipped — last fetch "
+            f"{int(time.time() - _LAST_FETCH_TS)}s ago."
+        )
+        return
+    run_fetch_data()
+    _mark_fetched()
+
+
 def init_game_row(game: dict):
     """Insert a bare bet row for this game if it doesn't already exist."""
     game_pk = int(game["game_pk"])
@@ -299,8 +310,7 @@ def run_batch(games: list[dict], dry_run: bool = False) -> None:
 
     try:
         try:
-            run_fetch_data()
-            _mark_fetched()
+            refresh_fetch_data_if_stale("Shared fetch")
         except Exception as e:
             print(f"\nERROR in shared fetch step: {e}")
             print("Aborting batch.")
@@ -378,8 +388,7 @@ def run_pipeline_for_game(game_pk: str, dry_run: bool = False):
     err_msg: str | None = None
     try:
         try:
-            run_fetch_data()
-            _mark_fetched()
+            refresh_fetch_data_if_stale("Single-game fetch")
         except Exception as e:
             print(f"\nERROR: {e}")
             status = "aborted"
@@ -570,8 +579,7 @@ def main():
         else:
             print("Refreshing MLB schedule...")
             try:
-                run_fetch_data()
-                _mark_fetched()
+                refresh_fetch_data_if_stale("Schedule refresh")
             except Exception as e:
                 print(f"  Schedule refresh failed: {e}")
 
