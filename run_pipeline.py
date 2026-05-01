@@ -140,12 +140,15 @@ def _fetch_is_fresh() -> bool:
 def run_fetch_data(
     *,
     skip_odds: bool = False,
+    odds_only: bool = False,
     odds_game_pks: list[str] | None = None,
 ) -> None:
     """Run fetch_data in-process while isolating its argparse argv."""
     argv = ["fetch/fetch_data.py"]
     if skip_odds:
         argv.append("--skip-odds")
+    if odds_only:
+        argv.append("--odds-only")
     if odds_game_pks:
         argv.extend(["--odds-game-pks", ",".join(str(pk) for pk in odds_game_pks)])
     print(f"\n>>> fetch.fetch_data.main() {' '.join(argv[1:])}".rstrip())
@@ -167,6 +170,7 @@ def refresh_fetch_data_if_stale(
     label: str = "Shared fetch",
     *,
     skip_odds: bool = False,
+    odds_only: bool = False,
     odds_game_pks: list[str] | None = None,
     force: bool = False,
 ) -> None:
@@ -176,8 +180,9 @@ def refresh_fetch_data_if_stale(
             f"{int(time.time() - _LAST_FETCH_TS)}s ago."
         )
         return
-    run_fetch_data(skip_odds=skip_odds, odds_game_pks=odds_game_pks)
-    _mark_fetched()
+    run_fetch_data(skip_odds=skip_odds, odds_only=odds_only, odds_game_pks=odds_game_pks)
+    if not odds_only:
+        _mark_fetched()
 
 
 def init_game_row(game: dict):
@@ -327,6 +332,7 @@ def run_batch(games: list[dict], dry_run: bool = False) -> None:
         try:
             refresh_fetch_data_if_stale(
                 "Shared fetch",
+                odds_only=_fetch_is_fresh(),
                 odds_game_pks=pks_list,
                 force=True,
             )
@@ -409,6 +415,7 @@ def run_pipeline_for_game(game_pk: str, dry_run: bool = False):
         try:
             refresh_fetch_data_if_stale(
                 "Single-game fetch",
+                odds_only=_fetch_is_fresh(),
                 odds_game_pks=[str(game_pk)],
                 force=True,
             )

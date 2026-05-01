@@ -1396,6 +1396,108 @@ def assemble(games_to_process, odds_df, pitcher_df, weather_df, fg_df):
     return _ensure_columns(master)
 
 
+def _ml_to_raw_prob(s):
+    s = pd.to_numeric(s, errors="coerce")
+    prob = pd.Series(index=s.index, dtype=float)
+    fav = s <= -100
+    dog = s >= 100
+    prob[fav] = (-s[fav]) / (-s[fav] + 100)
+    prob[dog] = 100 / (s[dog] + 100)
+    return prob
+
+
+def build_odds_update_rows(schedule_df: pd.DataFrame, odds_df: pd.DataFrame) -> pd.DataFrame:
+    """Build minimal rows that update odds without touching other feature columns."""
+    if schedule_df.empty or odds_df.empty:
+        return pd.DataFrame()
+
+    schedule_cols = [
+        c for c in ["game_pk", "game_date", "game_time_utc", "season", "home_team", "away_team"]
+        if c in schedule_df.columns
+    ]
+    odds_cols = [
+        "game_date", "home_team", "away_team",
+        "open_home_ml", "open_away_ml", "close_home_ml", "close_away_ml",
+        "open_total", "close_total", "odds_source",
+    ]
+    odds = odds_df[[c for c in odds_cols if c in odds_df.columns]].copy()
+    odds["game_date"] = pd.to_datetime(odds["game_date"])
+
+    rows = schedule_df[schedule_cols].copy()
+    rows["game_date"] = pd.to_datetime(rows["game_date"])
+    rows = rows.merge(odds, on=["game_date", "home_team", "away_team"], how="left")
+    line_cols = [c for c in ["close_home_ml", "close_away_ml"] if c in rows.columns]
+    if not line_cols:
+        return pd.DataFrame()
+    rows = rows.dropna(subset=line_cols, how="all")
+    if rows.empty:
+        return rows
+
+    h_raw = _ml_to_raw_prob(rows["close_home_ml"])
+    a_raw = _ml_to_raw_prob(rows["close_away_ml"])
+    total = h_raw + a_raw
+    rows["home_implied_prob"] = h_raw / total
+    rows["away_implied_prob"] = a_raw / total
+    if "close_total" in rows.columns:
+        rows["over_under"] = rows["close_total"]
+
+    keep_cols = [
+        "game_pk", "game_date", "game_time_utc", "season", "home_team", "away_team",
+        "open_home_ml", "open_away_ml", "close_home_ml", "close_away_ml",
+        "open_total", "close_total", "over_under", "odds_source",
+        "home_implied_prob", "away_implied_prob",
+    ]
+    return rows[[c for c in keep_cols if c in rows.columns]]
+
+
+def _update_current_csv_odds(rows: pd.DataFrame) -> None:
+    if rows.empty or not Path(OUTPUT_CSV).exists():
+        return
+    current = pd.read_csv(OUTPUT_CSV, low_memory=False)
+    if current.empty or "game_pk" not in current.columns:
+        return
+    current["game_pk"] = current["game_pk"].astype(str)
+    updates = rows.copy()
+    updates["game_pk"] = updates["game_pk"].astype(str)
+    current = current.set_index("game_pk", drop=False)
+    updates = updates.set_index("game_pk", drop=False)
+    for pk, row in updates.iterrows():
+        if pk not in current.index:
+            continue
+        for col in updates.columns:
+            if col == "game_pk" or col not in current.columns:
+                continue
+            val = row[col]
+            if pd.notna(val):
+                current.at[pk, col] = val
+    current = current.reset_index(drop=True)
+    current.to_csv(OUTPUT_CSV, index=False)
+
+
+def refresh_odds_only(schedule_df: pd.DataFrame, today_only: bool = False) -> pd.DataFrame:
+    refresh_games, frozen_pks = _split_odds_refresh_games(schedule_df)
+    if frozen_pks:
+        print(f"  Odds-only skipped frozen games: {len(frozen_pks)}")
+    if refresh_games.empty:
+        print("  No refreshable odds games.")
+        return pd.DataFrame()
+
+    odds_df = fetch_odds(refresh_games, today_only=today_only)
+    rows = build_odds_update_rows(refresh_games, odds_df)
+    if rows.empty:
+        print("  No odds rows matched selected games.")
+        return rows
+
+    try:
+        DB.upsert_games(rows)
+        print(f"  Odds-only DB rows upserted: {len(rows)}")
+    except Exception as e:
+        print(f"  WARNING: odds-only DB upsert failed ({e}).")
+    _update_current_csv_odds(rows)
+    print(f"  Odds-only CSV rows updated: {len(rows)}")
+    return rows
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1413,6 +1515,8 @@ def main():
                         help="Comma-separated game_pk list to refresh odds for")
     parser.add_argument("--prefetch-tomorrow-odds", action="store_true",
                         help="Refresh odds cache for tomorrow's scheduled games, then exit")
+    parser.add_argument("--odds-only", action="store_true",
+                        help="Refresh odds for selected games and update odds fields only")
     args = parser.parse_args()
     SEASON = args.season
     OUTPUT_CSV = f"data/mlb_{SEASON}.csv"
@@ -1443,6 +1547,18 @@ def main():
             print("  No tomorrow games found.")
             return
         fetch_odds(tomorrow_games, today_only=False)
+        return
+    if args.odds_only:
+        odds_pks = {
+            pk.strip()
+            for pk in str(args.odds_game_pks or "").split(",")
+            if pk.strip()
+        }
+        odds_games = full_schedule
+        if odds_pks:
+            odds_games = odds_games[odds_games["game_pk"].astype(str).isin(odds_pks)].copy()
+        print(f"  Odds-only refresh: {len(odds_games)} selected game(s).")
+        refresh_odds_only(odds_games, today_only=args.today_only)
         return
     try:
         DB.upsert_games(full_schedule)

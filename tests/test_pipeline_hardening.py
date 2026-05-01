@@ -391,3 +391,16 @@ def test_run_fetch_data_builds_scoped_argv(monkeypatch):
     run_pipeline.run_fetch_data(skip_odds=True, odds_game_pks=["1", "2"])
 
     assert calls == [["fetch/fetch_data.py", "--skip-odds", "--odds-game-pks", "1,2"]]
+
+
+def test_run_fetch_data_builds_odds_only_argv(monkeypatch):
+    calls = []
+
+    def fake_fetch_data_main():
+        calls.append(run_pipeline.sys.argv[:])
+
+    monkeypatch.setattr(run_pipeline, "fetch_data_main", fake_fetch_data_main)
+
+    run_pipeline.run_fetch_data(odds_only=True, odds_game_pks=["1"])
+
+    assert calls == [["fetch/fetch_data.py", "--odds-only", "--odds-game-pks", "1"]]

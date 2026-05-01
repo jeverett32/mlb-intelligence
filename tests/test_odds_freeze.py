@@ -111,3 +111,36 @@ def test_fetch_odds_scopes_sbr_rows_to_requested_games(monkeypatch, tmp_path):
     out = F.fetch_odds(schedule)
 
     assert out[["home_team", "away_team"]].values.tolist() == [["NYY", "BOS"]]
+
+
+def test_build_odds_update_rows_is_minimal():
+    schedule = pd.DataFrame(
+        {
+            "game_pk": [1],
+            "game_date": [pd.Timestamp("2026-04-01")],
+            "season": [2026],
+            "home_team": ["NYY"],
+            "away_team": ["BOS"],
+            "temp_c": [20.0],
+        }
+    )
+    odds = pd.DataFrame(
+        {
+            "game_date": ["2026-04-01"],
+            "home_team": ["NYY"],
+            "away_team": ["BOS"],
+            "open_home_ml": [-120],
+            "open_away_ml": [110],
+            "close_home_ml": [-130],
+            "close_away_ml": [120],
+            "close_total": [8.0],
+            "odds_source": ["pinnacle"],
+        }
+    )
+
+    rows = F.build_odds_update_rows(schedule, odds)
+
+    assert rows.iloc[0]["game_pk"] == 1
+    assert rows.iloc[0]["over_under"] == 8.0
+    assert "temp_c" not in rows.columns
+    assert round(rows.iloc[0]["home_implied_prob"] + rows.iloc[0]["away_implied_prob"], 12) == 1
