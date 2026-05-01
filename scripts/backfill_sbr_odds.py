@@ -12,7 +12,7 @@ import io
 import os
 import sys
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -398,6 +398,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill 2026 fallback odds with SBR odds.")
     parser.add_argument("--start", default="2026-03-25", help="Start date YYYY-MM-DD")
     parser.add_argument("--end", default="2026-04-15", help="End date YYYY-MM-DD")
+    parser.add_argument(
+        "--recent-days",
+        type=int,
+        default=None,
+        help="Backfill fallback odds from N days ago through today (UTC)",
+    )
     parser.add_argument("--apply", action="store_true", help="Write updates to the DB")
     parser.add_argument("--limit", type=int, default=None, help="Limit candidate rows for testing")
     parser.add_argument(
@@ -407,8 +413,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    start = _parse_date(args.start)
-    end = _parse_date(args.end)
+    if args.recent_days is not None:
+        end = datetime.now(timezone.utc).date()
+        start = end - timedelta(days=args.recent_days)
+    else:
+        start = _parse_date(args.start)
+        end = _parse_date(args.end)
     try:
         run_backfill(
             start,
