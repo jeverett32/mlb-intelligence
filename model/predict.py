@@ -859,8 +859,8 @@ def find_target_game(game_pk: str | None = None, game_date: str | None = None,
 # Per-game prediction
 # ---------------------------------------------------------------------------
 
-def predict_one(game_pk: str, shared: dict) -> dict:
-    """Predict a single game using a shared cache. Writes to DB and returns a result dict."""
+def predict_one(game_pk: str, shared: dict, dry_run: bool = False) -> dict:
+    """Predict a single game using a shared cache. Writes to DB unless dry_run."""
     game_pk = str(game_pk)
     target_df = shared["target_rows"].get(game_pk)
     if target_df is None:
@@ -967,7 +967,8 @@ def predict_one(game_pk: str, shared: dict) -> dict:
                         "version": 1,
                     }
                     explanation["plain_text"] = _build_plaintext_explanation(explanation)
-                    DB.update_bet_explanation(game_pk, explanation)
+                    if not dry_run:
+                        DB.update_bet_explanation(game_pk, explanation)
     except Exception:
         # Explainability is best-effort; prediction + DB write should still succeed.
         explanation = None
@@ -986,11 +987,20 @@ def predict_one(game_pk: str, shared: dict) -> dict:
 
     mkt_prob_val = float(mkt_prob_raw) if not pd.isna(mkt_prob_raw) else None
     edge_val = float(edge) if not (isinstance(edge, float) and np.isnan(edge)) else None
-    DB.update_bet_prediction(game_pk, prob, edge_val, bet_side, bet_frac, mkt_prob_val, model_artifact_id)
-    print("Results written to bets table")
+    if dry_run:
+        print("DRY RUN: results not written to bets table")
+    else:
+        DB.update_bet_prediction(game_pk, prob, edge_val, bet_side, bet_frac, mkt_prob_val, model_artifact_id)
+        print("Results written to bets table")
     return {
         "game_pk":  game_pk,
+        "game_date": game_date,
+        "home_team": home_team,
+        "away_team": away_team,
+        "game_time_utc": target_df["game_time_utc"].iloc[0] if "game_time_utc" in target_df else None,
         "prob":     prob,
+        "predicted_prob": prob,
+        "market_implied_prob": mkt_prob_val,
         "edge":     edge_val,
         "bet_side": bet_side,
         "bet_frac": bet_frac,

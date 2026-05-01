@@ -249,25 +249,31 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
 # ---------------------------------------------------------------------------
 
 
-def _predict_and_bet(game_pk: str, shared: dict) -> None:
+def _predict_and_bet(game_pk: str, shared: dict, dry_run: bool = False) -> None:
     """Run predict + per-user execution for one game, in-process."""
     try:
-        PREDICT.predict_one(game_pk, shared)
+        prediction = PREDICT.predict_one(game_pk, shared, dry_run=dry_run)
     except Exception as e:
         print(f"  PREDICT ERROR game_pk={game_pk}: {e}")
-        NOTIFY.send(f":warning: **Predict error** `game_pk={game_pk}`: `{e}`")
+        if not dry_run:
+            NOTIFY.send(f":warning: **Predict error** `game_pk={game_pk}`: `{e}`")
         return
     try:
-        PLACE_BET.execute_for_all_users(game_pk)
+        if dry_run:
+            PLACE_BET.preview_for_all_users(prediction)
+        else:
+            PLACE_BET.execute_for_all_users(game_pk)
     except PLACE_BET.PlaceBetError as e:
         print(f"  PLACE_BET ERROR game_pk={game_pk}: {e}")
-        NOTIFY.send(f":no_entry: **Bet failed** `game_pk={game_pk}`: `{e}`")
+        if not dry_run:
+            NOTIFY.send(f":no_entry: **Bet failed** `game_pk={game_pk}`: `{e}`")
     except Exception as e:
         print(f"  PLACE_BET unexpected error game_pk={game_pk}: {e}")
-        NOTIFY.send(f":rotating_light: **Bet crashed** `game_pk={game_pk}`: `{e}`")
+        if not dry_run:
+            NOTIFY.send(f":rotating_light: **Bet crashed** `game_pk={game_pk}`: `{e}`")
 
 
-def run_batch(games: list[dict]) -> None:
+def run_batch(games: list[dict], dry_run: bool = False) -> None:
     """
     Full pipeline for a batch of games:
       1. fetch_data once (shared)
@@ -276,15 +282,16 @@ def run_batch(games: list[dict]) -> None:
     """
     labels = ", ".join(f"{g.get('away_team')}@{g.get('home_team')}" for g in games)
     print(f"\n{'=' * 60}")
-    print(f"BATCH START — {len(games)} game(s): {labels}")
+    print(f"BATCH START{' [DRY RUN]' if dry_run else ''} — {len(games)} game(s): {labels}")
     print(f"{'=' * 60}")
 
     pks_list = [str(g["game_pk"]) for g in games]
-    try:
-        run_id = DB.start_pipeline_run("batch", len(games), ",".join(pks_list))
-    except Exception as e:
-        run_id = None
-        print(f"  warn: could not record pipeline run start: {e}")
+    run_id = None
+    if not dry_run:
+        try:
+            run_id = DB.start_pipeline_run("batch", len(games), ",".join(pks_list))
+        except Exception as e:
+            print(f"  warn: could not record pipeline run start: {e}")
 
     t0 = time.monotonic()
     status = "success"
@@ -297,13 +304,15 @@ def run_batch(games: list[dict]) -> None:
         except Exception as e:
             print(f"\nERROR in shared fetch step: {e}")
             print("Aborting batch.")
-            NOTIFY.send(f":rotating_light: **Batch aborted** (fetch failed): `{e}`")
+            if not dry_run:
+                NOTIFY.send(f":rotating_light: **Batch aborted** (fetch failed): `{e}`")
             status = "aborted"
             err_msg = f"fetch failed: {e}"
             return
 
-        for game in games:
-            init_game_row(game)
+        if not dry_run:
+            for game in games:
+                init_game_row(game)
 
         pks = pks_list
 
@@ -318,17 +327,18 @@ def run_batch(games: list[dict]) -> None:
         except PREDICT.PredictError as e:
             print(f"ERROR preparing shared model: {e}")
             print("Aborting batch.")
-            NOTIFY.send(f":rotating_light: **Batch aborted** (shared model prep): `{e}`")
+            if not dry_run:
+                NOTIFY.send(f":rotating_light: **Batch aborted** (shared model prep): `{e}`")
             status = "aborted"
             err_msg = f"shared model prep: {e}"
             return
 
         if len(pks) == 1:
-            _predict_and_bet(pks[0], shared)
+            _predict_and_bet(pks[0], shared, dry_run=dry_run)
         else:
             print(f"\n  Running predict+bet for {len(pks)} games in parallel...")
             with ThreadPoolExecutor(max_workers=min(3, len(pks))) as executor:
-                futures = {executor.submit(_predict_and_bet, pk, shared): pk for pk in pks}
+                futures = {executor.submit(_predict_and_bet, pk, shared, dry_run): pk for pk in pks}
                 for future in as_completed(futures):
                     try:
                         future.result()
@@ -336,7 +346,7 @@ def run_batch(games: list[dict]) -> None:
                         print(f"  Thread error for game_pk={futures[future]}: {e}")
 
         print(f"\n{'=' * 60}")
-        print(f"BATCH COMPLETE — {len(games)} game(s)")
+        print(f"BATCH COMPLETE{' [DRY RUN]' if dry_run else ''} — {len(games)} game(s)")
         print(f"{'=' * 60}")
     except Exception as e:
         status = "error"
@@ -351,16 +361,17 @@ def run_batch(games: list[dict]) -> None:
                 print(f"  warn: could not record pipeline run finish: {e}")
 
 
-def run_pipeline_for_game(game_pk: str):
+def run_pipeline_for_game(game_pk: str, dry_run: bool = False):
     """Single-game pipeline (used for --game_pk one-shot mode)."""
     print(f"\n{'=' * 60}")
-    print(f"PIPELINE START — game_pk={game_pk}")
+    print(f"PIPELINE START{' [DRY RUN]' if dry_run else ''} — game_pk={game_pk}")
     print(f"{'=' * 60}")
-    try:
-        run_id = DB.start_pipeline_run("single", 1, str(game_pk))
-    except Exception as e:
-        run_id = None
-        print(f"  warn: could not record pipeline run start: {e}")
+    run_id = None
+    if not dry_run:
+        try:
+            run_id = DB.start_pipeline_run("single", 1, str(game_pk))
+        except Exception as e:
+            print(f"  warn: could not record pipeline run start: {e}")
 
     t0 = time.monotonic()
     status = "success"
@@ -377,14 +388,14 @@ def run_pipeline_for_game(game_pk: str):
         try:
             info = PREDICT.find_target_game(game_pk=str(game_pk))
             shared = PREDICT.prepare_shared([info["game_pk"]], info["game_date"])
-            _predict_and_bet(info["game_pk"], shared)
+            _predict_and_bet(info["game_pk"], shared, dry_run=dry_run)
         except PREDICT.PredictError as e:
             print(f"\nERROR: {e}")
             status = "aborted"
             err_msg = str(e)
             return
         print(f"\n{'=' * 60}")
-        print(f"PIPELINE COMPLETE — game_pk={game_pk}")
+        print(f"PIPELINE COMPLETE{' [DRY RUN]' if dry_run else ''} — game_pk={game_pk}")
         print(f"{'=' * 60}")
     except Exception as e:
         status = "error"
@@ -519,6 +530,11 @@ def main():
     group.add_argument(
         "--now", action="store_true", help="Run immediately for the next batch"
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run full pipeline timing path without prediction/order/paper writes",
+    )
     args = parser.parse_args()
 
     # ── One-shot: specific game ───────────────────────────────────────────
@@ -530,7 +546,7 @@ def main():
                 init_game_row(rows.iloc[0].to_dict())
         except Exception:
             DB.init_bet(int(args.game_pk), "", "", "")
-        run_pipeline_for_game(args.game_pk)
+        run_pipeline_for_game(args.game_pk, dry_run=args.dry_run)
         return
 
     # ── Main loop ─────────────────────────────────────────────────────────
@@ -539,9 +555,12 @@ def main():
 
     while True:
         _sd_notify("WATCHDOG=1")
-        settle_completed_games()
-        refresh_live_positions_if_due(force=True)
-        refresh_live_scores_if_due(force=True)
+        if args.dry_run:
+            print("DRY RUN: skipping settlement/live order refresh writes.")
+        else:
+            settle_completed_games()
+            refresh_live_positions_if_due(force=True)
+            refresh_live_scores_if_due(force=True)
 
         if _fetch_is_fresh():
             print(
@@ -579,10 +598,10 @@ def main():
             )
             _watchdog_sleep(sleep_secs)
 
-        run_batch(batch)
+        run_batch(batch, dry_run=args.dry_run)
 
         if args.now:
-            print("\n--now flag: exiting after one batch.")
+            print(f"\n--now{' --dry-run' if args.dry_run else ''}: exiting after one batch.")
             return
 
 

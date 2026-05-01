@@ -650,6 +650,60 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     return result
 
 
+def preview_user_bet(email: str, row: dict) -> dict:
+    """Run live market lookup and sizing without writing orders or placing bets."""
+    email = email.strip().lower()
+    user = DB.get_user(email)
+    if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
+        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_unapproved"}
+    execution_mode = _execution_mode_for_email(email)
+    if execution_mode == "self_custody":
+        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_self_custody", "mode": "self_custody"}
+    account = DB.get_kalshi_account(email)
+    if not account or not account.get("is_active"):
+        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_no_account"}
+
+    original_bet_frac = float(row.get("bet_frac") or 0)
+    bet_side = str(row.get("bet_side") or "none").strip().lower()
+    if original_bet_frac <= 0 or bet_side == "none":
+        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_no_bet"}
+
+    paper_bankroll = DB.get_paper_bankroll_dollars(email)
+    try:
+        result = _execute_bet_row(
+            row,
+            key_id=account["key_id"],
+            key_path=account["key_path"],
+            kalshi_env=account["kalshi_env"],
+            balance_cents=int(round(paper_bankroll * 100)),
+            dry_run=True,
+        )
+    except PlaceBetError as exc:
+        result = {
+            "game_pk": str(row.get("game_pk")),
+            "status": _place_bet_error_status(exc),
+            "error": str(exc),
+        }
+    return {**result, "email": email, "mode": execution_mode, "pipeline_dry_run": True}
+
+
+def preview_for_all_users(row: dict) -> list[dict]:
+    results = []
+    for user in DB.list_approved_users_with_accounts():
+        try:
+            results.append(preview_user_bet(user["email"], row))
+        except Exception as exc:
+            results.append(
+                {
+                    "game_pk": str(row.get("game_pk")),
+                    "email": user["email"],
+                    "status": "error",
+                    "error": str(exc),
+                }
+            )
+    return results
+
+
 def execute_for_all_users(game_pk: str) -> list[dict]:
     results = []
     for user in DB.list_approved_users_with_accounts():
