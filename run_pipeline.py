@@ -503,6 +503,11 @@ def settle_completed_games():
 
 
 def main():
+    try:
+        DB.init_pipeline_runs_table()
+    except Exception as e:
+        print(f"  warn: could not init pipeline_runs table: {e}")
+
     parser = argparse.ArgumentParser(description="MLB betting pipeline orchestrator.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
