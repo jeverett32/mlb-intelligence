@@ -1518,6 +1518,7 @@ def init_auth_tables():
     init_model_metrics_table()
     init_model_artifacts_table()
     init_admin_notes_table()
+    init_pipeline_runs_table()
 
 
 def upsert_user(
@@ -3470,6 +3471,87 @@ def get_model_metric_snapshots(limit: int = 50) -> list[dict]:
 def get_latest_model_metric_snapshot() -> dict | None:
     snapshots = get_model_metric_snapshots(limit=1)
     return snapshots[0] if snapshots else None
+
+
+# ---------------------------------------------------------------------------
+# Pipeline run history
+# ---------------------------------------------------------------------------
+
+PIPELINE_RUNS_TABLE = "pipeline_runs"
+
+
+def init_pipeline_runs_table():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {PIPELINE_RUNS_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    completed_at TIMESTAMPTZ,
+                    duration_seconds DOUBLE PRECISION,
+                    mode TEXT,
+                    status TEXT,
+                    game_count INTEGER,
+                    game_pks TEXT,
+                    error TEXT
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_pipeline_runs_started_at
+                ON {PIPELINE_RUNS_TABLE} (started_at DESC)
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def start_pipeline_run(mode: str, game_count: int, game_pks: str | None = None) -> int:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                INSERT INTO {PIPELINE_RUNS_TABLE} (mode, game_count, game_pks, status)
+                VALUES (%s, %s, %s, 'running')
+                RETURNING id
+            """, (mode, game_count, game_pks))
+            run_id = cur.fetchone()[0]
+        conn.commit()
+        return run_id
+    finally:
+        conn.close()
+
+
+def finish_pipeline_run(run_id: int, status: str, duration_seconds: float, error: str | None = None) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                UPDATE {PIPELINE_RUNS_TABLE}
+                SET completed_at = NOW(),
+                    duration_seconds = %s,
+                    status = %s,
+                    error = %s
+                WHERE id = %s
+            """, (duration_seconds, status, error, run_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_pipeline_runs(limit: int = 200) -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"""
+                SELECT id, started_at, completed_at, duration_seconds,
+                       mode, status, game_count, game_pks, error
+                FROM {PIPELINE_RUNS_TABLE}
+                ORDER BY started_at DESC LIMIT %s
+            """, (limit,))
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------

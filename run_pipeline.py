@@ -276,49 +276,76 @@ def run_batch(games: list[dict]) -> None:
     print(f"BATCH START — {len(games)} game(s): {labels}")
     print(f"{'=' * 60}")
 
+    pks_list = [str(g["game_pk"]) for g in games]
     try:
-        run_step(["uv", "run", "fetch/fetch_data.py"])
-        _mark_fetched()
-    except RuntimeError as e:
-        print(f"\nERROR in shared fetch step: {e}")
-        print("Aborting batch.")
-        NOTIFY.send(f":rotating_light: **Batch aborted** (fetch failed): `{e}`")
-        return
+        run_id = DB.start_pipeline_run("batch", len(games), ",".join(pks_list))
+    except Exception as e:
+        run_id = None
+        print(f"  warn: could not record pipeline run start: {e}")
 
-    for game in games:
-        init_game_row(game)
+    t0 = time.monotonic()
+    status = "success"
+    err_msg: str | None = None
 
-    pks = [str(g["game_pk"]) for g in games]
-
-    # Use the earliest game's date as the training cutoff so batches spanning
-    # UTC midnight still see a consistent training frontier.
-    earliest = min(get_game_start_utc(g) for g in games)
-    prep_date = earliest.astimezone(timezone.utc).date().isoformat()
-
-    print(f"\n  Preparing shared model for {prep_date} ({len(pks)} game(s))...")
     try:
-        shared = PREDICT.prepare_shared(pks, prep_date)
-    except PREDICT.PredictError as e:
-        print(f"ERROR preparing shared model: {e}")
-        print("Aborting batch.")
-        NOTIFY.send(f":rotating_light: **Batch aborted** (shared model prep): `{e}`")
-        return
+        try:
+            run_step(["uv", "run", "fetch/fetch_data.py"])
+            _mark_fetched()
+        except RuntimeError as e:
+            print(f"\nERROR in shared fetch step: {e}")
+            print("Aborting batch.")
+            NOTIFY.send(f":rotating_light: **Batch aborted** (fetch failed): `{e}`")
+            status = "aborted"
+            err_msg = f"fetch failed: {e}"
+            return
 
-    if len(pks) == 1:
-        _predict_and_bet(pks[0], shared)
-    else:
-        print(f"\n  Running predict+bet for {len(pks)} games in parallel...")
-        with ThreadPoolExecutor(max_workers=min(3, len(pks))) as executor:
-            futures = {executor.submit(_predict_and_bet, pk, shared): pk for pk in pks}
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    print(f"  Thread error for game_pk={futures[future]}: {e}")
+        for game in games:
+            init_game_row(game)
 
-    print(f"\n{'=' * 60}")
-    print(f"BATCH COMPLETE — {len(games)} game(s)")
-    print(f"{'=' * 60}")
+        pks = pks_list
+
+        # Use the earliest game's date as the training cutoff so batches spanning
+        # UTC midnight still see a consistent training frontier.
+        earliest = min(get_game_start_utc(g) for g in games)
+        prep_date = earliest.astimezone(timezone.utc).date().isoformat()
+
+        print(f"\n  Preparing shared model for {prep_date} ({len(pks)} game(s))...")
+        try:
+            shared = PREDICT.prepare_shared(pks, prep_date)
+        except PREDICT.PredictError as e:
+            print(f"ERROR preparing shared model: {e}")
+            print("Aborting batch.")
+            NOTIFY.send(f":rotating_light: **Batch aborted** (shared model prep): `{e}`")
+            status = "aborted"
+            err_msg = f"shared model prep: {e}"
+            return
+
+        if len(pks) == 1:
+            _predict_and_bet(pks[0], shared)
+        else:
+            print(f"\n  Running predict+bet for {len(pks)} games in parallel...")
+            with ThreadPoolExecutor(max_workers=min(3, len(pks))) as executor:
+                futures = {executor.submit(_predict_and_bet, pk, shared): pk for pk in pks}
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"  Thread error for game_pk={futures[future]}: {e}")
+
+        print(f"\n{'=' * 60}")
+        print(f"BATCH COMPLETE — {len(games)} game(s)")
+        print(f"{'=' * 60}")
+    except Exception as e:
+        status = "error"
+        err_msg = str(e)
+        raise
+    finally:
+        duration = time.monotonic() - t0
+        if run_id is not None:
+            try:
+                DB.finish_pipeline_run(run_id, status, duration, err_msg)
+            except Exception as e:
+                print(f"  warn: could not record pipeline run finish: {e}")
 
 
 def run_pipeline_for_game(game_pk: str):
@@ -327,21 +354,46 @@ def run_pipeline_for_game(game_pk: str):
     print(f"PIPELINE START — game_pk={game_pk}")
     print(f"{'=' * 60}")
     try:
-        run_step(["uv", "run", "fetch/fetch_data.py"])
-        _mark_fetched()
-    except RuntimeError as e:
-        print(f"\nERROR: {e}")
-        return
+        run_id = DB.start_pipeline_run("single", 1, str(game_pk))
+    except Exception as e:
+        run_id = None
+        print(f"  warn: could not record pipeline run start: {e}")
+
+    t0 = time.monotonic()
+    status = "success"
+    err_msg: str | None = None
     try:
-        info = PREDICT.find_target_game(game_pk=str(game_pk))
-        shared = PREDICT.prepare_shared([info["game_pk"]], info["game_date"])
-        _predict_and_bet(info["game_pk"], shared)
-    except PREDICT.PredictError as e:
-        print(f"\nERROR: {e}")
-        return
-    print(f"\n{'=' * 60}")
-    print(f"PIPELINE COMPLETE — game_pk={game_pk}")
-    print(f"{'=' * 60}")
+        try:
+            run_step(["uv", "run", "fetch/fetch_data.py"])
+            _mark_fetched()
+        except RuntimeError as e:
+            print(f"\nERROR: {e}")
+            status = "aborted"
+            err_msg = f"fetch failed: {e}"
+            return
+        try:
+            info = PREDICT.find_target_game(game_pk=str(game_pk))
+            shared = PREDICT.prepare_shared([info["game_pk"]], info["game_date"])
+            _predict_and_bet(info["game_pk"], shared)
+        except PREDICT.PredictError as e:
+            print(f"\nERROR: {e}")
+            status = "aborted"
+            err_msg = str(e)
+            return
+        print(f"\n{'=' * 60}")
+        print(f"PIPELINE COMPLETE — game_pk={game_pk}")
+        print(f"{'=' * 60}")
+    except Exception as e:
+        status = "error"
+        err_msg = str(e)
+        raise
+    finally:
+        duration = time.monotonic() - t0
+        if run_id is not None:
+            try:
+                DB.finish_pipeline_run(run_id, status, duration, err_msg)
+            except Exception as e:
+                print(f"  warn: could not record pipeline run finish: {e}")
 
 
 # ---------------------------------------------------------------------------

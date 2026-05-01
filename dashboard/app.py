@@ -2346,6 +2346,17 @@ def get_admin_model_metrics(user: dict = Depends(require_admin)):
     return {"runs": runs}
 
 
+@app.get("/api/admin/pipeline-runs")
+def get_admin_pipeline_runs(user: dict = Depends(require_admin)):
+    runs = DB.get_pipeline_runs(limit=200)
+    for r in runs:
+        if r.get("started_at"):
+            r["started_at"] = r["started_at"].isoformat()
+        if r.get("completed_at"):
+            r["completed_at"] = r["completed_at"].isoformat()
+    return {"runs": runs}
+
+
 @app.get("/api/admin/model-artifacts/fi-history")
 def get_admin_model_artifact_fi_history(user: dict = Depends(require_admin)):
     rows = DB.get_model_artifact_fi_history(limit=100)

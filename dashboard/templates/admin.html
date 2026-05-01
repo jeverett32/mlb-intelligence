@@ -809,11 +809,9 @@
       </div>
     </div>
 
-    <div class="panel-row">
-      <div class="panel">
-        <div class="panel-header">Pipeline Run Duration <span class="info-icon" tabindex="0" data-tooltip="Wall-clock seconds for each model training / pipeline run, sourced from model_metric_snapshots.duration_seconds.">i</span></div>
-        <div class="chart-wrap"><canvas id="chart-duration-history"></canvas></div>
-      </div>
+    <div class="panel">
+      <div class="panel-header">Pipeline Run Duration <span class="info-icon" tabindex="0" data-tooltip="Wall-clock seconds per pipeline batch run. Green = success, amber = aborted, red = error. Sourced from pipeline_runs table.">i</span></div>
+      <div class="chart-wrap" style="height:320px"><canvas id="chart-duration-history"></canvas></div>
     </div>
 
     <div class="panel">
@@ -1242,15 +1240,20 @@ function makeModelChart(id, cfg) {
 
 async function loadModelInsights() {
   try {
-    const [latestResp, allResp] = await Promise.all([
+    const [latestResp, allResp, pipelineResp] = await Promise.all([
       fetch('/api/admin/model-metrics/latest'),
       fetch('/api/admin/model-metrics'),
+      fetch('/api/admin/pipeline-runs'),
     ]);
     if (!latestResp.ok || !allResp.ok) return;
     const { run: latest } = await latestResp.json();
     const { runs } = await allResp.json();
     loadProductionFi();
     loadAccuracyByMonth();
+    if (pipelineResp.ok) {
+      const { runs: pipelineRuns } = await pipelineResp.json();
+      renderPipelineDurationChart(pipelineRuns || []);
+    }
     if (!latest) {
       document.getElementById('model-summary-cards').innerHTML = '<div class="empty" style="grid-column:1/-1">No model metric snapshots recorded yet. Re-run model metrics to populate this tab.</div>';
       return;
@@ -1722,7 +1725,6 @@ function renderHistoryCharts(runs) {
   const labels = sorted.map(r => r.trained_at ? r.trained_at.slice(0, 10) : '?');
   const briers = sorted.map(r => r.mean_brier);
   const rois = sorted.map(r => r.mean_roi != null ? r.mean_roi * 100 : null);
-  const durations = sorted.map(r => r.duration_seconds != null ? r.duration_seconds : null);
 
   const lineOpts = {
     responsive: true,
@@ -1766,40 +1768,60 @@ function renderHistoryCharts(runs) {
     options: lineOpts,
   });
 
+}
+
+function renderPipelineDurationChart(runs) {
+  const c = document.getElementById('chart-duration-history');
+  if (!c) return;
+  const finished = runs
+    .filter(r => r.duration_seconds != null && r.completed_at)
+    .reverse();
+  const labels = finished.map(r => {
+    const ts = r.started_at || r.completed_at;
+    return ts ? ts.slice(5, 16).replace('T', ' ') : '?';
+  });
+  const data = finished.map(r => r.duration_seconds);
+  const colors = finished.map(r =>
+    r.status === 'success' ? 'rgba(88,122,95,0.9)'
+    : r.status === 'aborted' ? 'rgba(168,124,78,0.9)'
+    : 'rgba(190,90,90,0.9)'
+  );
+
   makeModelChart('chart-duration-history', {
-    type: 'line',
+    type: 'bar',
     data: {
       labels,
       datasets: [{
         label: 'Duration (s)',
-        data: durations,
-        borderColor: 'rgba(168,124,78,1)',
-        backgroundColor: 'rgba(168,124,78,0.1)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 3,
+        data,
+        backgroundColor: colors,
+        borderWidth: 0,
       }]
     },
     options: {
-      ...lineOpts,
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         tooltip: {
           callbacks: {
             label: ctx => {
               const s = ctx.parsed.y;
-              if (s == null) return 'n/a';
-              return s >= 60 ? `${(s/60).toFixed(1)} min (${s.toFixed(0)}s)` : `${s.toFixed(0)}s`;
+              const r = finished[ctx.dataIndex] || {};
+              const fmt = s >= 60 ? `${(s/60).toFixed(1)} min (${s.toFixed(0)}s)` : `${s.toFixed(0)}s`;
+              const meta = `${r.status || '?'} · ${r.mode || '?'} · ${r.game_count ?? '?'} game(s)`;
+              return [fmt, meta];
             }
           }
         }
       },
       scales: {
-        ...lineOpts.scales,
+        x: { ticks: { font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { display: false } },
         y: {
-          ...lineOpts.scales.y,
-          title: { display: true, text: 'seconds', font: { size: 10 } },
           beginAtZero: true,
+          title: { display: true, text: 'seconds', font: { size: 10 } },
+          ticks: { font: { size: 10 } },
+          grid: { color: 'rgba(128,128,128,0.1)' },
         }
       }
     },
