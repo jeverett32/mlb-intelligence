@@ -1789,21 +1789,14 @@ function renderPipelineDurationChart(runs) {
   );
 
   makeModelChart('chart-duration-history', {
-    type: 'line',
+    type: 'bar',
     data: {
       labels,
       datasets: [{
         label: 'Duration (s)',
         data,
-        borderColor: 'rgba(88,122,95,1)',
-        backgroundColor: 'rgba(88,122,95,0.1)',
-        pointBackgroundColor: colors,
-        pointBorderColor: colors,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        fill: true,
-        tension: 0.3,
-        borderWidth: 2,
+        backgroundColor: colors,
+        borderWidth: 0,
       }]
     },
     options: {
