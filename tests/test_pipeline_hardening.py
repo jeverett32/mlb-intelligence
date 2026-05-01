@@ -378,3 +378,16 @@ def test_dashboard_open_positions_exclude_skipped_and_error_statuses(app_module)
     open_rows = df[app_module._is_open_position_frame(df)]
 
     assert open_rows["game_pk"].tolist() == [1, 5]
+
+
+def test_run_fetch_data_builds_scoped_argv(monkeypatch):
+    calls = []
+
+    def fake_fetch_data_main():
+        calls.append(run_pipeline.sys.argv[:])
+
+    monkeypatch.setattr(run_pipeline, "fetch_data_main", fake_fetch_data_main)
+
+    run_pipeline.run_fetch_data(skip_odds=True, odds_game_pks=["1", "2"])
+
+    assert calls == [["fetch/fetch_data.py", "--skip-odds", "--odds-game-pks", "1,2"]]

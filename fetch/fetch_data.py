@@ -647,6 +647,13 @@ def fetch_odds(schedule_df, today_only=False):
         else set()
     )
     missing_keys = schedule_keys - sbr_keys
+    if not sbr_df.empty:
+        sbr_df = sbr_df[
+            sbr_df.apply(
+                lambda r: (r["game_date"].date(), r["home_team"], r["away_team"]) in schedule_keys,
+                axis=1,
+            )
+        ]
 
     api_df = pd.DataFrame()
     if sbr_df.empty:
@@ -1400,6 +1407,12 @@ def main():
                         help="Only scrape odds for today's games")
     parser.add_argument("--season", type=int, default=SEASON,
                         help="MLB season to fetch (defaults to MLB_SEASON/current year)")
+    parser.add_argument("--skip-odds", action="store_true",
+                        help="Use cached odds only; do not refresh odds sources")
+    parser.add_argument("--odds-game-pks", default="",
+                        help="Comma-separated game_pk list to refresh odds for")
+    parser.add_argument("--prefetch-tomorrow-odds", action="store_true",
+                        help="Refresh odds cache for tomorrow's scheduled games, then exit")
     args = parser.parse_args()
     SEASON = args.season
     OUTPUT_CSV = f"data/mlb_{SEASON}.csv"
@@ -1422,6 +1435,14 @@ def main():
     full_schedule = fetch_schedule()
     if full_schedule.empty:
         print("No games found. Exiting.")
+        return
+    if args.prefetch_tomorrow_odds:
+        tomorrow_games = full_schedule[full_schedule["game_date"] == tomorrow].copy()
+        print(f"  Tomorrow odds prefetch: {len(tomorrow_games)} game(s).")
+        if tomorrow_games.empty:
+            print("  No tomorrow games found.")
+            return
+        fetch_odds(tomorrow_games, today_only=False)
         return
     try:
         DB.upsert_games(full_schedule)
@@ -1465,7 +1486,21 @@ def main():
           f"({to_process['is_completed'].sum()} completed, "
           f"{(~to_process['is_completed']).sum()} upcoming)")
 
-    odds_refresh_games, frozen_odds_pks = _split_odds_refresh_games(to_process)
+    odds_scope = to_process
+    odds_pks = {
+        pk.strip()
+        for pk in str(args.odds_game_pks or "").split(",")
+        if pk.strip()
+    }
+    if odds_pks:
+        odds_scope = to_process[to_process["game_pk"].astype(str).isin(odds_pks)].copy()
+        print(f"  Odds scope: {len(odds_scope)} selected game(s).")
+
+    if args.skip_odds:
+        odds_refresh_games = to_process.iloc[0:0].copy()
+        frozen_odds_pks = set()
+    else:
+        odds_refresh_games, frozen_odds_pks = _split_odds_refresh_games(odds_scope)
 
     print_lock = threading.Lock()
 
@@ -1477,6 +1512,8 @@ def main():
 
     def _run_odds():
         _print_step_header("STEP 2/6: Fetching odds")
+        if args.skip_odds:
+            print("  Odds refresh skipped; using cached odds.")
         return fetch_odds(odds_refresh_games, today_only=args.today_only)
 
     def _run_pitchers():

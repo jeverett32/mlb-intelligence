@@ -137,10 +137,19 @@ def _fetch_is_fresh() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def run_fetch_data() -> None:
+def run_fetch_data(
+    *,
+    skip_odds: bool = False,
+    odds_game_pks: list[str] | None = None,
+) -> None:
     """Run fetch_data in-process while isolating its argparse argv."""
-    print("\n>>> fetch.fetch_data.main()")
-    with _patched_argv(["fetch/fetch_data.py"]):
+    argv = ["fetch/fetch_data.py"]
+    if skip_odds:
+        argv.append("--skip-odds")
+    if odds_game_pks:
+        argv.extend(["--odds-game-pks", ",".join(str(pk) for pk in odds_game_pks)])
+    print(f"\n>>> fetch.fetch_data.main() {' '.join(argv[1:])}".rstrip())
+    with _patched_argv(argv):
         fetch_data_main()
 
 
@@ -154,14 +163,20 @@ def _patched_argv(argv: list[str]):
         sys.argv = old_argv
 
 
-def refresh_fetch_data_if_stale(label: str = "Shared fetch") -> None:
-    if _fetch_is_fresh():
+def refresh_fetch_data_if_stale(
+    label: str = "Shared fetch",
+    *,
+    skip_odds: bool = False,
+    odds_game_pks: list[str] | None = None,
+    force: bool = False,
+) -> None:
+    if not force and _fetch_is_fresh():
         print(
             f"{label} skipped — last fetch "
             f"{int(time.time() - _LAST_FETCH_TS)}s ago."
         )
         return
-    run_fetch_data()
+    run_fetch_data(skip_odds=skip_odds, odds_game_pks=odds_game_pks)
     _mark_fetched()
 
 
@@ -310,7 +325,11 @@ def run_batch(games: list[dict], dry_run: bool = False) -> None:
 
     try:
         try:
-            refresh_fetch_data_if_stale("Shared fetch")
+            refresh_fetch_data_if_stale(
+                "Shared fetch",
+                odds_game_pks=pks_list,
+                force=True,
+            )
         except Exception as e:
             print(f"\nERROR in shared fetch step: {e}")
             print("Aborting batch.")
@@ -388,7 +407,11 @@ def run_pipeline_for_game(game_pk: str, dry_run: bool = False):
     err_msg: str | None = None
     try:
         try:
-            refresh_fetch_data_if_stale("Single-game fetch")
+            refresh_fetch_data_if_stale(
+                "Single-game fetch",
+                odds_game_pks=[str(game_pk)],
+                force=True,
+            )
         except Exception as e:
             print(f"\nERROR: {e}")
             status = "aborted"
@@ -579,7 +602,7 @@ def main():
         else:
             print("Refreshing MLB schedule...")
             try:
-                refresh_fetch_data_if_stale("Schedule refresh")
+                refresh_fetch_data_if_stale("Schedule refresh", skip_odds=True)
             except Exception as e:
                 print(f"  Schedule refresh failed: {e}")
 
