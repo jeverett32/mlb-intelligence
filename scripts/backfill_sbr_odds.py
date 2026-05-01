@@ -343,34 +343,20 @@ async def _scrape_sbr(start: date, end: date) -> pd.DataFrame:
     return _parse_scraped_odds(raw)
 
 
-def main() -> int:
-    load_dotenv(ROOT / ".env")
-
-    parser = argparse.ArgumentParser(description="Backfill 2026 fallback odds with SBR odds.")
-    parser.add_argument("--start", default="2026-03-25", help="Start date YYYY-MM-DD")
-    parser.add_argument("--end", default="2026-04-15", help="End date YYYY-MM-DD")
-    parser.add_argument("--apply", action="store_true", help="Write updates to the DB")
-    parser.add_argument("--limit", type=int, default=None, help="Limit candidate rows for testing")
-    parser.add_argument(
-        "--via-homelab-db",
-        action="store_true",
-        help="Query/apply through the DB LXC using sudo postgres psql",
-    )
-    args = parser.parse_args()
-
-    start = _parse_date(args.start)
-    end = _parse_date(args.end)
-    try:
-        if args.via_homelab_db:
-            candidates = _fetch_candidates_via_homelab(start, end)
-        else:
-            candidates = _fetch_candidates(start, end)
-    except psycopg2.OperationalError as exc:
-        print(f"DB connection failed: {exc}")
-        print("Run this from a host allowed by Postgres pg_hba, or via the DB/app LXC.")
-        return 2
-    if args.limit is not None:
-        candidates = candidates[: args.limit]
+def run_backfill(
+    start: date | None,
+    end: date | None,
+    *,
+    apply: bool = False,
+    limit: int | None = None,
+    via_homelab_db: bool = False,
+) -> int:
+    if via_homelab_db:
+        candidates = _fetch_candidates_via_homelab(start, end)
+    else:
+        candidates = _fetch_candidates(start, end)
+    if limit is not None:
+        candidates = candidates[:limit]
 
     if not candidates:
         print("No fallback odds rows found for the requested range.")
@@ -397,12 +383,44 @@ def main() -> int:
     if len(updates) > 10:
         print(f"  ... {len(updates) - 10} more")
 
-    if not args.apply:
+    if not apply:
         print("Dry run only. Re-run with --apply to update the DB.")
         return 0
 
-    updated = _apply_updates_via_homelab(updates) if args.via_homelab_db else _apply_updates(updates)
+    updated = _apply_updates_via_homelab(updates) if via_homelab_db else _apply_updates(updates)
     print(f"Updated {updated} game row(s).")
+    return updated
+
+
+def main() -> int:
+    load_dotenv(ROOT / ".env")
+
+    parser = argparse.ArgumentParser(description="Backfill 2026 fallback odds with SBR odds.")
+    parser.add_argument("--start", default="2026-03-25", help="Start date YYYY-MM-DD")
+    parser.add_argument("--end", default="2026-04-15", help="End date YYYY-MM-DD")
+    parser.add_argument("--apply", action="store_true", help="Write updates to the DB")
+    parser.add_argument("--limit", type=int, default=None, help="Limit candidate rows for testing")
+    parser.add_argument(
+        "--via-homelab-db",
+        action="store_true",
+        help="Query/apply through the DB LXC using sudo postgres psql",
+    )
+    args = parser.parse_args()
+
+    start = _parse_date(args.start)
+    end = _parse_date(args.end)
+    try:
+        run_backfill(
+            start,
+            end,
+            apply=args.apply,
+            limit=args.limit,
+            via_homelab_db=args.via_homelab_db,
+        )
+    except psycopg2.OperationalError as exc:
+        print(f"DB connection failed: {exc}")
+        print("Run this from a host allowed by Postgres pg_hba, or via the DB/app LXC.")
+        return 2
     return 0
 
 

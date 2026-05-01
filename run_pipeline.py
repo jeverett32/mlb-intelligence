@@ -45,6 +45,7 @@ from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
 from fetch.fetch_data import main as fetch_data_main  # noqa: E402
 from fetch.fetch_live_positions import refresh_due_orders  # noqa: E402
 from fetch.fetch_live_scores import refresh_scores_for_date  # noqa: E402
+from scripts.backfill_sbr_odds import run_backfill as run_sbr_backfill  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
@@ -60,6 +61,7 @@ MIN_GAME_TIME_MINUTES = 0
 FETCH_STALE_SECONDS = 300
 LIVE_POSITION_REFRESH_SECONDS = 300
 LIVE_SCORE_REFRESH_SECONDS = 300
+SBR_BACKFILL_DAYS = int(os.environ.get("SBR_BACKFILL_DAYS", "14"))
 
 _LAST_FETCH_TS: float = 0.0
 _LAST_LIVE_POSITION_REFRESH_TS: float = 0.0
@@ -142,6 +144,20 @@ def run_fetch_data() -> None:
     print("\n>>> fetch.fetch_data.main()")
     with _patched_argv(["fetch/fetch_data.py"]):
         fetch_data_main()
+    run_recent_sbr_backfill()
+
+
+def run_recent_sbr_backfill() -> None:
+    """Replace recent fallback odds with SBR open/close lines when available."""
+    if SBR_BACKFILL_DAYS <= 0:
+        return
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=SBR_BACKFILL_DAYS)
+    print(f"\n>>> SBR fallback backfill ({start} -> {end})")
+    try:
+        run_sbr_backfill(start, end, apply=True)
+    except Exception as e:
+        print(f"  SBR fallback backfill failed: {e}")
 
 
 @contextlib.contextmanager
