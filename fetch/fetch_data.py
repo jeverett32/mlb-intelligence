@@ -1459,33 +1459,58 @@ def main():
           f"({to_process['is_completed'].sum()} completed, "
           f"{(~to_process['is_completed']).sum()} upcoming)")
 
-    # ── STEP 2: Odds ─────────────────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("STEP 2/6: Fetching odds")
-    print("=" * 60)
     odds_refresh_games, frozen_odds_pks = _split_odds_refresh_games(to_process)
-    odds_df = fetch_odds(odds_refresh_games, today_only=args.today_only)
 
-    # ── STEP 3: Pitcher data ─────────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("STEP 3/6: Fetching pitcher data")
-    print("=" * 60)
-    starters_df = fetch_starters(to_process)
-    pitcher_df = fetch_pitcher_features(starters_df, to_process)
-    print(f"  Pitcher features: {pitcher_df.shape}")
+    def _run_odds():
+        print("\n" + "=" * 60)
+        print("STEP 2/6: Fetching odds")
+        print("=" * 60)
+        return fetch_odds(odds_refresh_games, today_only=args.today_only)
 
-    # ── STEP 4: Weather (force re-fetch today/tomorrow forecasts) ────────
-    print("\n" + "=" * 60)
-    print("STEP 4/6: Fetching weather")
-    print("=" * 60)
-    weather_df = fetch_weather(
-        to_process, refresh_dates={today.date(), tomorrow.date()})
+    def _run_pitchers():
+        print("\n" + "=" * 60)
+        print("STEP 3/6: Fetching pitcher data")
+        print("=" * 60)
+        starters = fetch_starters(to_process)
+        features = fetch_pitcher_features(starters, to_process)
+        print(f"  Pitcher features: {features.shape}")
+        return features
 
-    # ── STEP 5: FanGraphs stats ──────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("STEP 5/6: Fetching FanGraphs team stats")
-    print("=" * 60)
-    fg_df = fetch_fangraphs_stats()
+    def _run_weather():
+        print("\n" + "=" * 60)
+        print("STEP 4/6: Fetching weather")
+        print("=" * 60)
+        return fetch_weather(to_process, refresh_dates={today.date(), tomorrow.date()})
+
+    def _run_fangraphs():
+        print("\n" + "=" * 60)
+        print("STEP 5/6: Fetching FanGraphs team stats")
+        print("=" * 60)
+        return fetch_fangraphs_stats()
+
+    fetch_jobs = {
+        "odds": _run_odds,
+        "pitchers": _run_pitchers,
+        "weather": _run_weather,
+        "fangraphs": _run_fangraphs,
+    }
+    fetch_results = {}
+    print("\nRunning fetch steps 2-5 in parallel...")
+    with ThreadPoolExecutor(max_workers=len(fetch_jobs)) as ex:
+        futures = {ex.submit(fn): name for name, fn in fetch_jobs.items()}
+        for fut in as_completed(futures):
+            name = futures[fut]
+            try:
+                fetch_results[name] = fut.result()
+                print(f"  {name} done.")
+            except Exception as e:
+                print(f"  ERROR: {name} fetch failed: {e}")
+                raise
+
+    odds_df = fetch_results["odds"]
+    pitcher_df = fetch_results["pitchers"]
+    weather_df = fetch_results["weather"]
+    fg_df = fetch_results["fangraphs"]
 
     # ── STEP 6: Assembly ─────────────────────────────────────────────────
     print("\n" + "=" * 60)
