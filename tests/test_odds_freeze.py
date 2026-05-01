@@ -170,3 +170,42 @@ def test_update_current_csv_odds_only_mutates_odds_fields(monkeypatch, tmp_path)
     assert out.iloc[0]["home_team"] == "NYY"
     assert out.iloc[0]["close_home_ml"] == -130
     assert out.iloc[0]["home_implied_prob"] == 0.55
+
+
+def test_refresh_odds_only_accepts_string_game_dates(monkeypatch):
+    seen = {}
+    start = pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1)
+    schedule = pd.DataFrame(
+        {
+            "game_pk": [1],
+            "game_date": [start.date().isoformat()],
+            "game_time_utc": [start.strftime("%Y-%m-%d %H:%M")],
+            "season": [2026],
+            "home_team": ["NYY"],
+            "away_team": ["BOS"],
+            "is_completed": [False],
+        }
+    )
+    odds = pd.DataFrame(
+        {
+            "game_date": [start.date().isoformat()],
+            "home_team": ["NYY"],
+            "away_team": ["BOS"],
+            "close_home_ml": [-130],
+            "close_away_ml": [120],
+        }
+    )
+    monkeypatch.setattr(F, "_predicted_game_pks", lambda game_pks: set())
+
+    def fake_fetch_odds(games, today_only=False):
+        seen["dtype"] = games["game_date"].dtype
+        return odds
+
+    monkeypatch.setattr(F, "fetch_odds", fake_fetch_odds)
+    monkeypatch.setattr(F.DB, "upsert_games", lambda rows: None)
+    monkeypatch.setattr(F, "_update_current_csv_odds", lambda rows: None)
+
+    rows = F.refresh_odds_only(schedule)
+
+    assert str(seen["dtype"]).startswith("datetime64")
+    assert rows.iloc[0]["game_pk"] == 1

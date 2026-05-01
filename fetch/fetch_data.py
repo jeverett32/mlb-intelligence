@@ -1480,6 +1480,9 @@ def _update_current_csv_odds(rows: pd.DataFrame) -> None:
 
 
 def refresh_odds_only(schedule_df: pd.DataFrame, today_only: bool = False) -> pd.DataFrame:
+    schedule_df = schedule_df.copy()
+    if "game_date" in schedule_df.columns:
+        schedule_df["game_date"] = pd.to_datetime(schedule_df["game_date"])
     refresh_games, frozen_pks = _split_odds_refresh_games(schedule_df)
     if frozen_pks:
         print(f"  Odds-only skipped frozen games: {len(frozen_pks)}")
