@@ -593,17 +593,22 @@ def _engineered_feature_version() -> str:
 
 
 def _engineered_history_fingerprint(combined: pd.DataFrame) -> str:
-    """Cheap deterministic fingerprint of the engineering input."""
+    """Content-addressed fingerprint of the engineering input.
+
+    Hashes every cell so any value change invalidates the cache. Costs
+    ~100-300ms on 36k rows vs 30s to re-engineer - net win.
+    """
+    # Sort by game_pk (stable, deterministic) so row order doesn't affect hash.
+    if "game_pk" in combined.columns:
+        df = combined.sort_values("game_pk", kind="mergesort").reset_index(drop=True)
+    else:
+        df = combined.reset_index(drop=True)
+    row_hashes = pd.util.hash_pandas_object(df, index=False).values
     h = hashlib.sha256()
-    h.update(str(len(combined)).encode())
-    if "game_date" in combined.columns and len(combined):
-        h.update(str(combined["game_date"].max()).encode())
-        h.update(str(combined["game_date"].min()).encode())
-    if "game_pk" in combined.columns and len(combined):
-        h.update(str(int(pd.to_numeric(combined["game_pk"], errors="coerce").max() or 0)).encode())
-        h.update(str(int(pd.to_numeric(combined["game_pk"], errors="coerce").min() or 0)).encode())
-    if "home_win" in combined.columns:
-        h.update(str(int(combined["home_win"].notna().sum())).encode())
+    h.update(str(len(df)).encode())
+    h.update(",".join(df.columns).encode())
+    h.update(",".join(str(dtype) for dtype in df.dtypes).encode())
+    h.update(row_hashes.tobytes())
     return h.hexdigest()
 
 
