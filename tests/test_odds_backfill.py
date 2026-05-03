@@ -24,6 +24,7 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
             "home_score",
             "away_score",
             "home_win",
+            "odds_source",
             "extra",
         ]
     )
@@ -46,6 +47,7 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
         for assignment in assignments
     )
     assert "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)" in assignments
+    assert "odds_source = COALESCE(EXCLUDED.odds_source, games.odds_source)" in assignments
     assert any(
         "home_score = CASE WHEN COALESCE(EXCLUDED.extra->>'game_status', '') IN ('postponed', 'cancelled') "
         "THEN EXCLUDED.home_score ELSE COALESCE(EXCLUDED.home_score, games.home_score) END" == assignment

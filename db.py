@@ -262,6 +262,8 @@ def _upsert_assignment(col: str, cols: set[str]) -> str:
             f"THEN COALESCE(EXCLUDED.{col}, games.{col}) "
             f"ELSE COALESCE(games.{col}, EXCLUDED.{col}) END"
         )
+    if col == "odds_source":
+        return "odds_source = COALESCE(EXCLUDED.odds_source, games.odds_source)"
     return col + " = EXCLUDED." + col
 
 
