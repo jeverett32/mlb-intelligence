@@ -496,7 +496,14 @@ def _split_odds_refresh_games(games_df: pd.DataFrame) -> tuple[pd.DataFrame, set
         started = started | games["is_completed"].fillna(False).astype(bool)
 
     predicted = games["game_pk"].isin(_predicted_game_pks(games["game_pk"]))
-    frozen = started | predicted
+    has_odds = pd.Series(True, index=games.index)
+    if {"close_home_ml", "close_away_ml", "home_implied_prob"} <= set(games.columns):
+        has_odds = (
+            games["close_home_ml"].notna()
+            & games["close_away_ml"].notna()
+            & games["home_implied_prob"].notna()
+        )
+    frozen = (started | predicted) & has_odds
     frozen_pks = {int(pk) for pk in games.loc[frozen, "game_pk"].dropna()}
 
     if frozen_pks:
@@ -525,6 +532,38 @@ def _preserve_frozen_odds(new_rows: pd.DataFrame, existing: pd.DataFrame,
             if col in out.columns and col in old.index and pd.notna(old.get(col)):
                 out.at[idx, col] = old.get(col)
     return out
+
+
+def _recent_missing_odds_games(existing: pd.DataFrame, today: pd.Timestamp) -> pd.DataFrame:
+    """Recently completed rows can still need an odds repair pass."""
+    if existing.empty or "game_date" not in existing.columns:
+        return pd.DataFrame()
+    required = {"game_pk", "home_team", "away_team", "close_home_ml", "close_away_ml", "home_implied_prob"}
+    if not required <= set(existing.columns):
+        return pd.DataFrame()
+
+    games = existing.copy()
+    games["game_date"] = pd.to_datetime(games["game_date"])
+    cutoff = today - timedelta(days=2)
+    status = games.get("game_status", pd.Series("", index=games.index)).fillna("")
+    missing_odds = (
+        games["close_home_ml"].isna()
+        | games["close_away_ml"].isna()
+        | games["home_implied_prob"].isna()
+    )
+    mask = (
+        (games["game_date"] >= cutoff)
+        & (games["game_date"] <= today)
+        & missing_odds
+        & ~status.isin(["postponed", "cancelled"])
+    )
+    keep = [
+        c for c in [
+            "game_pk", "game_date", "game_time_utc", "season", "home_team", "away_team",
+            "is_completed", "close_home_ml", "close_away_ml", "home_implied_prob",
+        ] if c in games.columns
+    ]
+    return games.loc[mask, keep].copy()
 
 
 def _align_odds_api_dates(api_df: pd.DataFrame, schedule_df: pd.DataFrame) -> pd.DataFrame:
@@ -1481,6 +1520,30 @@ def _update_current_csv_odds(rows: pd.DataFrame) -> None:
     current.to_csv(OUTPUT_CSV, index=False)
 
 
+def _backfill_bet_market_probs(game_pks) -> int:
+    pks = [int(pk) for pk in game_pks if pd.notna(pk)]
+    if not pks:
+        return 0
+    with DB.pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE bets b
+                SET market_implied_prob = g.home_implied_prob,
+                    updated_at = NOW()
+                FROM games g
+                WHERE b.game_pk = g.game_pk
+                  AND b.game_pk = ANY(%s)
+                  AND b.market_implied_prob IS NULL
+                  AND g.home_implied_prob IS NOT NULL
+                """,
+                (pks,),
+            )
+            count = cur.rowcount
+        conn.commit()
+    return count
+
+
 def refresh_odds_only(schedule_df: pd.DataFrame, today_only: bool = False) -> pd.DataFrame:
     schedule_df = schedule_df.copy()
     if "game_date" in schedule_df.columns:
@@ -1501,6 +1564,9 @@ def refresh_odds_only(schedule_df: pd.DataFrame, today_only: bool = False) -> pd
     try:
         DB.upsert_games(rows)
         print(f"  Odds-only DB rows upserted: {len(rows)}")
+        updated_bets = _backfill_bet_market_probs(rows["game_pk"])
+        if updated_bets:
+            print(f"  Odds-only bets market probabilities backfilled: {updated_bets}")
     except Exception as e:
         print(f"  WARNING: odds-only DB upsert failed ({e}).")
     _update_current_csv_odds(rows)
@@ -1621,6 +1687,12 @@ def main():
     if odds_pks:
         odds_scope = to_process[to_process["game_pk"].astype(str).isin(odds_pks)].copy()
         print(f"  Odds scope: {len(odds_scope)} selected game(s).")
+    else:
+        odds_repairs = _recent_missing_odds_games(existing, today)
+        if not odds_repairs.empty:
+            odds_scope = pd.concat([odds_scope, odds_repairs], ignore_index=True)
+            odds_scope = odds_scope.drop_duplicates(subset=["game_pk"], keep="last")
+            print(f"  Odds repair scope: {len(odds_repairs)} recent missing game(s).")
 
     if args.skip_odds:
         odds_refresh_games = to_process.iloc[0:0].copy()
@@ -1640,7 +1712,19 @@ def main():
         _print_step_header("STEP 2/6: Fetching odds")
         if args.skip_odds:
             print("  Odds refresh skipped; using cached odds.")
-        return fetch_odds(odds_refresh_games, today_only=args.today_only)
+        odds = fetch_odds(odds_refresh_games, today_only=args.today_only)
+        rows = build_odds_update_rows(odds_refresh_games, odds)
+        if not rows.empty:
+            try:
+                DB.upsert_games(rows)
+                updated_bets = _backfill_bet_market_probs(rows["game_pk"])
+                print(f"  Odds DB rows upserted: {len(rows)}")
+                if updated_bets:
+                    print(f"  Bets market probabilities backfilled: {updated_bets}")
+            except Exception as e:
+                print(f"  WARNING: odds DB upsert failed ({e}).")
+            _update_current_csv_odds(rows)
+        return odds
 
     def _run_pitchers():
         _print_step_header("STEP 3/6: Fetching pitcher data")

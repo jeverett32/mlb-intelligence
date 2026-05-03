@@ -26,6 +26,29 @@ def test_split_odds_refresh_games_freezes_started_and_predicted(monkeypatch):
     assert refresh["game_pk"].tolist() == [3]
 
 
+def test_split_odds_refresh_games_allows_started_missing_odds(monkeypatch):
+    now = pd.Timestamp.now(tz="UTC")
+    games = pd.DataFrame(
+        {
+            "game_pk": [1, 2],
+            "game_time_utc": [
+                (now - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M"),
+                (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M"),
+            ],
+            "is_completed": [True, True],
+            "close_home_ml": [None, -120],
+            "close_away_ml": [None, 100],
+            "home_implied_prob": [None, 0.55],
+        }
+    )
+    monkeypatch.setattr(F, "_predicted_game_pks", lambda game_pks: set())
+
+    refresh, frozen = F._split_odds_refresh_games(games)
+
+    assert frozen == {2}
+    assert refresh["game_pk"].tolist() == [1]
+
+
 def test_preserve_frozen_odds_keeps_existing_values():
     new_rows = pd.DataFrame(
         {
@@ -53,6 +76,30 @@ def test_preserve_frozen_odds_keeps_existing_values():
     assert frozen["odds_source"] == "sbr"
     assert refreshable["close_home_ml"] == -120
     assert refreshable["odds_source"] == "sbr"
+
+
+def test_recent_missing_odds_games_selects_recent_non_void_rows():
+    today = pd.Timestamp("2026-05-03")
+    existing = pd.DataFrame(
+        {
+            "game_pk": [1, 2, 3],
+            "game_date": [
+                pd.Timestamp("2026-05-02"),
+                pd.Timestamp("2026-05-01"),
+                pd.Timestamp("2026-05-02"),
+            ],
+            "home_team": ["NYY", "BOS", "LAD"],
+            "away_team": ["BAL", "TOR", "SFG"],
+            "close_home_ml": [None, -120, None],
+            "close_away_ml": [None, 100, None],
+            "home_implied_prob": [None, 0.55, None],
+            "game_status": ["final", "final", "postponed"],
+        }
+    )
+
+    out = F._recent_missing_odds_games(existing, today)
+
+    assert out["game_pk"].tolist() == [1]
 
 
 def test_fetch_odds_scopes_sbr_rows_to_requested_games(monkeypatch, tmp_path):
