@@ -46,9 +46,21 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
         for assignment in assignments
     )
     assert "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)" in assignments
-    assert "home_score = COALESCE(EXCLUDED.home_score, games.home_score)" in assignments
-    assert "away_score = COALESCE(EXCLUDED.away_score, games.away_score)" in assignments
-    assert "home_win = COALESCE(EXCLUDED.home_win, games.home_win)" in assignments
+    assert any(
+        "home_score = CASE WHEN COALESCE(EXCLUDED.extra->>'game_status', '') IN ('postponed', 'cancelled') "
+        "THEN EXCLUDED.home_score ELSE COALESCE(EXCLUDED.home_score, games.home_score) END" == assignment
+        for assignment in assignments
+    )
+    assert any(
+        "away_score = CASE WHEN COALESCE(EXCLUDED.extra->>'game_status', '') IN ('postponed', 'cancelled') "
+        "THEN EXCLUDED.away_score ELSE COALESCE(EXCLUDED.away_score, games.away_score) END" == assignment
+        for assignment in assignments
+    )
+    assert any(
+        "home_win = CASE WHEN COALESCE(EXCLUDED.extra->>'game_status', '') IN ('postponed', 'cancelled') "
+        "THEN EXCLUDED.home_win ELSE COALESCE(EXCLUDED.home_win, games.home_win) END" == assignment
+        for assignment in assignments
+    )
 
 
 def test_backfill_updates_only_valid_real_sbr_lines():

@@ -305,7 +305,9 @@ def fetch_schedule():
             detailed_state = status.get("detailedState", "")
             abstract_state = status.get("abstractGameState", "")
             game_status = _normalize_schedule_status(status)
-            completed = abstract_state == "Final" or detailed_state == "Final"
+            # MLB may reuse a gamePk after a postponement and report abstract Final
+            # on the original postponed entry. Only treat normalized final rows as complete.
+            completed = game_status == "final"
 
             home_team_data = g.get("teams", {}).get("home", {})
             away_team_data = g.get("teams", {}).get("away", {})
@@ -1554,7 +1556,7 @@ def main():
         if tomorrow_games.empty:
             print("  No tomorrow games found.")
             return
-        fetch_odds(tomorrow_games, today_only=False)
+        refresh_odds_only(tomorrow_games, today_only=False)
         return
     if args.odds_only:
         odds_pks = {

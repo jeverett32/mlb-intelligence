@@ -225,7 +225,12 @@ def _upsert_assignment(col: str, cols: set[str]) -> str:
     if col == "extra":
         return "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)"
     if col in {"home_score", "away_score", "home_win"}:
-        return f"{col} = COALESCE(EXCLUDED.{col}, games.{col})"
+        return (
+            f"{col} = CASE "
+            "WHEN COALESCE(EXCLUDED.extra->>'game_status', '') IN ('postponed', 'cancelled') "
+            f"THEN EXCLUDED.{col} "
+            f"ELSE COALESCE(EXCLUDED.{col}, games.{col}) END"
+        )
     if col in ODDS_OPEN_COLS:
         side = "home" if col == "open_home_ml" else "away"
         if f"close_{side}_ml" not in cols:
@@ -746,6 +751,7 @@ def backfill_bet_results():
                 FROM games g
                 WHERE b.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                   AND (b.result IS DISTINCT FROM g.home_win OR b.profit_loss IS NULL)
                 """
             )
@@ -820,6 +826,7 @@ def get_model_picks() -> pd.DataFrame:
     Return all predicted games that have a known result (home_win).
     Joins bets (for predictions) with games (for actual outcome).
     Used to measure model accuracy independent of whether a bet was placed.
+    Excludes postponed/cancelled games so voided markets do not affect stats.
     """
     conn = get_connection()
     try:
@@ -833,6 +840,7 @@ def get_model_picks() -> pd.DataFrame:
                 JOIN games g ON b.game_pk = g.game_pk
                 WHERE b.predicted_prob IS NOT NULL
                   AND g.home_win IS NOT NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                 ORDER BY b.game_date DESC
             """)
             rows = cur.fetchall()
@@ -3291,6 +3299,7 @@ def backfill_user_order_results():
                 FROM games g
                 WHERE uo.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                   AND (uo.result IS DISTINCT FROM g.home_win OR uo.profit_loss IS NULL)
                 """
             )
@@ -3346,6 +3355,7 @@ def backfill_paper_order_results():
                 FROM games g
                 WHERE po.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                   AND (po.result IS DISTINCT FROM g.home_win OR po.profit_loss IS NULL)
                 """
             )
