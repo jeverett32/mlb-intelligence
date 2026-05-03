@@ -664,7 +664,7 @@ def fetch_odds(schedule_df, today_only=False):
         print(f"  SBR missing {len(missing_keys)} scheduled game(s). Supplementing from The Odds API...")
 
     if sbr_df.empty or missing_keys:
-        api_df = fetch_odds_api()
+        api_df = fetch_odds_api(force_refresh=bool(missing_keys))
         api_df = _drop_implausible_moneylines(api_df, "Odds API")
         if not api_df.empty:
             api_df = api_df.copy()

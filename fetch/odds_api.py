@@ -150,7 +150,7 @@ def _parse_totals(market):
     return None
 
 
-def fetch_odds_api() -> pd.DataFrame:
+def fetch_odds_api(force_refresh: bool = False) -> pd.DataFrame:
     """
     Fetch current MLB odds, with 5-minute caching.
     Returns a DataFrame matching the SBR odds schema.
@@ -158,11 +158,12 @@ def fetch_odds_api() -> pd.DataFrame:
     cached_data, fetched_at = _load_cache()
     age = time.time() - fetched_at
 
-    if cached_data is not None and age < CACHE_TTL_SECONDS:
+    if cached_data is not None and age < CACHE_TTL_SECONDS and not force_refresh:
         print(f"  Odds API: using cached data ({int(age)}s old)")
         data = cached_data
     else:
-        print("  Odds API: fetching fresh odds...")
+        reason = "forced refresh" if force_refresh else "fetching fresh odds"
+        print(f"  Odds API: {reason}...")
         try:
             data = _fetch_from_api()
             _save_cache(data)
