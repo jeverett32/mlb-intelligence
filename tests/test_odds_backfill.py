@@ -31,13 +31,13 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
 
     assert any(
         "open_home_ml = CASE WHEN EXCLUDED.close_home_ml IS NOT NULL" in assignment
-        and "EXCLUDED.close_home_ml != EXCLUDED.open_home_ml" in assignment
+        and "EXCLUDED.odds_source IS NOT NULL" in assignment
         and "ELSE COALESCE(games.open_home_ml, EXCLUDED.open_home_ml)" in assignment
         for assignment in assignments
     )
     assert any(
         "close_home_ml = CASE WHEN EXCLUDED.close_home_ml IS NOT NULL" in assignment
-        and "EXCLUDED.close_home_ml != EXCLUDED.open_home_ml" in assignment
+        and "EXCLUDED.odds_source IS NOT NULL" in assignment
         and "ELSE COALESCE(games.close_home_ml, EXCLUDED.close_home_ml)" in assignment
         for assignment in assignments
     )

@@ -215,8 +215,7 @@ def _row_to_db(row: dict) -> dict:
 def _is_real_line_sql(side: str) -> str:
     return (
         f"EXCLUDED.close_{side}_ml IS NOT NULL "
-        f"AND EXCLUDED.open_{side}_ml IS NOT NULL "
-        f"AND EXCLUDED.close_{side}_ml != EXCLUDED.open_{side}_ml"
+        f"AND EXCLUDED.odds_source IS NOT NULL"
     )
 
 
