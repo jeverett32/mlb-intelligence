@@ -2076,7 +2076,7 @@ def upsert_kalshi_account(
                     email,
                     label,
                     encrypt_field(key_id.strip()),
-                    key_path,
+                    encrypt_field(key_path.strip()),
                     kalshi_env.strip().lower() or "prod",
                     bool(is_active),
                     bool(last_verified),
@@ -2109,6 +2109,7 @@ def get_kalshi_account(email: str) -> dict | None:
                 return None
             d = dict(row)
             d["key_id"] = decrypt_field(d["key_id"])
+            d["key_path"] = decrypt_field(d["key_path"])
             return d
     finally:
         conn.close()
@@ -2143,6 +2144,7 @@ def list_approved_users_with_accounts() -> list[dict]:
             rows = [dict(row) for row in cur.fetchall()]
             for r in rows:
                 r["key_id"] = decrypt_field(r["key_id"])
+                r["key_path"] = decrypt_field(r["key_path"])
             return rows
     finally:
         conn.close()
@@ -2954,6 +2956,7 @@ def get_open_live_user_orders_for_refresh(
             rows = [dict(r) for r in cur.fetchall()]
             for row in rows:
                 row["key_id"] = decrypt_field(row.get("key_id") or "")
+                row["key_path"] = decrypt_field(row.get("key_path") or "")
             return rows
     finally:
         conn.close()
@@ -3889,7 +3892,7 @@ def get_model_artifact_fi_history(limit: int = 50) -> list[dict]:
 
 
 def migrate_encrypt_kalshi_keys() -> int:
-    """One-time migration: encrypt any plaintext key_id values in kalshi_accounts."""
+    """One-time migration: encrypt plaintext Kalshi credential fields."""
     if not _fernet:
         print("ENCRYPTION_KEY not set — skipping migration.")
         return 0
@@ -3897,18 +3900,29 @@ def migrate_encrypt_kalshi_keys() -> int:
     count = 0
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT email, key_id FROM kalshi_accounts")
-            for email, key_id in cur.fetchall():
+            cur.execute("SELECT email, key_id, key_path FROM kalshi_accounts")
+            for email, key_id, key_path in cur.fetchall():
+                updates = {}
                 if key_id and not key_id.startswith(_ENCRYPTED_PREFIX):
+                    updates["key_id"] = encrypt_field(key_id)
+                if key_path and not key_path.startswith(_ENCRYPTED_PREFIX):
+                    updates["key_path"] = encrypt_field(key_path)
+                if updates:
                     cur.execute(
-                        "UPDATE kalshi_accounts SET key_id = %s, updated_at = NOW() WHERE email = %s",
-                        (encrypt_field(key_id), email),
+                        """
+                        UPDATE kalshi_accounts
+                        SET key_id = COALESCE(%s, key_id),
+                            key_path = COALESCE(%s, key_path),
+                            updated_at = NOW()
+                        WHERE email = %s
+                        """,
+                        (updates.get("key_id"), updates.get("key_path"), email),
                     )
                     count += 1
         conn.commit()
     finally:
         conn.close()
-    print(f"Encrypted {count} kalshi key_id(s).")
+    print(f"Encrypted {count} kalshi account row(s).")
     return count
 
 
