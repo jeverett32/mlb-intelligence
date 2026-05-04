@@ -540,11 +540,12 @@ def test_public_page_has_clear_link_to_landing(client):
     assert 'class="brand" href="/home"' in r.text
 
 
-def test_research_page_renders_empty_state(client):
+def test_research_page_renders_content(client):
     r = client.get("/research")
     assert r.status_code == 200
     assert "Research" in r.text
-    assert "No research posts published yet." in r.text
+    assert "Model Methodology" in r.text
+    assert "Strategic Roadmap" in r.text
     assert 'href="/public">Public analytics</a>' in r.text
     assert 'href="/research">Research</a>' in r.text
     assert 'href="/contact">Contact</a>' in r.text
