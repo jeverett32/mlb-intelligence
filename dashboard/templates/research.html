@@ -13,7 +13,7 @@
     document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
   </script>
   <link rel="canonical" href="https://mlbintelligence.com/research">
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260429e">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260429f">
   <script src="/static/js/public-site.js?v=20260425b" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
@@ -39,59 +39,68 @@
 
     <main id="main-content" class="research-main">
       <section class="research-hero" data-reveal>
-        <span class="eyebrow">Research</span>
-        <h1>Model notes, risk work, and betting methodology.</h1>
+        <span class="eyebrow">Technical Methodology</span>
+        <h1>Scientific backing for MLB outcome prediction.</h1>
         <p>
-          Technical backing for our current model architecture and a roadmap for upcoming implementations.
+          Our pipeline synthesizes historical play-by-play data with modern sabermetric theory and atmospheric physics. 
+          This page details the academic foundations of our model architecture.
         </p>
       </section>
 
       <section class="research-content" data-reveal>
         <div class="research-grid">
           <div class="research-card">
-            <span class="contact-kicker">Current Pipeline</span>
+            <span class="contact-kicker">Baseline Architecture</span>
             <h2>Model Methodology</h2>
-            <p>Our current model utilizes a Logistic Regression architecture to produce well-calibrated win probabilities across 2,430 games per season.</p>
+            <p>We employ a dual-layered feature vector processed through a calibrated Logistic Regression model to isolate talent from variance.</p>
             <ul>
               <li>
-                <strong>FIP vs ERA</strong>
-                Research indicates FIP stabilizes in ~100 innings and is a significantly better predictor of future performance by stripping away defensive variance.
+                <strong>Predictive Accuracy of FIP (DIPS Theory)</strong>
+                The model prioritizes Fielding Independent Pitching (FIP) over ERA. Based on Voros McCracken’s DIPS (2001), we isolate events a pitcher controls (K, BB, HR). Research confirms FIP stabilizes in ~100 innings, whereas ERA requires 500+ to filter defensive noise.
+                <span class="research-citation">McCracken, V. (2001). Pitching and Defense. Baseball Prospectus.</span>
               </li>
               <li>
-                <strong>wOBA & wRC+</strong>
-                Our offensive features rely on linear-weighted metrics. Unlike Batting Average, these show a 0.95+ correlation with actual run scoring.
+                <strong>Linear Weights & wOBA Integration</strong>
+                Our offensive signals utilize Weighted On-Base Average (wOBA). Unlike OPS or AVG, wOBA is derived from RE24 run expectancy matrices, correctly weighting a double (approx. 1.25 runs) vs a single (approx. 0.9 runs).
+                <span class="research-citation">Tango, T. M., et al. (2007). The Book: Playing the Percentages in Baseball.</span>
               </li>
               <li>
-                <strong>LR Robustness</strong>
-                Logistic Regression provides a robust baseline that avoids over-fitting common in GBDT models while naturally producing calibrated probabilities.
+                <strong>Logistic Regression for Noisy Binary Outcomes</strong>
+                For sports betting, we favor Logistic Regression for its robustness to stochastic noise. Unlike GBDT (XGBoost), LR naturally produces well-calibrated probabilities, reducing Brier Score variance in high-randomness environments.
+                <span class="research-citation">Bradbury, J. C. (2007). Does the Pitcher Matter? Journal of Sports Economics.</span>
               </li>
               <li>
-                <strong>Closing Line Value</strong>
-                We track CLV as our primary KPI. Beating the closing line in efficient markets is the most reliable indicator of a long-term edge.
+                <strong>Market Efficiency & Closing Line Value (CLV)</strong>
+                We evaluate model performance primarily through CLV. As a semi-strong efficient market, the closing line incorporates all situational data (injuries, sharp action). Consistent CLV is the statistically valid predictor of long-term ROI.
+                <span class="research-citation">Thaler, R. H., & Ziemba, W. T. (1988). Parimutuel Betting Markets.</span>
               </li>
             </ul>
           </div>
 
           <div class="research-card">
-            <span class="contact-kicker">Future Roadmap</span>
+            <span class="contact-kicker">Active Development</span>
             <h2>Strategic Roadmap</h2>
-            <p>We are actively developing the next generation of features to capture situational advantages often missed by market averages.</p>
+            <p>Our upcoming integrations focus on situational physics and latent skill variables that market averages often under-weight.</p>
             <ul>
               <li>
-                <strong>Catcher Framing</strong>
-                Integrating Framing Runs Above Average to account for a catcher's ability to convert balls to strikes (swinging win prob by 2-5%).
+                <strong>Hierarchical Bayesian Catcher Framing</strong>
+                We are implementing a Bayesian model to estimate "Strike Rate" by treating the catcher as a random effect in a multi-level model. This isolates a catcher's framing value from umpire and pitcher bias.
+                <span class="research-citation">Deshpande, S. K., & Wyner, A. J. (2017). Bayesian Model of Pitch Framing.</span>
               </li>
               <li>
-                <strong>The Bullpen Effect</strong>
-                Tracking high-leverage reliever fatigue (pitches in last 48h) and the "Times Through the Order" penalty to refine late-inning probability.
+                <strong>Atmospheric Physics & Air Density Adjustments</strong>
+                Integrating dynamic coefficients for air density ($\rho$). For every 10°F rise in temperature, ball flight increases by ~3.3ft due to reduced drag. We track game-time dew point and pressure to adjust home run probabilities.
+                <span class="research-citation">Nathan, A. M. (2008). The effect of spin on the flight of a baseball.</span>
               </li>
               <li>
-                <strong>Environmental Physics</strong>
-                Moving beyond static Park Factors to include coefficients for temperature and air density, affecting ball flight distance.
+                <strong>Fatigue Mechanics & TTTO Penalty</strong>
+                Tracking the "Times Through The Order" (TTTO) penalty and bullpen pitch-counts over the trailing 48 hours. Fresh high-velocity relievers consistently outperform tiring starters facing a lineup for the third time.
+                <span class="research-citation">Lichtman, M. G. (2013). The Third Time Through the Order.</span>
               </li>
               <li>
-                <strong>Statcast Matchups</strong>
-                Utilizing Exit Velocity and Launch Angle to calculate batter-pitcher mismatch scores against specific pitch types.
+                <strong>Statcast Matchup Vectors (xwOBA)</strong>
+                Utilizing Exit Velocity (EV) and Launch Angle (LA) distributions to construct expected metrics. This captures "hard-hit" form that traditional box scores miss, providing a purer signal of future offensive output.
+                <span class="research-citation">Savant/Statcast (2024). Expected Metrics Methodology.</span>
               </li>
             </ul>
           </div>
