@@ -752,6 +752,7 @@
   <div class="tab-pane" id="tab-model">
     <div class="metrics-grid" id="model-summary-cards"></div>
 
+    <!-- FI Over Time charts hidden (not useful currently; re-enable when needed)
     <div class="panel-row">
       <div class="panel">
         <div class="panel-header">
@@ -768,6 +769,7 @@
         <div class="chart-wrap"><canvas id="chart-fi"></canvas></div>
       </div>
     </div>
+    -->
 
     <div class="panel-row">
       <div class="panel">
@@ -848,7 +850,7 @@
     </div>
   </div>
 
-  <!-- Feature Importances modal -->
+  <!-- FI Over Time modals hidden (paired with charts above; re-enable together)
   <div id="fi-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeFiModal()">
     <div class="fi-modal">
       <div class="fi-modal-header">
@@ -858,8 +860,6 @@
       <div class="fi-modal-body"><canvas id="chart-fi-modal"></canvas></div>
     </div>
   </div>
-
-  <!-- Production Artifact FI modal -->
   <div id="fi-prod-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeFiProdModal()">
     <div class="fi-modal">
       <div class="fi-modal-header">
@@ -869,6 +869,7 @@
       <div class="fi-modal-body"><canvas id="chart-fi-prod-modal"></canvas></div>
     </div>
   </div>
+  -->
 
   <!-- Feature Glossary modal -->
   <div id="feat-dict-modal" class="fi-modal-overlay" onclick="if(event.target===this)closeFeatureDictModal()">
