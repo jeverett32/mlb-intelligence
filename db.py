@@ -365,6 +365,54 @@ PAPER_STARTING_BANKROLL_DOLLARS = 10_000.0
 PAPER_UNIVERSAL_EMAIL = "__paper_universal__"
 
 
+MONEY_CENTS_TO_DOLLARS = {
+    "bet_cents": "bet_dollars",
+    "profit_loss_cents": "profit_loss",
+    "current_value_cents": "current_value",
+    "unrealized_pnl_cents": "unrealized_pnl",
+    "paper_bankroll_before_cents": "paper_bankroll_before",
+    "paper_bankroll_after_cents": "paper_bankroll_after",
+}
+
+
+def _dollars_to_cents(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(round(float(value) * 100))
+    except (TypeError, ValueError):
+        return None
+
+
+def _cents_to_dollars(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(int(value) / 100.0, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _money_alias_record(row: dict) -> dict:
+    for cents_col, dollars_col in MONEY_CENTS_TO_DOLLARS.items():
+        dollars = _cents_to_dollars(row.get(cents_col))
+        if dollars is not None:
+            row[dollars_col] = dollars
+    return row
+
+
+def _money_alias_df(df: pd.DataFrame) -> pd.DataFrame:
+    for cents_col, dollars_col in MONEY_CENTS_TO_DOLLARS.items():
+        if cents_col not in df.columns:
+            continue
+        dollars = pd.to_numeric(df[cents_col], errors="coerce") / 100.0
+        if dollars_col in df.columns:
+            df[dollars_col] = dollars.combine_first(pd.to_numeric(df[dollars_col], errors="coerce"))
+        else:
+            df[dollars_col] = dollars
+    return df
+
+
 def get_upcoming_needing_prediction(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
     Single-query version of the old run_pipeline filter:
@@ -694,6 +742,7 @@ def init_bets_explainability() -> None:
 
 
 def update_bet_order(game_pk, kalshi_order_id, bet_dollars, n_contracts):
+    bet_cents = _dollars_to_cents(bet_dollars)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -701,10 +750,11 @@ def update_bet_order(game_pk, kalshi_order_id, bet_dollars, n_contracts):
                 """UPDATE bets SET
                        kalshi_order_id = %s,
                        bet_dollars = %s,
+                       bet_cents = %s,
                        n_contracts = %s,
                        updated_at = NOW()
                    WHERE game_pk = %s""",
-                (kalshi_order_id, float(bet_dollars), int(n_contracts), int(game_pk)),
+                (kalshi_order_id, float(bet_dollars), bet_cents, int(n_contracts), int(game_pk)),
             )
         conn.commit()
     finally:
@@ -732,9 +782,28 @@ def update_bet_result(game_pk, home_win):
                                )::numeric, 2)
                            ELSE -bet_dollars
                        END,
+                       profit_loss_cents = CASE
+                           WHEN bet_side IS NULL OR bet_side = 'none'
+                                OR COALESCE(bet_cents, ROUND(bet_dollars * 100)::bigint) IS NULL THEN NULL
+                           WHEN (%s AND bet_side = 'home') OR (NOT %s AND bet_side = 'away') THEN
+                               CASE
+                                   WHEN n_contracts IS NOT NULL THEN n_contracts::bigint * 100 - COALESCE(bet_cents, ROUND(bet_dollars * 100)::bigint)
+                                   WHEN market_implied_prob IS NOT NULL AND bet_side = 'home' THEN ROUND(COALESCE(bet_cents, ROUND(bet_dollars * 100)::bigint) * (1.0 / NULLIF(market_implied_prob, 0) - 1))::bigint
+                                   WHEN market_implied_prob IS NOT NULL AND bet_side = 'away' THEN ROUND(COALESCE(bet_cents, ROUND(bet_dollars * 100)::bigint) * (1.0 / NULLIF(1.0 - market_implied_prob, 0) - 1))::bigint
+                                   ELSE NULL
+                               END
+                           ELSE -COALESCE(bet_cents, ROUND(bet_dollars * 100)::bigint)
+                       END,
                        updated_at = NOW()
                    WHERE game_pk = %s""",
-                (bool(home_win), bool(home_win), bool(home_win), int(game_pk)),
+                (
+                    bool(home_win),
+                    bool(home_win),
+                    bool(home_win),
+                    bool(home_win),
+                    bool(home_win),
+                    int(game_pk),
+                ),
             )
         conn.commit()
     finally:
@@ -764,12 +833,28 @@ def backfill_bet_results():
                             )::numeric, 2)
                         ELSE -b.bet_dollars
                     END,
+                    profit_loss_cents = CASE
+                        WHEN b.bet_side IS NULL OR b.bet_side = 'none'
+                             OR COALESCE(b.bet_cents, ROUND(b.bet_dollars * 100)::bigint) IS NULL THEN NULL
+                        WHEN (g.home_win AND b.bet_side = 'home') OR (NOT g.home_win AND b.bet_side = 'away') THEN
+                            CASE
+                                WHEN b.n_contracts IS NOT NULL THEN b.n_contracts::bigint * 100 - COALESCE(b.bet_cents, ROUND(b.bet_dollars * 100)::bigint)
+                                WHEN b.market_implied_prob IS NOT NULL AND b.bet_side = 'home' THEN ROUND(COALESCE(b.bet_cents, ROUND(b.bet_dollars * 100)::bigint) * (1.0 / NULLIF(b.market_implied_prob, 0) - 1))::bigint
+                                WHEN b.market_implied_prob IS NOT NULL AND b.bet_side = 'away' THEN ROUND(COALESCE(b.bet_cents, ROUND(b.bet_dollars * 100)::bigint) * (1.0 / NULLIF(1.0 - b.market_implied_prob, 0) - 1))::bigint
+                                ELSE NULL
+                            END
+                        ELSE -COALESCE(b.bet_cents, ROUND(b.bet_dollars * 100)::bigint)
+                    END,
                     updated_at = NOW()
                 FROM games g
                 WHERE b.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
                   AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-                  AND (b.result IS DISTINCT FROM g.home_win OR b.profit_loss IS NULL)
+                  AND (
+                      b.result IS DISTINCT FROM g.home_win
+                      OR b.profit_loss IS NULL
+                      OR b.profit_loss_cents IS NULL
+                  )
                 """
             )
             count = cur.rowcount
@@ -791,7 +876,7 @@ def get_bet(game_pk) -> dict | None:
                 (int(game_pk),),
             )
             row = cur.fetchone()
-            return dict(row) if row else None
+            return _money_alias_record(dict(row)) if row else None
     finally:
         conn.close()
 
@@ -834,6 +919,7 @@ def get_all_bets() -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
+    df = _money_alias_df(df)
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -1335,6 +1421,7 @@ def init_auth_tables():
                     bet_side TEXT,
                     bet_frac DOUBLE PRECISION,
                     bet_dollars DOUBLE PRECISION,
+                    bet_cents BIGINT,
                     n_contracts INTEGER,
                     kalshi_order_id TEXT,
                     kalshi_ticker TEXT,
@@ -1342,7 +1429,9 @@ def init_auth_tables():
                     live_edge DOUBLE PRECISION,
                     current_price DOUBLE PRECISION,
                     current_value DOUBLE PRECISION,
+                    current_value_cents BIGINT,
                     unrealized_pnl DOUBLE PRECISION,
+                    unrealized_pnl_cents BIGINT,
                     position_count DOUBLE PRECISION,
                     market_status TEXT,
                     last_checked_at TIMESTAMPTZ,
@@ -1351,15 +1440,20 @@ def init_auth_tables():
                     dry_run BOOLEAN NOT NULL DEFAULT TRUE,
                     result BOOLEAN,
                     profit_loss DOUBLE PRECISION,
+                    profit_loss_cents BIGINT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE (email, game_pk)
                 )
             """)
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS bet_cents BIGINT")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS profit_loss_cents BIGINT")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS kalshi_ticker TEXT")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS current_price DOUBLE PRECISION")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS current_value DOUBLE PRECISION")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS current_value_cents BIGINT")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS unrealized_pnl DOUBLE PRECISION")
+            cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS unrealized_pnl_cents BIGINT")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS position_count DOUBLE PRECISION")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS market_status TEXT")
             cur.execute("ALTER TABLE user_orders ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ")
@@ -1373,12 +1467,16 @@ def init_auth_tables():
                     checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     current_price DOUBLE PRECISION,
                     current_value DOUBLE PRECISION,
+                    current_value_cents BIGINT,
                     unrealized_pnl DOUBLE PRECISION,
+                    unrealized_pnl_cents BIGINT,
                     position_count DOUBLE PRECISION,
                     market_status TEXT,
                     source TEXT NOT NULL DEFAULT 'kalshi'
                 )
             """)
+            cur.execute("ALTER TABLE user_order_snapshots ADD COLUMN IF NOT EXISTS current_value_cents BIGINT")
+            cur.execute("ALTER TABLE user_order_snapshots ADD COLUMN IF NOT EXISTS unrealized_pnl_cents BIGINT")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS kalshi_market_snapshots (
                     ticker TEXT PRIMARY KEY,
@@ -1402,13 +1500,16 @@ def init_auth_tables():
                     bet_side TEXT,
                     bet_frac DOUBLE PRECISION,
                     bet_dollars DOUBLE PRECISION,
+                    bet_cents BIGINT,
                     n_contracts INTEGER,
                     kalshi_ticker TEXT,
                     live_price DOUBLE PRECISION,
                     live_edge DOUBLE PRECISION,
                     current_price DOUBLE PRECISION,
                     current_value DOUBLE PRECISION,
+                    current_value_cents BIGINT,
                     unrealized_pnl DOUBLE PRECISION,
+                    unrealized_pnl_cents BIGINT,
                     position_count DOUBLE PRECISION,
                     market_status TEXT,
                     last_checked_at TIMESTAMPTZ,
@@ -1416,21 +1517,30 @@ def init_auth_tables():
                     status TEXT NOT NULL DEFAULT 'pending',
                     result BOOLEAN,
                     profit_loss DOUBLE PRECISION,
+                    profit_loss_cents BIGINT,
                     paper_bankroll_before DOUBLE PRECISION,
+                    paper_bankroll_before_cents BIGINT,
                     paper_bankroll_after DOUBLE PRECISION,
+                    paper_bankroll_after_cents BIGINT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     UNIQUE (email, game_pk)
                 )
             """)
+            cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS bet_cents BIGINT")
+            cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS profit_loss_cents BIGINT")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS kalshi_ticker TEXT")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS current_price DOUBLE PRECISION")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS current_value DOUBLE PRECISION")
+            cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS current_value_cents BIGINT")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS unrealized_pnl DOUBLE PRECISION")
+            cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS unrealized_pnl_cents BIGINT")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS position_count DOUBLE PRECISION")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS market_status TEXT")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ")
             cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS last_check_error TEXT")
+            cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS paper_bankroll_before_cents BIGINT")
+            cur.execute("ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS paper_bankroll_after_cents BIGINT")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_approval_status ON {APP_USERS_TABLE} (approval_status)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_USERS_TABLE}_is_admin ON {APP_USERS_TABLE} (is_admin)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_SESSIONS_TABLE}_email ON {APP_SESSIONS_TABLE} (email)")
@@ -2240,15 +2350,18 @@ def get_paper_bankroll_dollars(email: str) -> float:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT COALESCE(SUM(profit_loss), 0)
+                SELECT COALESCE(
+                    SUM(COALESCE(profit_loss_cents, ROUND(profit_loss * 100)::bigint)),
+                    0
+                )
                 FROM paper_orders
                 WHERE email = %s
-                  AND profit_loss IS NOT NULL
+                  AND (profit_loss_cents IS NOT NULL OR profit_loss IS NOT NULL)
                 """,
                 (PAPER_UNIVERSAL_EMAIL,),
             )
             row = cur.fetchone()
-            paper_profit = float(row[0] or 0.0) if row else 0.0
+            paper_profit = (int(row[0] or 0) / 100.0) if row else 0.0
             return round(PAPER_STARTING_BANKROLL_DOLLARS + paper_profit, 2)
     finally:
         conn.close()
@@ -2262,10 +2375,10 @@ def get_paper_bankroll_history(email: str) -> list[dict]:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT game_date, game_pk, paper_bankroll_after
+                SELECT game_date, game_pk, paper_bankroll_after, paper_bankroll_after_cents
                 FROM paper_orders
                 WHERE email = %s
-                  AND paper_bankroll_after IS NOT NULL
+                  AND (paper_bankroll_after_cents IS NOT NULL OR paper_bankroll_after IS NOT NULL)
                 ORDER BY game_date ASC NULLS LAST, game_pk ASC
                 """,
                 (PAPER_UNIVERSAL_EMAIL,),
@@ -2285,7 +2398,11 @@ def get_paper_bankroll_history(email: str) -> list[dict]:
         history.append(
             {
                 "recorded_at": row.get("game_date"),
-                "balance_dollars": float(row["paper_bankroll_after"]),
+                "balance_dollars": (
+                    _cents_to_dollars(row.get("paper_bankroll_after_cents"))
+                    if row.get("paper_bankroll_after_cents") is not None
+                    else float(row["paper_bankroll_after"])
+                ),
                 "game_pk": row.get("game_pk"),
                 "source": "paper",
             }
@@ -2323,7 +2440,7 @@ def backfill_paper_orders_from_bets(email: str | None = None) -> int:
 
             cur.execute(
                 """
-                SELECT game_pk, profit_loss
+                SELECT game_pk, profit_loss, profit_loss_cents
                 FROM paper_orders
                 WHERE email = %s
                 """,
@@ -2338,7 +2455,9 @@ def backfill_paper_orders_from_bets(email: str | None = None) -> int:
                 game_pk = int(signal["game_pk"])
                 existing_row = existing.get(game_pk)
                 if existing_row:
-                    if existing_row.get("profit_loss") is not None:
+                    if existing_row.get("profit_loss_cents") is not None:
+                        bankroll += int(existing_row["profit_loss_cents"]) / 100.0
+                    elif existing_row.get("profit_loss") is not None:
                         bankroll += float(existing_row["profit_loss"])
                     continue
 
@@ -2391,6 +2510,10 @@ def backfill_paper_orders_from_bets(email: str | None = None) -> int:
                         profit_loss,
                         bankroll,
                         bankroll_after,
+                        _dollars_to_cents(bet_dollars),
+                        _dollars_to_cents(profit_loss),
+                        _dollars_to_cents(bankroll),
+                        _dollars_to_cents(bankroll_after),
                     )
                 )
                 inserted += 1
@@ -2406,13 +2529,16 @@ def backfill_paper_orders_from_bets(email: str | None = None) -> int:
                         predicted_prob, market_implied_prob, edge,
                         bet_side, bet_frac, bet_dollars, n_contracts,
                         live_price, live_edge, status, result, profit_loss,
-                        paper_bankroll_before, paper_bankroll_after, updated_at
+                        paper_bankroll_before, paper_bankroll_after,
+                        bet_cents, profit_loss_cents,
+                        paper_bankroll_before_cents,
+                        paper_bankroll_after_cents, updated_at
                     )
                     VALUES %s
                     ON CONFLICT (email, game_pk) DO NOTHING
                     """,
                     rows_to_insert,
-                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())",
+                    template="(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())",
                 )
         conn.commit()
         return inserted
@@ -2517,10 +2643,11 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
             updated = 0
             cur.execute(
                 """
-                SELECT id, game_pk, game_date, bet_side, bet_frac, bet_dollars,
+                SELECT id, game_pk, game_date, bet_side, bet_frac, bet_dollars, bet_cents,
                        predicted_prob, edge, market_implied_prob, live_price,
-                       n_contracts, result, profit_loss,
-                       paper_bankroll_before, paper_bankroll_after
+                       n_contracts, result, profit_loss, profit_loss_cents,
+                       paper_bankroll_before, paper_bankroll_before_cents,
+                       paper_bankroll_after, paper_bankroll_after_cents
                 FROM paper_orders
                 WHERE email = %s
                 ORDER BY game_date ASC NULLS LAST, game_pk ASC, id ASC
@@ -2539,7 +2666,11 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                     frac = 0.0
                 frac = max(0.0, frac)
 
-                stake_existing = r.get("bet_dollars")
+                stake_existing = (
+                    _cents_to_dollars(r.get("bet_cents"))
+                    if r.get("bet_cents") is not None
+                    else r.get("bet_dollars")
+                )
                 try:
                     stake_existing_f = float(stake_existing) if stake_existing is not None else None
                 except Exception:
@@ -2550,19 +2681,31 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                 if stake is not None and stake < 0:
                     stake = None
 
-                pb_before = r.get("paper_bankroll_before")
+                pb_before = (
+                    _cents_to_dollars(r.get("paper_bankroll_before_cents"))
+                    if r.get("paper_bankroll_before_cents") is not None
+                    else r.get("paper_bankroll_before")
+                )
                 try:
                     pb_before_f = float(pb_before) if pb_before is not None else None
                 except Exception:
                     pb_before_f = None
-                pb_after = r.get("paper_bankroll_after")
+                pb_after = (
+                    _cents_to_dollars(r.get("paper_bankroll_after_cents"))
+                    if r.get("paper_bankroll_after_cents") is not None
+                    else r.get("paper_bankroll_after")
+                )
                 try:
                     pb_after_f = float(pb_after) if pb_after is not None else None
                 except Exception:
                     pb_after_f = None
 
                 result = r.get("result")
-                pnl_existing = r.get("profit_loss")
+                pnl_existing = (
+                    _cents_to_dollars(r.get("profit_loss_cents"))
+                    if r.get("profit_loss_cents") is not None
+                    else r.get("profit_loss")
+                )
                 try:
                     pnl_existing_f = float(pnl_existing) if pnl_existing is not None else None
                 except Exception:
@@ -2602,17 +2745,25 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                         """
                         UPDATE paper_orders
                         SET bet_dollars = COALESCE(bet_dollars, %s),
+                            bet_cents = COALESCE(bet_cents, %s),
                             profit_loss = COALESCE(profit_loss, %s),
+                            profit_loss_cents = COALESCE(profit_loss_cents, %s),
                             paper_bankroll_before = COALESCE(paper_bankroll_before, %s),
+                            paper_bankroll_before_cents = COALESCE(paper_bankroll_before_cents, %s),
                             paper_bankroll_after = COALESCE(paper_bankroll_after, %s),
+                            paper_bankroll_after_cents = COALESCE(paper_bankroll_after_cents, %s),
                             updated_at = NOW()
                         WHERE id = %s
                         """,
                         (
                             stake,
+                            _dollars_to_cents(stake),
                             pnl,
+                            _dollars_to_cents(pnl),
                             desired_before,
+                            _dollars_to_cents(desired_before),
                             desired_after,
+                            _dollars_to_cents(desired_after),
                             int(r["id"]),
                         ),
                     )
@@ -2646,6 +2797,9 @@ def upsert_paper_order(
     paper_bankroll_after=None,
 ):
     email = _norm_email(email)
+    bet_cents = _dollars_to_cents(bet_dollars)
+    paper_bankroll_before_cents = _dollars_to_cents(paper_bankroll_before)
+    paper_bankroll_after_cents = _dollars_to_cents(paper_bankroll_after)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -2654,16 +2808,17 @@ def upsert_paper_order(
                 INSERT INTO paper_orders (
                     email, game_pk, game_date, home_team, away_team,
                     predicted_prob, market_implied_prob, edge,
-                    bet_side, bet_frac, bet_dollars, n_contracts,
+                    bet_side, bet_frac, bet_dollars, bet_cents, n_contracts,
                     kalshi_ticker, live_price, live_edge, status,
-                    paper_bankroll_before, paper_bankroll_after, updated_at
+                    paper_bankroll_before, paper_bankroll_before_cents,
+                    paper_bankroll_after, paper_bankroll_after_cents, updated_at
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, NOW()
+                    %s, %s, %s, %s, NOW()
                 )
                 ON CONFLICT (email, game_pk) DO UPDATE SET
                     game_date = EXCLUDED.game_date,
@@ -2675,13 +2830,16 @@ def upsert_paper_order(
                     bet_side = EXCLUDED.bet_side,
                     bet_frac = EXCLUDED.bet_frac,
                     bet_dollars = COALESCE(EXCLUDED.bet_dollars, paper_orders.bet_dollars),
+                    bet_cents = COALESCE(EXCLUDED.bet_cents, paper_orders.bet_cents),
                     n_contracts = COALESCE(EXCLUDED.n_contracts, paper_orders.n_contracts),
                     kalshi_ticker = COALESCE(EXCLUDED.kalshi_ticker, paper_orders.kalshi_ticker),
                     live_price = EXCLUDED.live_price,
                     live_edge = EXCLUDED.live_edge,
                     status = EXCLUDED.status,
                     paper_bankroll_before = COALESCE(EXCLUDED.paper_bankroll_before, paper_orders.paper_bankroll_before),
+                    paper_bankroll_before_cents = COALESCE(EXCLUDED.paper_bankroll_before_cents, paper_orders.paper_bankroll_before_cents),
                     paper_bankroll_after = COALESCE(EXCLUDED.paper_bankroll_after, paper_orders.paper_bankroll_after),
+                    paper_bankroll_after_cents = COALESCE(EXCLUDED.paper_bankroll_after_cents, paper_orders.paper_bankroll_after_cents),
                     updated_at = NOW()
                 """,
                 (
@@ -2696,13 +2854,16 @@ def upsert_paper_order(
                     bet_side,
                     float(bet_frac or 0.0),
                     float(bet_dollars) if bet_dollars is not None else None,
+                    bet_cents,
                     int(n_contracts) if n_contracts is not None else None,
                     kalshi_ticker,
                     float(live_price) if live_price is not None else None,
                     float(live_edge) if live_edge is not None else None,
                     status,
                     float(paper_bankroll_before) if paper_bankroll_before is not None else None,
+                    paper_bankroll_before_cents,
                     float(paper_bankroll_after) if paper_bankroll_after is not None else None,
+                    paper_bankroll_after_cents,
                 ),
             )
         conn.commit()
@@ -2731,6 +2892,7 @@ def get_paper_orders(email: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
+    df = _money_alias_df(df)
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -2752,6 +2914,7 @@ def get_all_paper_orders() -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
+    df = _money_alias_df(df)
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -2766,7 +2929,7 @@ def get_paper_order(email: str, game_pk: str | int) -> dict | None:
                 (email, int(game_pk)),
             )
             row = cur.fetchone()
-            return dict(row) if row else None
+            return _money_alias_record(dict(row)) if row else None
     finally:
         conn.close()
 
@@ -2796,6 +2959,8 @@ def upsert_user_order(
     last_check_error: str | None = None,
 ):
     email = _norm_email(email)
+    bet_cents = _dollars_to_cents(bet_dollars)
+    profit_loss_cents = _dollars_to_cents(profit_loss)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -2804,16 +2969,16 @@ def upsert_user_order(
                 INSERT INTO user_orders (
                     email, game_pk, game_date, home_team, away_team,
                     predicted_prob, market_implied_prob, edge,
-                    bet_side, bet_frac, bet_dollars, n_contracts,
+                    bet_side, bet_frac, bet_dollars, bet_cents, n_contracts,
                     kalshi_order_id, kalshi_ticker, live_price, live_edge, status, dry_run,
-                    result, profit_loss, last_check_error, updated_at
+                    result, profit_loss, profit_loss_cents, last_check_error, updated_at
                 )
                 VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, NOW()
+                    %s, %s, %s, %s, NOW()
                 )
                 ON CONFLICT (email, game_pk) DO UPDATE SET
                     game_date = EXCLUDED.game_date,
@@ -2825,6 +2990,7 @@ def upsert_user_order(
                     bet_side = EXCLUDED.bet_side,
                     bet_frac = EXCLUDED.bet_frac,
                     bet_dollars = COALESCE(EXCLUDED.bet_dollars, user_orders.bet_dollars),
+                    bet_cents = COALESCE(EXCLUDED.bet_cents, user_orders.bet_cents),
                     n_contracts = COALESCE(EXCLUDED.n_contracts, user_orders.n_contracts),
                     kalshi_order_id = COALESCE(EXCLUDED.kalshi_order_id, user_orders.kalshi_order_id),
                     kalshi_ticker = COALESCE(EXCLUDED.kalshi_ticker, user_orders.kalshi_ticker),
@@ -2834,6 +3000,7 @@ def upsert_user_order(
                     dry_run = EXCLUDED.dry_run,
                     result = COALESCE(EXCLUDED.result, user_orders.result),
                     profit_loss = COALESCE(EXCLUDED.profit_loss, user_orders.profit_loss),
+                    profit_loss_cents = COALESCE(EXCLUDED.profit_loss_cents, user_orders.profit_loss_cents),
                     last_check_error = EXCLUDED.last_check_error,
                     updated_at = NOW()
                 """,
@@ -2849,6 +3016,7 @@ def upsert_user_order(
                     bet_side,
                     float(bet_frac or 0.0),
                     float(bet_dollars) if bet_dollars is not None else None,
+                    bet_cents,
                     int(n_contracts) if n_contracts is not None else None,
                     kalshi_order_id,
                     kalshi_ticker,
@@ -2858,6 +3026,7 @@ def upsert_user_order(
                     bool(dry_run),
                     bool(result) if result is not None else None,
                     float(profit_loss) if profit_loss is not None else None,
+                    profit_loss_cents,
                     last_check_error,
                 ),
             )
@@ -2886,6 +3055,7 @@ def get_user_orders(email: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
+    df = _money_alias_df(df)
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -2907,6 +3077,7 @@ def get_all_user_orders() -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
+    df = _money_alias_df(df)
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -2921,7 +3092,7 @@ def get_user_order(email: str, game_pk: str | int) -> dict | None:
                 (email, int(game_pk)),
             )
             row = cur.fetchone()
-            return dict(row) if row else None
+            return _money_alias_record(dict(row)) if row else None
     finally:
         conn.close()
 
@@ -2943,7 +3114,7 @@ def get_open_live_user_orders_for_refresh(
                   AND uo.status = 'filled'
                   AND uo.dry_run = FALSE
                   AND uo.result IS NULL
-                  AND COALESCE(uo.bet_dollars, 0) > 0
+                  AND COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint, 0) > 0
                   AND (
                       uo.last_checked_at IS NULL
                       OR uo.last_checked_at < NOW() - (%s * INTERVAL '1 second')
@@ -2981,7 +3152,7 @@ def get_open_orders_for_market_refresh(
                            uo.home_team,
                            uo.away_team,
                            uo.bet_side,
-                           uo.bet_dollars,
+                           COALESCE(uo.bet_cents::double precision / 100.0, uo.bet_dollars) AS bet_dollars,
                            uo.n_contracts,
                            uo.live_price,
                            uo.kalshi_ticker,
@@ -2995,7 +3166,7 @@ def get_open_orders_for_market_refresh(
                       AND uo.status = 'filled'
                       AND uo.dry_run = FALSE
                       AND uo.result IS NULL
-                      AND COALESCE(uo.bet_dollars, 0) > 0
+                      AND COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint, 0) > 0
                     UNION ALL
                     SELECT 'paper' AS mode,
                            po.email,
@@ -3004,7 +3175,7 @@ def get_open_orders_for_market_refresh(
                            po.home_team,
                            po.away_team,
                            po.bet_side,
-                           po.bet_dollars,
+                           COALESCE(po.bet_cents::double precision / 100.0, po.bet_dollars) AS bet_dollars,
                            po.n_contracts,
                            po.live_price,
                            po.kalshi_ticker,
@@ -3016,7 +3187,7 @@ def get_open_orders_for_market_refresh(
                     WHERE po.status = 'dry_run'
                       AND po.email = %s
                       AND po.result IS NULL
-                      AND COALESCE(po.bet_dollars, 0) > 0
+                      AND COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint, 0) > 0
                 ) q
                 WHERE q.kalshi_ticker IS NULL
                    OR q.last_checked_at IS NULL
@@ -3148,7 +3319,7 @@ def apply_market_snapshot_to_open_orders(
                                 n_contracts::double precision,
                                 CASE
                                     WHEN live_price IS NOT NULL AND live_price > 0
-                                    THEN bet_dollars / live_price
+                                    THEN COALESCE(bet_cents::double precision / 100.0, bet_dollars) / live_price
                                     ELSE NULL
                                 END
                             ),
@@ -3157,21 +3328,41 @@ def apply_market_snapshot_to_open_orders(
                                     n_contracts::double precision,
                                     CASE
                                         WHEN live_price IS NOT NULL AND live_price > 0
-                                        THEN bet_dollars / live_price
+                                        THEN COALESCE(bet_cents::double precision / 100.0, bet_dollars) / live_price
                                         ELSE NULL
                                     END
                                 ) * %s
                             )::numeric, 2),
+                            current_value_cents = ROUND((
+                                COALESCE(
+                                    n_contracts::double precision,
+                                    CASE
+                                        WHEN live_price IS NOT NULL AND live_price > 0
+                                        THEN COALESCE(bet_cents::double precision / 100.0, bet_dollars) / live_price
+                                        ELSE NULL
+                                    END
+                                ) * %s
+                            )::numeric * 100)::bigint,
                             unrealized_pnl = ROUND((
                                 COALESCE(
                                     n_contracts::double precision,
                                     CASE
                                         WHEN live_price IS NOT NULL AND live_price > 0
-                                        THEN bet_dollars / live_price
+                                        THEN COALESCE(bet_cents::double precision / 100.0, bet_dollars) / live_price
                                         ELSE NULL
                                     END
-                                ) * %s - bet_dollars
+                                ) * %s - COALESCE(bet_cents::double precision / 100.0, bet_dollars)
                             )::numeric, 2),
+                            unrealized_pnl_cents = ROUND((
+                                COALESCE(
+                                    n_contracts::double precision,
+                                    CASE
+                                        WHEN live_price IS NOT NULL AND live_price > 0
+                                        THEN COALESCE(bet_cents::double precision / 100.0, bet_dollars) / live_price
+                                        ELSE NULL
+                                    END
+                                ) * %s - COALESCE(bet_cents::double precision / 100.0, bet_dollars)
+                            )::numeric * 100)::bigint,
                             market_status = %s,
                             last_checked_at = NOW(),
                             last_check_error = NULL,
@@ -3179,20 +3370,22 @@ def apply_market_snapshot_to_open_orders(
                         WHERE kalshi_ticker = %s
                           AND result IS NULL
                           AND {status_clause}
-                          AND COALESCE(bet_dollars, 0) > 0
+                          AND COALESCE(bet_cents, ROUND(bet_dollars * 100)::bigint, 0) > 0
                         """,
-                        (price, price, price, market_status, ticker),
+                        (price, price, price, price, price, market_status, ticker),
                     )
                     total += cur.rowcount
             cur.execute(
                 """
                 INSERT INTO user_order_snapshots (
                     email, game_pk, kalshi_ticker, current_price,
-                    current_value, unrealized_pnl, position_count,
+                    current_value, current_value_cents,
+                    unrealized_pnl, unrealized_pnl_cents, position_count,
                     market_status, source
                 )
                 SELECT email, game_pk, kalshi_ticker, current_price,
-                       current_value, unrealized_pnl, position_count,
+                       current_value, current_value_cents,
+                       unrealized_pnl, unrealized_pnl_cents, position_count,
                        market_status, 'kalshi_market'
                 FROM user_orders
                 WHERE kalshi_ticker = %s
@@ -3223,6 +3416,8 @@ def update_user_order_live_snapshot(
     source: str = "kalshi",
 ) -> None:
     email = _norm_email(email)
+    current_value_cents = _dollars_to_cents(current_value)
+    unrealized_pnl_cents = _dollars_to_cents(unrealized_pnl)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -3246,7 +3441,9 @@ def update_user_order_live_snapshot(
                     SET kalshi_ticker = COALESCE(%s, kalshi_ticker),
                         current_price = %s,
                         current_value = %s,
+                        current_value_cents = %s,
                         unrealized_pnl = %s,
+                        unrealized_pnl_cents = %s,
                         position_count = %s,
                         market_status = %s,
                         last_checked_at = NOW(),
@@ -3259,7 +3456,9 @@ def update_user_order_live_snapshot(
                         kalshi_ticker,
                         float(current_price) if current_price is not None else None,
                         float(current_value) if current_value is not None else None,
+                        current_value_cents,
                         float(unrealized_pnl) if unrealized_pnl is not None else None,
+                        unrealized_pnl_cents,
                         float(position_count) if position_count is not None else None,
                         market_status,
                         email,
@@ -3271,10 +3470,11 @@ def update_user_order_live_snapshot(
                     """
                     INSERT INTO user_order_snapshots (
                         email, game_pk, kalshi_ticker, current_price,
-                        current_value, unrealized_pnl, position_count,
+                        current_value, current_value_cents,
+                        unrealized_pnl, unrealized_pnl_cents, position_count,
                         market_status, source
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         email,
@@ -3282,7 +3482,9 @@ def update_user_order_live_snapshot(
                         kalshi_ticker,
                         float(current_price) if current_price is not None else None,
                         float(current_value) if current_value is not None else None,
+                        current_value_cents,
                         float(unrealized_pnl) if unrealized_pnl is not None else None,
+                        unrealized_pnl_cents,
                         float(position_count) if position_count is not None else None,
                         market_status,
                         source[:64],
@@ -3315,12 +3517,28 @@ def backfill_user_order_results():
                             )::numeric, 2)
                         ELSE -uo.bet_dollars
                     END,
+                    profit_loss_cents = CASE
+                        WHEN uo.bet_side IS NULL OR uo.bet_side = 'none'
+                             OR COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint) IS NULL THEN NULL
+                        WHEN (g.home_win AND uo.bet_side = 'home') OR (NOT g.home_win AND uo.bet_side = 'away') THEN
+                            CASE
+                                WHEN uo.n_contracts IS NOT NULL THEN uo.n_contracts::bigint * 100 - COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint)
+                                WHEN uo.market_implied_prob IS NOT NULL AND uo.bet_side = 'home' THEN ROUND(COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint) * (1.0 / NULLIF(uo.market_implied_prob, 0) - 1))::bigint
+                                WHEN uo.market_implied_prob IS NOT NULL AND uo.bet_side = 'away' THEN ROUND(COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint) * (1.0 / NULLIF(1.0 - uo.market_implied_prob, 0) - 1))::bigint
+                                ELSE NULL
+                            END
+                        ELSE -COALESCE(uo.bet_cents, ROUND(uo.bet_dollars * 100)::bigint)
+                    END,
                     updated_at = NOW()
                 FROM games g
                 WHERE uo.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
                   AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-                  AND (uo.result IS DISTINCT FROM g.home_win OR uo.profit_loss IS NULL)
+                  AND (
+                      uo.result IS DISTINCT FROM g.home_win
+                      OR uo.profit_loss IS NULL
+                      OR uo.profit_loss_cents IS NULL
+                  )
                 """
             )
             count = cur.rowcount
@@ -3353,6 +3571,19 @@ def backfill_paper_order_results():
                             )::numeric, 2)
                         ELSE -po.bet_dollars
                     END,
+                    profit_loss_cents = CASE
+                        WHEN po.bet_side IS NULL OR po.bet_side = 'none'
+                             OR COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) IS NULL THEN NULL
+                        WHEN (g.home_win AND po.bet_side = 'home') OR (NOT g.home_win AND po.bet_side = 'away') THEN
+                            CASE
+                                WHEN po.n_contracts IS NOT NULL THEN po.n_contracts::bigint * 100 - COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint)
+                                WHEN po.live_price IS NOT NULL AND po.live_price > 0 THEN ROUND(COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) * (1.0 / po.live_price - 1))::bigint
+                                WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'home' THEN ROUND(COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) * (1.0 / NULLIF(po.market_implied_prob, 0) - 1))::bigint
+                                WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'away' THEN ROUND(COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) * (1.0 / NULLIF(1.0 - po.market_implied_prob, 0) - 1))::bigint
+                                ELSE NULL
+                            END
+                        ELSE -COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint)
+                    END,
                     paper_bankroll_after = CASE
                         WHEN po.paper_bankroll_before IS NULL THEN NULL
                         WHEN po.bet_side IS NULL OR po.bet_side = 'none'
@@ -3371,12 +3602,37 @@ def backfill_paper_order_results():
                             )::numeric, 2)
                         ELSE ROUND((po.paper_bankroll_before - po.bet_dollars)::numeric, 2)
                     END,
+                    paper_bankroll_after_cents = CASE
+                        WHEN po.paper_bankroll_before_cents IS NULL
+                             AND po.paper_bankroll_before IS NULL THEN NULL
+                        WHEN po.bet_side IS NULL OR po.bet_side = 'none'
+                             OR COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) IS NULL
+                            THEN COALESCE(po.paper_bankroll_before_cents, ROUND(po.paper_bankroll_before * 100)::bigint)
+                        ELSE
+                            COALESCE(po.paper_bankroll_before_cents, ROUND(po.paper_bankroll_before * 100)::bigint)
+                            + CASE
+                                WHEN (g.home_win AND po.bet_side = 'home') OR (NOT g.home_win AND po.bet_side = 'away') THEN
+                                    CASE
+                                        WHEN po.n_contracts IS NOT NULL THEN po.n_contracts::bigint * 100 - COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint)
+                                        WHEN po.live_price IS NOT NULL AND po.live_price > 0 THEN ROUND(COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) * (1.0 / po.live_price - 1))::bigint
+                                        WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'home' THEN ROUND(COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) * (1.0 / NULLIF(po.market_implied_prob, 0) - 1))::bigint
+                                        WHEN po.market_implied_prob IS NOT NULL AND po.bet_side = 'away' THEN ROUND(COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint) * (1.0 / NULLIF(1.0 - po.market_implied_prob, 0) - 1))::bigint
+                                        ELSE 0
+                                    END
+                                ELSE -COALESCE(po.bet_cents, ROUND(po.bet_dollars * 100)::bigint)
+                              END
+                    END,
                     updated_at = NOW()
                 FROM games g
                 WHERE po.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
                   AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-                  AND (po.result IS DISTINCT FROM g.home_win OR po.profit_loss IS NULL)
+                  AND (
+                      po.result IS DISTINCT FROM g.home_win
+                      OR po.profit_loss IS NULL
+                      OR po.profit_loss_cents IS NULL
+                      OR po.paper_bankroll_after_cents IS NULL
+                  )
                 """
             )
             count = cur.rowcount
@@ -3803,6 +4059,12 @@ def init_model_artifacts_table():
                 # Some production roles can read/write bets but do not own it.
                 # Artifact caching still works; update_bet_prediction falls back
                 # if model_artifact_id is unavailable.
+            try:
+                cur.execute("ALTER TABLE IF EXISTS bets ADD COLUMN IF NOT EXISTS bet_cents BIGINT")
+                cur.execute("ALTER TABLE IF EXISTS bets ADD COLUMN IF NOT EXISTS profit_loss_cents BIGINT")
+                conn.commit()
+            except psycopg2.Error:
+                conn.rollback()
     finally:
         conn.close()
 
