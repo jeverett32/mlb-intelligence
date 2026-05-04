@@ -13,7 +13,7 @@
     document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'auto');
   </script>
   <link rel="canonical" href="https://mlbintelligence.com/research">
-  <link rel="stylesheet" href="/static/css/public-site.css?v=20260429d">
+  <link rel="stylesheet" href="/static/css/public-site.css?v=20260429e">
   <script src="/static/js/public-site.js?v=20260425b" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
@@ -42,15 +42,60 @@
         <span class="eyebrow">Research</span>
         <h1>Model notes, risk work, and betting methodology.</h1>
         <p>
-          This page will collect research behind MLB Intelligence: model design, calibration, bankroll controls,
-          market selection, and post-season reviews.
+          Technical backing for our current model architecture and a roadmap for upcoming implementations.
         </p>
       </section>
 
-      <section class="research-empty" data-reveal>
-        <span class="contact-kicker">Coming Soon</span>
-        <h2>No research posts published yet.</h2>
-        <p>Research notes will appear here once they are ready for public review.</p>
+      <section class="research-content" data-reveal>
+        <div class="research-grid">
+          <div class="research-card">
+            <span class="contact-kicker">Current Pipeline</span>
+            <h2>Model Methodology</h2>
+            <p>Our current model utilizes a Logistic Regression architecture to produce well-calibrated win probabilities across 2,430 games per season.</p>
+            <ul>
+              <li>
+                <strong>FIP vs ERA</strong>
+                Research indicates FIP stabilizes in ~100 innings and is a significantly better predictor of future performance by stripping away defensive variance.
+              </li>
+              <li>
+                <strong>wOBA & wRC+</strong>
+                Our offensive features rely on linear-weighted metrics. Unlike Batting Average, these show a 0.95+ correlation with actual run scoring.
+              </li>
+              <li>
+                <strong>LR Robustness</strong>
+                Logistic Regression provides a robust baseline that avoids over-fitting common in GBDT models while naturally producing calibrated probabilities.
+              </li>
+              <li>
+                <strong>Closing Line Value</strong>
+                We track CLV as our primary KPI. Beating the closing line in efficient markets is the most reliable indicator of a long-term edge.
+              </li>
+            </ul>
+          </div>
+
+          <div class="research-card">
+            <span class="contact-kicker">Future Roadmap</span>
+            <h2>Strategic Roadmap</h2>
+            <p>We are actively developing the next generation of features to capture situational advantages often missed by market averages.</p>
+            <ul>
+              <li>
+                <strong>Catcher Framing</strong>
+                Integrating Framing Runs Above Average to account for a catcher's ability to convert balls to strikes (swinging win prob by 2-5%).
+              </li>
+              <li>
+                <strong>The Bullpen Effect</strong>
+                Tracking high-leverage reliever fatigue (pitches in last 48h) and the "Times Through the Order" penalty to refine late-inning probability.
+              </li>
+              <li>
+                <strong>Environmental Physics</strong>
+                Moving beyond static Park Factors to include coefficients for temperature and air density, affecting ball flight distance.
+              </li>
+              <li>
+                <strong>Statcast Matchups</strong>
+                Utilizing Exit Velocity and Launch Angle to calculate batter-pitcher mismatch scores against specific pitch types.
+              </li>
+            </ul>
+          </div>
+        </div>
       </section>
     </main>
     <footer class="public-footer">
