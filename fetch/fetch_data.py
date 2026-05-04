@@ -1590,7 +1590,7 @@ def main():
     parser.add_argument("--odds-game-pks", default="",
                         help="Comma-separated game_pk list to refresh odds for")
     parser.add_argument("--prefetch-tomorrow-odds", action="store_true",
-                        help="Refresh odds cache for tomorrow's scheduled games, then exit")
+                        help="Refresh odds cache for today's and tomorrow's scheduled games, then exit")
     parser.add_argument("--odds-only", action="store_true",
                         help="Refresh odds for selected games and update odds fields only")
     args = parser.parse_args()
@@ -1617,12 +1617,15 @@ def main():
         print("No games found. Exiting.")
         return
     if args.prefetch_tomorrow_odds:
-        tomorrow_games = full_schedule[full_schedule["game_date"] == tomorrow].copy()
-        print(f"  Tomorrow odds prefetch: {len(tomorrow_games)} game(s).")
-        if tomorrow_games.empty:
-            print("  No tomorrow games found.")
+        upcoming_games = full_schedule[
+            (full_schedule["game_date"] >= today)
+            & (full_schedule["game_date"] <= tomorrow)
+        ].copy()
+        print(f"  Upcoming odds prefetch (today+tomorrow): {len(upcoming_games)} game(s).")
+        if upcoming_games.empty:
+            print("  No upcoming games found.")
             return
-        refresh_odds_only(tomorrow_games, today_only=False)
+        refresh_odds_only(upcoming_games, today_only=False)
         return
     if args.odds_only:
         odds_pks = {
