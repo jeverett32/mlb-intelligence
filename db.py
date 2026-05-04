@@ -212,10 +212,19 @@ def _row_to_db(row: dict) -> dict:
     return direct
 
 
+_API_SOURCE_PREFIX = "odds-api:"
+
+
 def _is_real_line_sql(side: str) -> str:
+    """Replace existing line when EXCLUDED has a real line and the source is at
+    least as authoritative as what's in games (SBR/book-direct beats Odds API)."""
     return (
         f"EXCLUDED.close_{side}_ml IS NOT NULL "
-        f"AND EXCLUDED.odds_source IS NOT NULL"
+        f"AND EXCLUDED.odds_source IS NOT NULL "
+        f"AND (games.close_{side}_ml IS NULL "
+        f"OR games.odds_source IS NULL "
+        f"OR games.odds_source LIKE '{_API_SOURCE_PREFIX}%' "
+        f"OR EXCLUDED.odds_source NOT LIKE '{_API_SOURCE_PREFIX}%')"
     )
 
 
@@ -262,7 +271,14 @@ def _upsert_assignment(col: str, cols: set[str]) -> str:
             f"ELSE COALESCE(games.{col}, EXCLUDED.{col}) END"
         )
     if col == "odds_source":
-        return "odds_source = COALESCE(EXCLUDED.odds_source, games.odds_source)"
+        return (
+            "odds_source = CASE "
+            "WHEN EXCLUDED.odds_source IS NULL THEN games.odds_source "
+            "WHEN games.odds_source IS NULL THEN EXCLUDED.odds_source "
+            f"WHEN games.odds_source NOT LIKE '{_API_SOURCE_PREFIX}%' "
+            f"AND EXCLUDED.odds_source LIKE '{_API_SOURCE_PREFIX}%' THEN games.odds_source "
+            "ELSE EXCLUDED.odds_source END"
+        )
     return col + " = EXCLUDED." + col
 
 
