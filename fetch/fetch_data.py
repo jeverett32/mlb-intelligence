@@ -157,8 +157,8 @@ ALL_OUTPUT_COLS = (
      "home_score", "away_score", "home_win",
      "home_starter_id", "away_starter_id",
      "home_pitcher_is_lefty", "away_pitcher_is_lefty", "pitcher_handedness_diff",
-     "home_sp_era", "home_sp_whip", "home_sp_k9", "home_sp_bb9",
-     "away_sp_era", "away_sp_whip", "away_sp_k9", "away_sp_bb9",
+     "home_sp_era", "home_sp_whip", "home_sp_k9", "home_sp_bb9", "home_sp_fip",
+     "away_sp_era", "away_sp_whip", "away_sp_k9", "away_sp_bb9", "away_sp_fip",
      "home_rolling_era", "home_rolling_whip", "home_rolling_k9",
      "away_rolling_era", "away_rolling_whip", "away_rolling_k9",
      "temp_c", "wind_speed_kmh", "wind_dir_deg"]
@@ -796,7 +796,63 @@ def _fetch_pitcher_handedness(pid):
         return None
 
 
-def _fetch_pitcher_season_stats(pid, season):
+def _parse_ip(value):
+    if value in (None, ""):
+        return np.nan
+    text = str(value)
+    try:
+        whole, frac = text.split(".", 1)
+        outs = int(frac[:1] or 0)
+        if outs in (0, 1, 2):
+            return int(whole) + outs / 3.0
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def _fip_from_components(ip, hr, bb, hbp, so, constant):
+    try:
+        ip = float(ip)
+        if ip <= 0 or pd.isna(ip):
+            return np.nan
+        return ((13.0 * float(hr or 0)) + (3.0 * (float(bb or 0) + float(hbp or 0))) -
+                (2.0 * float(so or 0))) / ip + float(constant)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+@functools.lru_cache(maxsize=64)
+def _fetch_league_fip_constant(season):
+    r = requests.get(
+        f"{MLB_API}/teams/stats",
+        params={"season": season, "group": "pitching", "stats": "season", "sportIds": 1},
+        timeout=20,
+    )
+    r.raise_for_status()
+    splits = r.json().get("stats", [{}])[0].get("splits", [])
+    ip = er = hr = bb = hbp = so = 0.0
+    for split in splits:
+        stat = split.get("stat", {})
+        team_ip = _parse_ip(stat.get("inningsPitched"))
+        if pd.isna(team_ip):
+            continue
+        ip += team_ip
+        er += float(stat.get("earnedRuns", 0) or 0)
+        hr += float(stat.get("homeRuns", 0) or 0)
+        bb += float(stat.get("baseOnBalls", 0) or 0)
+        hbp += float(stat.get("hitBatsmen", stat.get("hitByPitch", 0)) or 0)
+        so += float(stat.get("strikeOuts", 0) or 0)
+    if ip <= 0:
+        return np.nan
+    league_era = er * 9.0 / ip
+    raw_fip = ((13.0 * hr) + (3.0 * (bb + hbp)) - (2.0 * so)) / ip
+    return league_era - raw_fip
+
+
+def _fetch_pitcher_season_stats(pid, season, fip_constant=None):
     try:
         r = requests.get(
             f"{MLB_API}/people/{pid}/stats",
@@ -809,18 +865,22 @@ def _fetch_pitcher_season_stats(pid, season):
         if not splits:
             return {}
         s = splits[0]["stat"]
-        ip_raw = float(s.get("inningsPitched", 0) or 0)
-        ip = int(ip_raw) + (ip_raw % 1) / 0.3 * 0.333
-        if ip == 0:
+        ip = _parse_ip(s.get("inningsPitched"))
+        if pd.isna(ip) or ip == 0:
             return {}
         so = int(s.get("strikeOuts", 0) or 0)
         bb = int(s.get("baseOnBalls", 0) or 0)
         h = int(s.get("hits", 0) or 0)
+        hr = int(s.get("homeRuns", 0) or 0)
+        hbp = int(s.get("hitBatsmen", s.get("hitByPitch", 0)) or 0)
+        if fip_constant is None:
+            fip_constant = _fetch_league_fip_constant(season)
         return {
             "sp_era":  float(s.get("era", np.nan) or np.nan),
             "sp_whip": (h + bb) / ip,
             "sp_k9":   so / ip * 9,
             "sp_bb9":  bb / ip * 9,
+            "sp_fip":  _fip_from_components(ip, hr, bb, hbp, so, fip_constant),
         }
     except Exception:
         return {}
@@ -846,8 +906,10 @@ def _fetch_pitcher_game_log(pid, season):
                 "game_date": pd.to_datetime(split.get("date", "")),
                 "ip": float(s.get("inningsPitched", 0) or 0),
                 "er": int(s.get("earnedRuns", 0) or 0),
+                "hr": int(s.get("homeRuns", 0) or 0),
                 "h":  int(s.get("hits", 0) or 0),
                 "bb": int(s.get("baseOnBalls", 0) or 0),
+                "hbp": int(s.get("hitBatsmen", s.get("hitByPitch", 0)) or 0),
                 "so": int(s.get("strikeOuts", 0) or 0),
             })
         return rows
@@ -902,9 +964,13 @@ def fetch_pitcher_features(starters_df, schedule_df):
 
     if todo_sp:
         print(f"  Fetching season stats for {len(todo_sp)} pitchers...")
+        try:
+            fip_constant = _fetch_league_fip_constant(SEASON)
+        except Exception:
+            fip_constant = np.nan
         new_sp = []
         with ThreadPoolExecutor(max_workers=20) as ex:
-            futs = {ex.submit(_fetch_pitcher_season_stats, pid, s): (pid, s)
+            futs = {ex.submit(_fetch_pitcher_season_stats, pid, s, fip_constant): (pid, s)
                     for pid, s in todo_sp}
             for i, fut in enumerate(as_completed(futs)):
                 pid, s = futs[fut]
@@ -977,10 +1043,11 @@ def fetch_pitcher_features(starters_df, schedule_df):
             "pitcher_id": id_col,
             "sp_era":  f"{side}_sp_era",  "sp_whip": f"{side}_sp_whip",
             "sp_k9":   f"{side}_sp_k9",   "sp_bb9":  f"{side}_sp_bb9",
+            "sp_fip":  f"{side}_sp_fip",
         })
         result = result.merge(
             ss[["season", id_col, f"{side}_sp_era", f"{side}_sp_whip",
-                f"{side}_sp_k9", f"{side}_sp_bb9"]].drop_duplicates(),
+                f"{side}_sp_k9", f"{side}_sp_bb9", f"{side}_sp_fip"]].drop_duplicates(),
             on=["season", id_col], how="left")
 
         if not rolling_df.empty:

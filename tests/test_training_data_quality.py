@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "model"))
 
 import model.train as T
-from fetch.fetch_data import _parse_fg_wrc_plus
+from fetch.fetch_data import _fip_from_components, _parse_fg_wrc_plus, _parse_ip
 
 
 def test_rookie_diff_is_engineered_from_starter_history():
@@ -29,9 +29,9 @@ def test_rookie_diff_is_engineered_from_starter_history():
     assert features.loc[6, "rookie_DIFF"] == 1
 
 
-def test_training_feature_columns_do_not_enable_missing_starter_fip_features():
-    assert "sp_fip_DIFF" not in T.FEATURE_COLUMNS
-    assert "sharp_x_fip" not in T.FEATURE_COLUMNS
+def test_training_feature_columns_enable_backfilled_starter_fip_features():
+    assert "sp_fip_DIFF" in T.FEATURE_COLUMNS
+    assert "sharp_x_fip" in T.FEATURE_COLUMNS
 
 
 def test_war_diff_uses_lagged_fangraphs_war(monkeypatch):
@@ -87,3 +87,16 @@ def test_fangraphs_wrc_plus_parser_rejects_rate_scale_values():
     assert _parse_fg_wrc_plus(112) == 112
     assert pd.isna(_parse_fg_wrc_plus(0.392))
     assert pd.isna(_parse_fg_wrc_plus(400))
+
+
+def test_fip_helpers_parse_baseball_innings_and_compute_fip():
+    assert _parse_ip("10.2") == pytest.approx(10 + 2 / 3)
+    assert _parse_ip("10.1") == pytest.approx(10 + 1 / 3)
+    assert _fip_from_components(
+        ip=10,
+        hr=1,
+        bb=2,
+        hbp=1,
+        so=8,
+        constant=3.1,
+    ) == pytest.approx(3.7)

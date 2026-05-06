@@ -104,6 +104,7 @@ FEATURE_COLUMNS = [
     "total_move_delta",         # o/u line movement
 
     # --- Pitcher quality ---
+    "sp_fip_DIFF",              # away FIP - home FIP (+ = home SP better)
     "sp_era_DIFF",              # away ERA - home ERA
     "sp_k9_DIFF",               # home K/9 - away K/9
     "sp_bb9_DIFF",              # away BB/9 - home BB/9
@@ -173,6 +174,7 @@ FEATURE_COLUMNS = [
     "covid_era",                # 1 if season == 2020 (60-game season, no fans, unusual stats)
 
     # --- Interactions ---
+    "sharp_x_fip",              # sharp_move_flag * sp_fip_DIFF
     "momentum_DIFF",            # (home 5g win% - home 15g win%) - same for away
 
     # --- Pythagorean / luck ---
