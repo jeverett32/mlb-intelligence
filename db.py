@@ -644,8 +644,8 @@ def init_bet(game_pk, game_date, home_team, away_team):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO bets (game_pk, game_date, home_team, away_team)
-                   VALUES (%s, %s, %s, %s)
+                """INSERT INTO bets (game_pk, game_date, home_team, away_team, bet_side)
+                   VALUES (%s, %s, %s, %s, 'none')
                    ON CONFLICT (game_pk) DO NOTHING""",
                 (int(game_pk), str(game_date)[:10], home_team, away_team),
             )
