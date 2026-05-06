@@ -1332,13 +1332,25 @@ def _empty_team_row(abbr: str) -> dict:
     }
 
 
+_INACTIVE_GAME_STATUSES = {"postponed", "cancelled", "canceled", "suspended"}
+
+
 def _is_known_game(row: pd.Series) -> bool:
+    # `home_win` is the canonical "final result recorded" signal (matches
+    # `db.get_games_df(upcoming_only=True)`). Scheduled / in-progress rows can
+    # carry placeholder 0/0 scores, so we cannot use score presence alone.
     return (
-        pd.notna(row.get("home_score"))
-        and pd.notna(row.get("away_score"))
-        and pd.notna(row.get("home_team"))
+        pd.notna(row.get("home_team"))
         and pd.notna(row.get("away_team"))
+        and pd.notna(row.get("home_win"))
+        and pd.notna(row.get("home_score"))
+        and pd.notna(row.get("away_score"))
     )
+
+
+def _is_inactive_game(row: pd.Series) -> bool:
+    status = str(row.get("game_status") or "").strip().lower()
+    return status in _INACTIVE_GAME_STATUSES
 
 
 def _team_game_summary(row: pd.Series, team: str, completed: bool) -> dict:
@@ -1433,6 +1445,8 @@ def _build_team_overview(games_df: pd.DataFrame, season: int = ACTIVE_SEASON) ->
                 home_row["last_game"] = _team_game_summary(row, home, completed=True)
                 away_row["last_game"] = _team_game_summary(row, away, completed=True)
             else:
+                if _is_inactive_game(row):
+                    continue
                 if teams[home]["next_game"] is None:
                     teams[home]["next_game"] = _team_game_summary(row, home, completed=False)
                 if teams[away]["next_game"] is None:
