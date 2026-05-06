@@ -104,7 +104,6 @@ FEATURE_COLUMNS = [
     "total_move_delta",         # o/u line movement
 
     # --- Pitcher quality ---
-    "sp_fip_DIFF",              # away FIP - home FIP (+ = home SP better)
     "sp_era_DIFF",              # away ERA - home ERA
     "sp_k9_DIFF",               # home K/9 - away K/9
     "sp_bb9_DIFF",              # away BB/9 - home BB/9
@@ -174,7 +173,6 @@ FEATURE_COLUMNS = [
     "covid_era",                # 1 if season == 2020 (60-game season, no fans, unusual stats)
 
     # --- Interactions ---
-    "sharp_x_fip",              # sharp_move_flag * sp_fip_DIFF
     "momentum_DIFF",            # (home 5g win% - home 15g win%) - same for away
 
     # --- Pythagorean / luck ---
@@ -544,21 +542,33 @@ def build_pitcher_features(df):
     if "home_starter_rest" in out2.columns and "away_starter_rest" in out2.columns:
         out["sp_rest_DIFF"] = (out2["home_starter_rest"] - out2["away_starter_rest"]).fillna(0)
 
-    # Rookie flag: pitcher with ≤ 5 career starts
-    all_starts = pd.concat([
-        df[["game_date", "home_starter_id"]].rename(columns={"home_starter_id": "p_id"}),
-        df[["game_date", "away_starter_id"]].rename(columns={"away_starter_id": "p_id"}),
-    ]).dropna().drop_duplicates().sort_values("game_date")
-    all_starts["career_starts"] = all_starts.groupby("p_id").cumcount()
-    for side in ["home", "away"]:
-        id_col = f"{side}_starter_id"
-        if id_col in df.columns:
-            ms = all_starts.rename(columns={
-                "p_id": id_col, "career_starts": f"{side}_career_starts"
-            }).drop_duplicates(subset=["game_date", id_col])
-            out = out.merge(ms, on=["game_date", id_col], how="left") if id_col in out.columns else out
-            if f"{side}_career_starts" in out.columns:
-                out[f"{side}_is_rookie"] = (out[f"{side}_career_starts"] <= 5).astype(int)
+    # Rookie flag: pitcher with <= 5 prior career starts in this dataset.
+    if {"home_starter_id", "away_starter_id"} <= set(df.columns):
+        row_id = pd.Series(np.arange(len(df)), index=df.index)
+        starts = []
+        for side in ["home", "away"]:
+            id_col = f"{side}_starter_id"
+            side_starts = df[["game_date", id_col]].copy()
+            side_starts["_row_id"] = row_id.loc[side_starts.index].values
+            side_starts["side"] = side
+            side_starts = side_starts.rename(columns={id_col: "p_id"})
+            starts.append(side_starts)
+
+        all_starts = (
+            pd.concat(starts, ignore_index=True)
+            .dropna(subset=["p_id"])
+            .sort_values(["p_id", "game_date", "_row_id"])
+        )
+        all_starts["career_starts"] = all_starts.groupby("p_id").cumcount()
+
+        for side in ["home", "away"]:
+            side_starts = all_starts[all_starts["side"] == side].set_index("_row_id")
+            out[f"{side}_career_starts"] = row_id.map(side_starts["career_starts"])
+            out[f"{side}_is_rookie"] = np.where(
+                out[f"{side}_career_starts"].notna(),
+                (out[f"{side}_career_starts"] <= 5).astype(float),
+                np.nan,
+            )
     if "home_is_rookie" in out.columns and "away_is_rookie" in out.columns:
         out["rookie_DIFF"] = out["away_is_rookie"] - out["home_is_rookie"]
 
@@ -695,7 +705,7 @@ def load_and_engineer_features():
     df_feat["era_DIFF"]                = _gcol(df_feat, "away_era")                    - _gcol(df_feat, "home_era")
     df_feat["fip_DIFF"]                = _gcol(df_feat, "away_fip")                    - _gcol(df_feat, "home_fip")
     df_feat["owar_DIFF"]               = _gcol(df_feat, "home_owar")                   - _gcol(df_feat, "away_owar")
-    df_feat["war_DIFF"]                = _gcol(df_feat, "h_war_lag1")                  - _gcol(df_feat, "a_war_lag1")
+    df_feat["war_DIFF"]                = _gcol(df_feat, "home_war")                    - _gcol(df_feat, "away_war")
 
     # Handedness
     df_feat["pitcher_handedness_diff"] = _gcol(df_feat, "home_pitcher_is_lefty")       - _gcol(df_feat, "away_pitcher_is_lefty")

@@ -541,7 +541,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df_feat["era_DIFF"]                = T._gcol(df_feat, "away_era")               - T._gcol(df_feat, "home_era")
     df_feat["fip_DIFF"]                = T._gcol(df_feat, "away_fip")               - T._gcol(df_feat, "home_fip")
     df_feat["owar_DIFF"]               = T._gcol(df_feat, "home_owar")              - T._gcol(df_feat, "away_owar")
-    df_feat["war_DIFF"]                = T._gcol(df_feat, "h_war_lag1")             - T._gcol(df_feat, "a_war_lag1")
+    df_feat["war_DIFF"]                = T._gcol(df_feat, "home_war")               - T._gcol(df_feat, "away_war")
     df_feat["pitcher_handedness_diff"] = T._gcol(df_feat, "home_pitcher_is_lefty")  - T._gcol(df_feat, "away_pitcher_is_lefty")
     df_feat["sharp_x_fip"]             = df_feat["sharp_move_flag"] * df_feat["sp_fip_DIFF"]
 

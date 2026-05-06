@@ -1209,6 +1209,26 @@ def _parse_fg_pct(val):
         return np.nan
 
 
+def _parse_fg_float(val):
+    if val is None:
+        return np.nan
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def _parse_fg_wrc_plus(val):
+    value = _parse_fg_float(val)
+    if pd.isna(value):
+        return np.nan
+    # wRC+ is indexed to 100. Values below 10 indicate FanGraphs schema/key drift,
+    # often another rate stat accidentally landing in this field.
+    if value < 10 or value > 300:
+        return np.nan
+    return value
+
+
 def fetch_fangraphs_stats():
     """
     Fetch current season-to-date team batting + pitching stats.
@@ -1304,11 +1324,10 @@ def _fg_dict_to_df(team_stats, snapshot_date):
         for k, v in stats.items():
             if k in ("k_pct", "bb_pct"):
                 row[k] = _parse_fg_pct(v)
+            elif k == "wrc_plus":
+                row[k] = _parse_fg_wrc_plus(v)
             else:
-                try:
-                    row[k] = float(v) if v is not None else np.nan
-                except (TypeError, ValueError):
-                    row[k] = np.nan
+                row[k] = _parse_fg_float(v)
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1410,11 +1429,10 @@ def assemble(games_to_process, odds_df, pitcher_df, weather_df, fg_df):
                     vals.append(np.nan)
                 elif stat in ("k_pct", "bb_pct"):
                     vals.append(_parse_fg_pct(raw))
+                elif stat == "wrc_plus":
+                    vals.append(_parse_fg_wrc_plus(raw))
                 else:
-                    try:
-                        vals.append(float(raw))
-                    except (TypeError, ValueError):
-                        vals.append(np.nan)
+                    vals.append(_parse_fg_float(raw))
             master[col_name] = vals
 
     # --- Implied probabilities ---
