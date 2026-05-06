@@ -1859,7 +1859,26 @@ const TEAM_FULL = {
   TEX:'Texas Rangers',TOR:'Toronto Blue Jays',
   WSH:'Washington Nationals',WSN:'Washington Nationals',WAS:'Washington Nationals',
 };
+const TEAM_SLUG = {
+  ARI:'diamondbacks',AZ:'diamondbacks',
+  ATL:'braves',BAL:'orioles',BOS:'red-sox',
+  CHC:'cubs',CWS:'white-sox',CHW:'white-sox',
+  CIN:'reds',CLE:'guardians',
+  COL:'rockies',DET:'tigers',HOU:'astros',
+  KC:'royals',KCR:'royals',
+  LAA:'angels',LAD:'dodgers',
+  MIA:'marlins',MIL:'brewers',
+  MIN:'twins',NYM:'mets',NYY:'yankees',
+  OAK:'athletics',ATH:'athletics',PHI:'phillies',PIT:'pirates',
+  SD:'padres',SDP:'padres',
+  SF:'giants',SFG:'giants',
+  SEA:'mariners',STL:'cardinals',
+  TB:'rays',TBR:'rays',
+  TEX:'rangers',TOR:'blue-jays',
+  WSH:'nationals',WSN:'nationals',WAS:'nationals',
+};
 function teamName(abbr) { return TEAM_FULL[abbr] || abbr; }
+function teamSlugFromAbbr(abbr) { return TEAM_SLUG[abbr] || ''; }
 function teamSlug(name) {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -1868,8 +1887,8 @@ function buildMlbGamedayUrl(g) {
   const dateStr = String(g.game_date || '').slice(0, 10);
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!m) return '';
-  const away = teamSlug(teamName(g.away_team)) || 'away';
-  const home = teamSlug(teamName(g.home_team)) || 'home';
+  const away = teamSlugFromAbbr(g.away_team) || teamSlug(teamName(g.away_team)) || 'away';
+  const home = teamSlugFromAbbr(g.home_team) || teamSlug(teamName(g.home_team)) || 'home';
   return `https://www.mlb.com/gameday/${away}-vs-${home}/${m[1]}/${m[2]}/${m[3]}/${g.game_pk}/live`;
 }
 function openGameExternal(pk) {
