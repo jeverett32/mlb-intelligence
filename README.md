@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="dashboard/static/favicon.svg" width="72" height="72" alt="MLB Pipeline logo">
+  <img src="dashboard/static/favicon.svg" width="72" height="72" alt="MLB Intelligence logo">
 </p>
 
-<h1 align="center">MLB Pipeline</h1>
+<h1 align="center">MLB Intelligence</h1>
 
 <p align="center">MLB betting intelligence system with ML-driven predictions, live execution on Kalshi, and transparent performance analytics.</p>
 
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/dashboard-overview.png" alt="MLB Pipeline dashboard" width="100%">
+  <img src="docs/images/dashboard-overview.png" alt="MLB Intelligence dashboard" width="100%">
 </p>
 
 ## Problem
@@ -32,7 +32,7 @@ Sports betting (especially MLB) has a few persistent problems:
 
 ## Action
 
-MLB Pipeline turns the day-to-day work into a repeatable system:
+MLB Intelligence turns the day-to-day work into a repeatable system:
 
 1. **Ingest** schedules, odds, weather, pitcher stats, and team stats
 2. **Engineer features** (80+ game-level features)
@@ -43,7 +43,7 @@ MLB Pipeline turns the day-to-day work into a repeatable system:
 
 ## Solution
 
-MLB Pipeline is an end-to-end stack for MLB trading:
+MLB Intelligence is an end-to-end stack for MLB trading:
 
 - **One orchestrator** that runs the full workflow (`run_pipeline.py`)
 - **A dashboard** (FastAPI) for transparent performance analytics + operator controls
