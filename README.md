@@ -79,7 +79,7 @@ homelab.py            # SSH helper for app/db LXCs
 ## Docs
 
 - [Pipeline (end-to-end)](./docs/pipeline.md)
-- [Homelab SSH helper](./docs/homelab_access.md)
+- [LXC SSH helper](./docs/homelab_access.md)
 
 ## Contributing / local development
 
@@ -87,9 +87,9 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, testing, and dev comma
 
 ## Deployment
 
-Push to GitHub → GitHub Actions runner auto-deploys to homelab LXC.
+Push to GitHub → GitHub Actions runner auto-deploys to the app LXC.
 
-SSH debugging via [`homelab.py`](./homelab.py):
+Direct LXC SSH debugging via [`homelab.py`](./homelab.py):
 
 ```bash
 python3 homelab.py app "systemctl status mlb-dashboard --no-pager -l | tail -40"

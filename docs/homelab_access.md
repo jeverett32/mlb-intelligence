@@ -1,6 +1,6 @@
-# Homelab Access Helper (SSH)
+# LXC SSH Helper
 
-This repo includes a one-shot SSH helper script for running commands on the homelab **app** and **db** targets.
+This repo includes a one-shot SSH helper script for running commands on the **MLB app LXC** and **MLB db LXC** over SSH.
 
 - Script: `homelab.py`
 - Transport: Paramiko SSH
@@ -10,6 +10,8 @@ This repo includes a one-shot SSH helper script for running commands on the home
 > Note
 >
 > `homelab.py` connects **directly** to each target over SSH. It does **not** use Proxmox, `pct exec`, CTIDs, or `lxc-attach`.
+>
+> There is currently **no** SSH entry point for the Proxmox host node in this repo.
 
 ## Install dependencies
 
@@ -26,14 +28,14 @@ Create `.env` from `.env.example` if needed.
 `homelab.py app ...` uses:
 
 ```env
-HOMELAB_HOST=<app-ssh-host>
-HOMELAB_PORT=<ssh_port>
-HOMELAB_USER=<ssh_user>
-HOMELAB_PASSWORD=<optional-if-not-using-keys>
+APP_SSH_HOST=<mlb-app-lxc-ssh-host>
+APP_SSH_PORT=<ssh_port>
+APP_SSH_USER=<ssh_user>
+APP_SSH_PASSWORD=<optional-if-not-using-keys>
 
 # Optional key auth:
-HOMELAB_SSH_KEY_PATH=~/.ssh/id_ed25519
-HOMELAB_SSH_KEY_PASSPHRASE=<optional>
+APP_SSH_KEY_PATH=~/.ssh/id_ed25519
+APP_SSH_KEY_PASSPHRASE=<optional>
 ```
 
 ### DB target
@@ -41,17 +43,14 @@ HOMELAB_SSH_KEY_PASSPHRASE=<optional>
 `homelab.py db ...` uses:
 
 ```env
-# Falls back to DB_HOST if not set.
-HOMELAB_DB_SSH_HOST=<db-ssh-host>
+DB_SSH_HOST=<mlb-db-lxc-ssh-host>
+DB_SSH_PORT=<ssh_port>
+DB_SSH_USER=<ssh_user>
+DB_SSH_PASSWORD=<optional-if-not-using-keys>
 
-# DB SSH creds can be distinct; fall back to HOMELAB_USER/HOMELAB_PASSWORD.
-HOMELAB_DB_SSH_PORT=<ssh_port>
-HOMELAB_DB_SSH_USER=<ssh_user>
-HOMELAB_DB_SSH_PASSWORD=<optional-if-not-using-keys>
-
-# Optional key auth (falls back to HOMELAB_SSH_KEY_PATH/PASSPHRASE):
-HOMELAB_DB_SSH_KEY_PATH=~/.ssh/id_ed25519
-HOMELAB_DB_SSH_KEY_PASSPHRASE=<optional>
+# Optional key auth:
+DB_SSH_KEY_PATH=~/.ssh/id_ed25519
+DB_SSH_KEY_PASSPHRASE=<optional>
 ```
 
 ## Usage

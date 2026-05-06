@@ -103,13 +103,12 @@ Push to GitHub → runner deploys automatically. No manual SSH needed for deploy
 `homelab.py` connects **directly to each LXC** via SSH — no Proxmox/pct involved.
 
 ```bash
-# App LXC — reads HOMELAB_HOST / HOMELAB_USER / HOMELAB_PASSWORD from .env
+# App LXC — reads APP_SSH_HOST / APP_SSH_USER / APP_SSH_PASSWORD from .env
 python3 homelab.py app "systemctl status mlb-dashboard --no-pager -l | tail -40"
 python3 homelab.py app "journalctl -u mlb-dashboard -n 100 --no-pager"
 python3 homelab.py app "curl -s http://localhost:<port>/health"
 
-# DB LXC — reads HOMELAB_DB_SSH_HOST (or DB_HOST) + HOMELAB_DB_SSH_USER/PASSWORD
-# Falls back to HOMELAB_USER / HOMELAB_PASSWORD if no DB-specific SSH creds set
+# DB LXC — reads DB_SSH_HOST + DB_SSH_USER/PASSWORD
 python3 homelab.py db "pg_lsclusters"
 
 # For psql: DB creds live in .env (DB_USER, DB_PASSWORD, DB_NAME).
@@ -119,9 +118,9 @@ python3 homelab.py db "pg_lsclusters"
 #   run: python3 homelab.py db f"PGPASSWORD={pw} psql -U {user} -d {db} -h localhost -c '\\dt'"
 ```
 
-Set these in `.env` for DB SSH if credentials differ from app:
-- `HOMELAB_DB_SSH_HOST` (falls back to `DB_HOST`)
-- `HOMELAB_DB_SSH_USER`, `HOMELAB_DB_SSH_PASSWORD`, `HOMELAB_DB_SSH_PORT`
+Set these in `.env` for DB SSH:
+- `DB_SSH_HOST`
+- `DB_SSH_USER`, `DB_SSH_PASSWORD`, `DB_SSH_PORT`
 
 ## Repo hygiene
 

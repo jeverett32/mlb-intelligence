@@ -160,7 +160,7 @@ Operational notes:
 
 (See `.github/workflows/deploy.yml` for the exact runner expectations and steps.)
 
-## Homelab SSH helper
+## LXC SSH helper
 
 For live debugging via SSH:
 

@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 import db as DB  # noqa: E402
 from scripts.backfill_sbr_odds import (  # noqa: E402
-    _homelab_db_client,
+    _db_ssh_client,
     _implied_probs,
     _remote_psql,
     _sql_literal,
@@ -71,7 +71,7 @@ def _fetch_rows() -> list[dict[str, Any]]:
         conn.close()
 
 
-def _fetch_rows_via_homelab() -> list[dict[str, Any]]:
+def _fetch_rows_via_db_ssh() -> list[dict[str, Any]]:
     game_pks = ", ".join(str(game_pk) for game_pk in AFFECTED_GAME_PKS)
     sql = f"""
         COPY (
@@ -82,7 +82,7 @@ def _fetch_rows_via_homelab() -> list[dict[str, Any]]:
             ORDER BY game_date, game_pk
         ) TO STDOUT WITH CSV HEADER;
     """
-    with _homelab_db_client() as client:
+    with _db_ssh_client() as client:
         output = _remote_psql(client, sql)
 
     rows = []
@@ -146,7 +146,7 @@ def _apply_updates(updates: list[dict[str, Any]]) -> int:
         conn.close()
 
 
-def _apply_updates_via_homelab(updates: list[dict[str, Any]]) -> int:
+def _apply_updates_via_db_ssh(updates: list[dict[str, Any]]) -> int:
     if not updates:
         return 0
     values = []
@@ -169,7 +169,7 @@ def _apply_updates_via_homelab(updates: list[dict[str, Any]]) -> int:
         FROM updates
         WHERE games.game_pk = updates.game_pk::bigint;
     """
-    with _homelab_db_client() as client:
+    with _db_ssh_client() as client:
         _remote_psql(client, sql)
     return len(updates)
 
@@ -180,14 +180,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Repair known 2025 live-line contamination.")
     parser.add_argument("--apply", action="store_true", help="Write updates to the DB")
     parser.add_argument(
-        "--via-homelab-db",
+        "--via-db-ssh",
+        dest="via_db_ssh",
         action="store_true",
         help="Query/apply through the DB LXC using sudo postgres psql",
     )
     args = parser.parse_args()
 
     try:
-        rows = _fetch_rows_via_homelab() if args.via_homelab_db else _fetch_rows()
+        rows = _fetch_rows_via_db_ssh() if args.via_db_ssh else _fetch_rows()
     except psycopg2.OperationalError as exc:
         print(f"DB connection failed: {exc}")
         print("Run this from a host allowed by Postgres pg_hba, or via the DB/app LXC.")
@@ -209,7 +210,7 @@ def main() -> int:
         print("Dry run only. Re-run with --apply to update the DB.")
         return 0
 
-    updated = _apply_updates_via_homelab(updates) if args.via_homelab_db else _apply_updates(updates)
+    updated = _apply_updates_via_db_ssh(updates) if args.via_db_ssh else _apply_updates(updates)
     print(f"Updated {updated} game row(s).")
     return 0
 

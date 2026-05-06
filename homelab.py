@@ -18,7 +18,7 @@ class CommandResult:
     stderr: str
 
 
-class HomelabClient:
+class LxcSshClient:
     def __init__(
         self,
         host: str,
@@ -36,7 +36,7 @@ class HomelabClient:
         self.key_passphrase = key_passphrase
         self.client: paramiko.SSHClient | None = None
 
-    def __enter__(self) -> "HomelabClient":
+    def __enter__(self) -> "LxcSshClient":
         self.connect()
         return self
 
@@ -107,41 +107,37 @@ def _print_result(result: CommandResult) -> int:
     return result.exit_code
 
 
-def _build_client_from_args(args: argparse.Namespace, target: str) -> HomelabClient:
+def _build_client_from_args(args: argparse.Namespace, target: str) -> LxcSshClient:
     """
     Resolve SSH connection params for a target ('app' or 'db').
 
-    App target reads: HOMELAB_HOST, HOMELAB_USER, HOMELAB_PASSWORD, HOMELAB_PORT
-    DB target reads:  HOMELAB_DB_SSH_HOST (falls back to DB_HOST),
-                      HOMELAB_DB_SSH_USER / HOMELAB_DB_SSH_PASSWORD (fall back to HOMELAB_USER / HOMELAB_PASSWORD),
-                      HOMELAB_DB_SSH_PORT (falls back to HOMELAB_PORT, then 22)
+    App target reads: APP_SSH_HOST, APP_SSH_USER, APP_SSH_PASSWORD, APP_SSH_PORT
+    (these are SSH creds for MLB app LXC entry point, not Proxmox host node)
+
+    DB target reads: DB_SSH_HOST, DB_SSH_USER, DB_SSH_PASSWORD, DB_SSH_PORT
     """
     if target == "app":
-        host = args.host or _first_env("HOMELAB_HOST")
-        user = args.user or _first_env("HOMELAB_USER", default="root")
-        password = args.password or _first_env("HOMELAB_PASSWORD")
-        port = args.port or int(_first_env("HOMELAB_PORT", default="22") or "22")
-        key_path = args.ssh_key or _first_env("HOMELAB_SSH_KEY_PATH")
-        key_passphrase = args.ssh_key_passphrase or _first_env("HOMELAB_SSH_KEY_PASSPHRASE")
+        host = args.host or _first_env("APP_SSH_HOST")
+        user = args.user or _first_env("APP_SSH_USER", default="root")
+        password = args.password or _first_env("APP_SSH_PASSWORD")
+        port = args.port or int(_first_env("APP_SSH_PORT", default="22") or "22")
+        key_path = args.ssh_key or _first_env("APP_SSH_KEY_PATH")
+        key_passphrase = args.ssh_key_passphrase or _first_env("APP_SSH_KEY_PASSPHRASE")
     else:  # db
-        host = args.host or _first_env("HOMELAB_DB_SSH_HOST", "DB_HOST")
-        user = args.user or _first_env("HOMELAB_DB_SSH_USER", "HOMELAB_USER", default="root")
-        password = args.password or _first_env("HOMELAB_DB_SSH_PASSWORD", "HOMELAB_PASSWORD")
-        port = args.port or int(
-            _first_env("HOMELAB_DB_SSH_PORT", "HOMELAB_PORT", default="22") or "22"
-        )
-        key_path = args.ssh_key or _first_env("HOMELAB_DB_SSH_KEY_PATH", "HOMELAB_SSH_KEY_PATH")
-        key_passphrase = args.ssh_key_passphrase or _first_env(
-            "HOMELAB_DB_SSH_KEY_PASSPHRASE", "HOMELAB_SSH_KEY_PASSPHRASE"
-        )
+        host = args.host or _first_env("DB_SSH_HOST")
+        user = args.user or _first_env("DB_SSH_USER", default="root")
+        password = args.password or _first_env("DB_SSH_PASSWORD")
+        port = args.port or int(_first_env("DB_SSH_PORT", default="22") or "22")
+        key_path = args.ssh_key or _first_env("DB_SSH_KEY_PATH")
+        key_passphrase = args.ssh_key_passphrase or _first_env("DB_SSH_KEY_PASSPHRASE")
 
     if not host:
         raise ValueError(
             f"No SSH host for target '{target}'. "
-            "Set HOMELAB_HOST (app) or HOMELAB_DB_SSH_HOST / DB_HOST (db)."
+            "Set APP_SSH_HOST (app) or DB_SSH_HOST (db)."
         )
 
-    return HomelabClient(
+    return LxcSshClient(
         host=host,
         username=user or "root",
         port=port,
@@ -164,13 +160,12 @@ def _add_ssh_override_args(parser: argparse.ArgumentParser) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "SSH helper for MLB homelab LXC containers.\n\n"
+            "SSH helper for MLB app/db LXC containers.\n\n"
             "Connects directly to each LXC via SSH — no Proxmox/pct needed.\n\n"
+            "Note: APP_SSH_* creds are for MLB app LXC SSH entry point (not Proxmox host node).\n\n"
             "Env vars (set in .env):\n"
-            "  App:  HOMELAB_HOST, HOMELAB_USER, HOMELAB_PASSWORD, HOMELAB_PORT\n"
-            "  DB:   HOMELAB_DB_SSH_HOST (or DB_HOST), HOMELAB_DB_SSH_USER,\n"
-            "        HOMELAB_DB_SSH_PASSWORD, HOMELAB_DB_SSH_PORT\n"
-            "        (DB SSH creds fall back to HOMELAB_USER / HOMELAB_PASSWORD)"
+            "  App:  APP_SSH_HOST, APP_SSH_USER, APP_SSH_PASSWORD, APP_SSH_PORT\n"
+            "  DB:   DB_SSH_HOST, DB_SSH_USER, DB_SSH_PASSWORD, DB_SSH_PORT"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -179,14 +174,12 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="target", required=True)
 
     # app subcommand
-    app = subparsers.add_parser("app", help="Run command in app LXC (HOMELAB_HOST)")
+    app = subparsers.add_parser("app", help="Run command in app LXC (APP_SSH_HOST)")
     app.add_argument("cmd", help="Shell command to run")
     _add_ssh_override_args(app)
 
     # db subcommand
-    db = subparsers.add_parser(
-        "db", help="Run command in DB LXC (HOMELAB_DB_SSH_HOST or DB_HOST)"
-    )
+    db = subparsers.add_parser("db", help="Run command in DB LXC (DB_SSH_HOST)")
     db.add_argument("cmd", help="Shell command to run")
     _add_ssh_override_args(db)
 

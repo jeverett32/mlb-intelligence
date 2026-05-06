@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(FETCH_DIR))
 
 import db as DB  # noqa: E402
-from homelab import HomelabClient  # noqa: E402
+from homelab import LxcSshClient  # noqa: E402
 from fetch_data import _parse_scraped_odds  # noqa: E402
 from scraper import scrape_range_async  # noqa: E402
 
@@ -179,23 +179,21 @@ def _first_env(*names: str, default: str | None = None) -> str | None:
     return default
 
 
-def _homelab_db_client() -> HomelabClient:
-    host = _first_env("HOMELAB_DB_SSH_HOST", "DB_HOST")
+def _db_ssh_client() -> LxcSshClient:
+    host = _first_env("DB_SSH_HOST")
     if not host:
-        raise RuntimeError("Set HOMELAB_DB_SSH_HOST or DB_HOST to use --via-homelab-db")
-    return HomelabClient(
+        raise RuntimeError("Set DB_SSH_HOST to use --via-db-ssh")
+    return LxcSshClient(
         host=host,
-        username=_first_env("HOMELAB_DB_SSH_USER", "HOMELAB_USER", default="root") or "root",
-        port=int(_first_env("HOMELAB_DB_SSH_PORT", "HOMELAB_PORT", default="22") or "22"),
-        password=_first_env("HOMELAB_DB_SSH_PASSWORD", "HOMELAB_PASSWORD"),
-        key_path=_first_env("HOMELAB_DB_SSH_KEY_PATH", "HOMELAB_SSH_KEY_PATH"),
-        key_passphrase=_first_env(
-            "HOMELAB_DB_SSH_KEY_PASSPHRASE", "HOMELAB_SSH_KEY_PASSPHRASE"
-        ),
+        username=_first_env("DB_SSH_USER", default="root") or "root",
+        port=int(_first_env("DB_SSH_PORT", default="22") or "22"),
+        password=_first_env("DB_SSH_PASSWORD"),
+        key_path=_first_env("DB_SSH_KEY_PATH"),
+        key_passphrase=_first_env("DB_SSH_KEY_PASSPHRASE"),
     )
 
 
-def _remote_psql(client: HomelabClient, sql: str, timeout: int = 120) -> str:
+def _remote_psql(client: LxcSshClient, sql: str, timeout: int = 120) -> str:
     result = client.run(
         "sudo -u postgres psql -d mlb -v ON_ERROR_STOP=1 -X -q <<'SQL'\n"
         + sql
@@ -207,7 +205,7 @@ def _remote_psql(client: HomelabClient, sql: str, timeout: int = 120) -> str:
     return result.stdout
 
 
-def _fetch_candidates_via_homelab(
+def _fetch_candidates_via_db_ssh(
     start: date | None, end: date | None
 ) -> list[dict[str, Any]]:
     conditions = ["season = 2026", FALLBACK_SOURCE_SQL.replace("%%", "%")]
@@ -225,7 +223,7 @@ def _fetch_candidates_via_homelab(
             ORDER BY game_date, game_pk
         ) TO STDOUT WITH CSV HEADER;
     """
-    with _homelab_db_client() as client:
+    with _db_ssh_client() as client:
         output = _remote_psql(client, sql)
 
     reader = csv.DictReader(io.StringIO(output))
@@ -298,7 +296,7 @@ def _apply_updates(updates: list[dict[str, Any]]) -> int:
         conn.close()
 
 
-def _apply_updates_via_homelab(updates: list[dict[str, Any]]) -> int:
+def _apply_updates_via_db_ssh(updates: list[dict[str, Any]]) -> int:
     if not updates:
         return 0
     sql = f"""
@@ -327,7 +325,7 @@ def _apply_updates_via_homelab(updates: list[dict[str, Any]]) -> int:
         FROM updates
         WHERE games.game_pk = updates.game_pk::bigint;
     """
-    with _homelab_db_client() as client:
+    with _db_ssh_client() as client:
         _remote_psql(client, sql, timeout=300)
     return len(updates)
 
@@ -349,10 +347,10 @@ def run_backfill(
     *,
     apply: bool = False,
     limit: int | None = None,
-    via_homelab_db: bool = False,
+    via_db_ssh: bool = False,
 ) -> int:
-    if via_homelab_db:
-        candidates = _fetch_candidates_via_homelab(start, end)
+    if via_db_ssh:
+        candidates = _fetch_candidates_via_db_ssh(start, end)
     else:
         candidates = _fetch_candidates(start, end)
     if limit is not None:
@@ -387,7 +385,7 @@ def run_backfill(
         print("Dry run only. Re-run with --apply to update the DB.")
         return 0
 
-    updated = _apply_updates_via_homelab(updates) if via_homelab_db else _apply_updates(updates)
+    updated = _apply_updates_via_db_ssh(updates) if via_db_ssh else _apply_updates(updates)
     print(f"Updated {updated} game row(s).")
     return updated
 
@@ -407,7 +405,8 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Write updates to the DB")
     parser.add_argument("--limit", type=int, default=None, help="Limit candidate rows for testing")
     parser.add_argument(
-        "--via-homelab-db",
+        "--via-db-ssh",
+        dest="via_db_ssh",
         action="store_true",
         help="Query/apply through the DB LXC using sudo postgres psql",
     )
@@ -425,7 +424,7 @@ def main() -> int:
             end,
             apply=args.apply,
             limit=args.limit,
-            via_homelab_db=args.via_homelab_db,
+            via_db_ssh=args.via_db_ssh,
         )
     except psycopg2.OperationalError as exc:
         print(f"DB connection failed: {exc}")
