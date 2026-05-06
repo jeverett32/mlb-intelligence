@@ -776,10 +776,20 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       overflow: hidden;
-      transition: box-shadow 0.15s;
+      transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s, background 0.15s;
+      cursor: pointer;
     }
     .game-card:hover {
       box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+      border-color: var(--text-muted);
+    }
+    .game-card:not([data-mlb-url]) {
+      cursor: default;
+    }
+    .game-card:not([data-mlb-url]):hover {
+      transform: none;
+      border-color: var(--border);
     }
     .game-card-matchup {
       display: flex;
@@ -1850,6 +1860,23 @@ const TEAM_FULL = {
   WSH:'Washington Nationals',WSN:'Washington Nationals',WAS:'Washington Nationals',
 };
 function teamName(abbr) { return TEAM_FULL[abbr] || abbr; }
+function teamSlug(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function buildMlbGamedayUrl(g) {
+  if (!g || g.game_pk == null) return '';
+  const dateStr = String(g.game_date || '').slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return '';
+  const away = teamSlug(teamName(g.away_team)) || 'away';
+  const home = teamSlug(teamName(g.home_team)) || 'home';
+  return `https://www.mlb.com/gameday/${away}-vs-${home}/${m[1]}/${m[2]}/${m[3]}/${g.game_pk}/live`;
+}
+function openGameExternal(pk) {
+  const card = document.querySelector(`.game-card[data-game-pk="${pk}"]`);
+  const url = card && card.dataset.mlbUrl;
+  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+}
 
 function fmt$(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
@@ -2906,7 +2933,7 @@ function gameCardStatusTopHtml(g) {
 
 function gameCardExplainBtnHtml(g) {
   if (!shouldShowExplain(g)) return '';
-  return `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="openExplainModal('${String(g.game_pk)}')">
+  return `<button class="explain-btn" type="button" aria-label="Explain signal" onclick="event.stopPropagation(); openExplainModal('${String(g.game_pk)}')">
            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
              <path d="M4 19V5"></path>
              <path d="M7 15l4-4 3 3 6-6"></path>
@@ -2950,9 +2977,12 @@ function buildSingleGameCardHtml(g) {
     : '';
   const statusLine = gameCardStatusTopHtml(g);
   const pk = String(g.game_pk ?? '');
+  const mlbUrl = buildMlbGamedayUrl(g);
+  const urlAttr = mlbUrl ? ` data-mlb-url="${mlbUrl}"` : '';
+  const clickAttr = mlbUrl ? ` onclick="openGameExternal('${pk}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openGameExternal('${pk}');}" role="link" tabindex="0" aria-label="Open ${teamName(g.away_team)} at ${teamName(g.home_team)} on MLB.com"` : '';
 
   return `
-      <div class="game-card" data-game-pk="${pk}">
+      <div class="game-card" data-game-pk="${pk}"${urlAttr}${clickAttr}>
         <div class="game-card-matchup">
           ${statusLine}
           <div class="game-card-team">
