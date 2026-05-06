@@ -18,6 +18,7 @@ from contextlib import contextmanager
 
 import pandas as pd
 import psycopg2
+from psycopg2 import extensions
 from psycopg2 import pool as _pg_pool
 from psycopg2.extras import RealDictCursor, execute_values
 from dotenv import load_dotenv
@@ -96,17 +97,37 @@ ODDS_IMPLIED_PROB_COLS = {"home_implied_prob", "away_implied_prob"}
 # Connection
 # ---------------------------------------------------------------------------
 
-def _conn_kwargs() -> dict:
+def _conn_kwargs(host: str | None = None) -> dict:
     return dict(
-        host=os.environ["DB_HOST"],
+        host=host or os.environ["DB_HOST"],
         port=int(os.environ.get("DB_PORT", 5432)),
         dbname=os.environ["DB_NAME"],
         user=os.environ["DB_USER"],
         password=os.environ["DB_PASSWORD"],
+        connect_timeout=int(os.environ.get("DB_CONNECT_TIMEOUT", "10")),
+        keepalives=1,
+        keepalives_idle=int(os.environ.get("DB_KEEPALIVES_IDLE", "30")),
+        keepalives_interval=int(os.environ.get("DB_KEEPALIVES_INTERVAL", "10")),
+        keepalives_count=int(os.environ.get("DB_KEEPALIVES_COUNT", "3")),
     )
 
 
-def get_connection():
+def _conn_host_candidates() -> list[str]:
+    hosts = [os.environ["DB_HOST"]]
+    fallback_hosts = os.environ.get("DB_HOST_FALLBACKS") or os.environ.get("DB_HOST_FALLBACK", "")
+    hosts.extend(h.strip() for h in fallback_hosts.split(",") if h.strip())
+    return list(dict.fromkeys(hosts))
+
+
+def _raw_connection():
+    last_exc: Exception | None = None
+    for host in _conn_host_candidates():
+        try:
+            return psycopg2.connect(**_conn_kwargs(host))
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+    if last_exc:
+        raise last_exc
     return psycopg2.connect(**_conn_kwargs())
 
 
@@ -114,42 +135,70 @@ _POOL: _pg_pool.ThreadedConnectionPool | None = None
 _POOL_LOCK = threading.Lock()
 
 
+class _PooledConnection:
+    def __init__(self, pool: _pg_pool.ThreadedConnectionPool, conn):
+        self._pool = pool
+        self._conn = conn
+        self._returned = False
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._returned:
+            return
+        self._returned = True
+        close = bool(getattr(self._conn, "closed", 1))
+        if not close:
+            try:
+                if self._conn.get_transaction_status() != extensions.TRANSACTION_STATUS_IDLE:
+                    self._conn.rollback()
+            except Exception:
+                close = True
+        self._pool.putconn(self._conn, close=close)
+
+
 def _get_pool() -> _pg_pool.ThreadedConnectionPool:
     global _POOL
     if _POOL is None:
         with _POOL_LOCK:
             if _POOL is None:
-                _POOL = _pg_pool.ThreadedConnectionPool(
-                    minconn=1,
-                    maxconn=int(os.environ.get("DB_POOL_MAX", "8")),
-                    **_conn_kwargs(),
-                )
+                last_exc: Exception | None = None
+                for host in _conn_host_candidates():
+                    try:
+                        _POOL = _pg_pool.ThreadedConnectionPool(
+                            minconn=1,
+                            maxconn=int(os.environ.get("DB_POOL_MAX", "8")),
+                            **_conn_kwargs(host),
+                        )
+                        break
+                    except psycopg2.OperationalError as exc:
+                        last_exc = exc
+                if _POOL is None and last_exc:
+                    raise last_exc
     return _POOL
+
+
+def get_connection():
+    if os.environ.get("DB_DISABLE_POOL", "0") == "1":
+        return _raw_connection()
+    pool = _get_pool()
+    return _PooledConnection(pool, pool.getconn())
 
 
 @contextmanager
 def pooled_connection():
-    """Checkout a pooled connection; reconnect if the pool returns a dead one."""
+    """Checkout a pooled connection."""
     pool = _get_pool()
     conn = pool.getconn()
     pooled = True
     try:
-        # Cheap liveness probe; on failure, return dead conn to pool with close=True
-        # and check out a fresh one. ThreadedConnectionPool requires putconn to
-        # receive the same object that was checked out, so we cannot just swap in
-        # a raw psycopg2.connect(...) and putconn() that later.
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-        except Exception:
-            try:
-                pool.putconn(conn, close=True)
-            except Exception:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-            conn = pool.getconn()
         yield conn
     except Exception:
         try:
