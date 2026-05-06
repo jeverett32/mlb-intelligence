@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import db as DB
 from config import ACTIVE_SEASON, CURRENT_CSV
+from data_quality import validators as _vd
 
 import numpy as np
 import pandas as pd
@@ -1286,14 +1287,9 @@ def _parse_fg_float(val):
 
 
 def _parse_fg_wrc_plus(val):
-    value = _parse_fg_float(val)
-    if pd.isna(value):
-        return np.nan
-    # wRC+ is indexed to 100. Values below 10 indicate FanGraphs schema/key drift,
-    # often another rate stat accidentally landing in this field.
-    if value < 10 or value > 300:
-        return np.nan
-    return value
+    # Bounds live in data_quality/contracts.py (home_wrc_plus). Out-of-range
+    # values typically indicate FanGraphs schema/key drift.
+    return _vd.coerce("home_wrc_plus", val)
 
 
 def fetch_fangraphs_stats():
@@ -1391,10 +1387,10 @@ def _fg_dict_to_df(team_stats, snapshot_date):
         for k, v in stats.items():
             if k in ("k_pct", "bb_pct"):
                 row[k] = _parse_fg_pct(v)
-            elif k == "wrc_plus":
-                row[k] = _parse_fg_wrc_plus(v)
             else:
-                row[k] = _parse_fg_float(v)
+                # Look up via canonical home_ contract; ranges are symmetric
+                # for home/away. coerce() falls back to float() if no contract.
+                row[k] = _vd.coerce(f"home_{k}", v)
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1496,10 +1492,10 @@ def assemble(games_to_process, odds_df, pitcher_df, weather_df, fg_df):
                     vals.append(np.nan)
                 elif stat in ("k_pct", "bb_pct"):
                     vals.append(_parse_fg_pct(raw))
-                elif stat == "wrc_plus":
-                    vals.append(_parse_fg_wrc_plus(raw))
                 else:
-                    vals.append(_parse_fg_float(raw))
+                    # coerce() respects the contract's range when one exists
+                    # for `col_name`, otherwise behaves like float().
+                    vals.append(_vd.coerce(col_name, raw))
             master[col_name] = vals
 
     # --- Implied probabilities ---

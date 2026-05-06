@@ -4202,6 +4202,138 @@ def get_model_artifact_fi_history(limit: int = 50) -> list[dict]:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Data quality (audit runs + repair log)
+# ---------------------------------------------------------------------------
+
+DATA_QUALITY_RUNS_TABLE = "data_quality_runs"
+DATA_REPAIR_LOG_TABLE = "data_repair_log"
+
+_DATA_QUALITY_INITIALIZED = False
+
+
+def init_data_quality_tables() -> None:
+    """Idempotent create for data_quality_runs + data_repair_log."""
+    global _DATA_QUALITY_INITIALIZED
+    if _DATA_QUALITY_INITIALIZED:
+        return
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {DATA_QUALITY_RUNS_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    rows_scanned BIGINT,
+                    critical_issue_count INTEGER NOT NULL DEFAULT 0,
+                    warning_issue_count INTEGER NOT NULL DEFAULT 0,
+                    summary JSONB NOT NULL,
+                    full_report JSONB
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_data_quality_runs_run_at
+                ON {DATA_QUALITY_RUNS_TABLE} (run_at DESC)
+            """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {DATA_REPAIR_LOG_TABLE} (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    script TEXT NOT NULL,
+                    column_name TEXT,
+                    rows_affected INTEGER NOT NULL DEFAULT 0,
+                    reason TEXT NOT NULL,
+                    details JSONB NOT NULL DEFAULT '{{}}'::jsonb
+                )
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_data_repair_log_created_at
+                ON {DATA_REPAIR_LOG_TABLE} (created_at DESC)
+            """)
+        conn.commit()
+        _DATA_QUALITY_INITIALIZED = True
+    finally:
+        conn.close()
+
+
+def save_data_quality_run(
+    *,
+    rows_scanned: int,
+    critical_issue_count: int,
+    warning_issue_count: int,
+    summary: dict,
+    full_report: dict | None = None,
+) -> int:
+    init_data_quality_tables()
+    payload_summary = json.dumps(summary, default=str)
+    payload_full = json.dumps(full_report, default=str) if full_report is not None else None
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {DATA_QUALITY_RUNS_TABLE}
+                    (rows_scanned, critical_issue_count, warning_issue_count,
+                     summary, full_report)
+                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb)
+                RETURNING id
+                """,
+                (
+                    int(rows_scanned),
+                    int(critical_issue_count),
+                    int(warning_issue_count),
+                    payload_summary,
+                    payload_full,
+                ),
+            )
+            run_id = cur.fetchone()[0]
+        conn.commit()
+        return int(run_id)
+    finally:
+        conn.close()
+
+
+def get_data_quality_runs(limit: int = 50) -> list[dict]:
+    init_data_quality_tables()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT id, run_at, rows_scanned,
+                       critical_issue_count, warning_issue_count, summary
+                FROM {DATA_QUALITY_RUNS_TABLE}
+                ORDER BY run_at DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_latest_data_quality_run() -> dict | None:
+    init_data_quality_tables()
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT id, run_at, rows_scanned,
+                       critical_issue_count, warning_issue_count,
+                       summary, full_report
+                FROM {DATA_QUALITY_RUNS_TABLE}
+                ORDER BY run_at DESC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def migrate_encrypt_kalshi_keys() -> int:
     """One-time migration: encrypt plaintext Kalshi credential fields."""
     if not _fernet:

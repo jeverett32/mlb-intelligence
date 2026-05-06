@@ -2478,6 +2478,46 @@ def _safe_records(df: pd.DataFrame) -> list:
     return records
 
 
+def _safe_dict_list(rows: list[dict]) -> list[dict]:
+    return [{k: _safe_value(v) for k, v in r.items()} for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Data quality endpoints (admin)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/admin/data-quality/latest")
+def get_data_quality_latest(user: dict = Depends(require_admin)):
+    """Most recent audit run with full per-column report."""
+    try:
+        run = db.get_latest_data_quality_run()
+        if not run:
+            return {"run": None}
+        return {"run": _safe_dict_list([run])[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/data-quality/runs")
+def list_data_quality_runs(limit: int = 50, user: dict = Depends(require_admin)):
+    try:
+        rows = db.get_data_quality_runs(limit=limit)
+        return {"runs": _safe_dict_list(rows)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/data-quality/repairs")
+def list_data_repairs(limit: int = 100, user: dict = Depends(require_admin)):
+    try:
+        from data_quality.repair_log import list_repairs
+        rows = list_repairs(limit=limit)
+        return {"repairs": _safe_dict_list(rows)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # Local dev server wrapper
 # ---------------------------------------------------------------------------
