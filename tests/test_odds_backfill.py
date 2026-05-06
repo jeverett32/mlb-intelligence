@@ -49,8 +49,8 @@ def test_upsert_odds_assignments_preserve_existing_snapshot_overwrites():
     assert "extra = COALESCE(games.extra, '{}'::jsonb) || COALESCE(EXCLUDED.extra, '{}'::jsonb)" in assignments
     odds_source_assignment = next(a for a in assignments if a.startswith("odds_source = "))
     assert "WHEN EXCLUDED.odds_source IS NULL THEN games.odds_source" in odds_source_assignment
-    assert "games.odds_source NOT LIKE 'odds-api:%'" in odds_source_assignment
-    assert "EXCLUDED.odds_source LIKE 'odds-api:%' THEN games.odds_source" in odds_source_assignment
+    assert "games.odds_source NOT LIKE 'odds-api:%%'" in odds_source_assignment
+    assert "EXCLUDED.odds_source LIKE 'odds-api:%%' THEN games.odds_source" in odds_source_assignment
     assert any(
         "home_score = CASE WHEN COALESCE(EXCLUDED.extra->>'game_status', '') IN ('postponed', 'cancelled') "
         "THEN EXCLUDED.home_score ELSE COALESCE(EXCLUDED.home_score, games.home_score) END" == assignment
