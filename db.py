@@ -223,8 +223,8 @@ def _is_real_line_sql(side: str) -> str:
         f"AND EXCLUDED.odds_source IS NOT NULL "
         f"AND (games.close_{side}_ml IS NULL "
         f"OR games.odds_source IS NULL "
-        f"OR games.odds_source LIKE '{_API_SOURCE_PREFIX}%' "
-        f"OR EXCLUDED.odds_source NOT LIKE '{_API_SOURCE_PREFIX}%')"
+        f"OR games.odds_source LIKE '{_API_SOURCE_PREFIX}%%' "
+        f"OR EXCLUDED.odds_source NOT LIKE '{_API_SOURCE_PREFIX}%%')"
     )
 
 
@@ -275,8 +275,8 @@ def _upsert_assignment(col: str, cols: set[str]) -> str:
             "odds_source = CASE "
             "WHEN EXCLUDED.odds_source IS NULL THEN games.odds_source "
             "WHEN games.odds_source IS NULL THEN EXCLUDED.odds_source "
-            f"WHEN games.odds_source NOT LIKE '{_API_SOURCE_PREFIX}%' "
-            f"AND EXCLUDED.odds_source LIKE '{_API_SOURCE_PREFIX}%' THEN games.odds_source "
+            f"WHEN games.odds_source NOT LIKE '{_API_SOURCE_PREFIX}%%' "
+            f"AND EXCLUDED.odds_source LIKE '{_API_SOURCE_PREFIX}%%' THEN games.odds_source "
             "ELSE EXCLUDED.odds_source END"
         )
     return col + " = EXCLUDED." + col
