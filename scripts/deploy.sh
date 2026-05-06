@@ -17,7 +17,7 @@ LOCK_FILE="/tmp/mlb-deploy.lock"
 BACKUP_PATH_FILE="/tmp/mlb_deploy_backup_path"
 SYSTEMCTL_BIN="$(command -v systemctl)"
 UV_CACHE_DIR_DEFAULT="${REPO_DIR}/.cache/uv"
-DEFAULT_REPO_SLUG="jeverett32/mlb-pipeline"
+DEFAULT_REPO_SLUG="jeverett32/mlb-intelligence"
 
 # Colors for output
 RED='\033[0;31m'

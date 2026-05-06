@@ -3,7 +3,7 @@
 The repo uses local-only (gitignored) agent/editor config files such as:
 
 - `.clauderules`, `.claudeignore`, `.claude/settings.local.json`
-- `.cursor/rules/mlb-pipeline.mdc`, `.cursorignore`
+- `.cursor/rules/mlb-intelligence.mdc`, `.cursorignore`
 
 These are intentionally not committed because they are workstation / editor specific.
 

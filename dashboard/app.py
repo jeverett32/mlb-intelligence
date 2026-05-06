@@ -2173,7 +2173,7 @@ def get_admin_errors(user: dict = Depends(require_admin)):
 
     try:
         resp = requests.get(
-            "https://api.github.com/repos/jeverett32/mlb-pipeline/actions/runs",
+            "https://api.github.com/repos/jeverett32/mlb-intelligence/actions/runs",
             params={"per_page": 15, "branch": "main"},
             timeout=10,
         )

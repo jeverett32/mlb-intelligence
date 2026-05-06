@@ -37,8 +37,8 @@ def main() -> None:
         (templates_root / ".cursorignore", repo_root / ".cursorignore"),
         (templates_root / ".clauderules", repo_root / ".clauderules"),
         (
-            templates_root / ".cursor" / "rules" / "mlb-pipeline.mdc",
-            repo_root / ".cursor" / "rules" / "mlb-pipeline.mdc",
+            templates_root / ".cursor" / "rules" / "mlb-intelligence.mdc",
+            repo_root / ".cursor" / "rules" / "mlb-intelligence.mdc",
         ),
         (
             templates_root / ".claude" / "settings.local.json",

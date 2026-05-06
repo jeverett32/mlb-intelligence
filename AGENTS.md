@@ -8,7 +8,7 @@ This repo uses local, gitignored agent/editor config files:
 
 - `/.clauderules` — primary agent operating rules
 - `/.claudeignore` — files to exclude from agent context
-- `/.cursor/rules/mlb-pipeline.mdc` — Cursor project rules
+- `/.cursor/rules/mlb-intelligence.mdc` — Cursor project rules
 - `/.cursorignore` — files to exclude from Cursor context
 
 These are intentionally **not committed**.

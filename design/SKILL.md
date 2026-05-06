@@ -1,6 +1,6 @@
 ---
 name: mlb-intelligence-design
-description: Use this skill to generate well-branded interfaces and assets for MLB Intelligence (jeverett32/mlb-pipeline), either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
+description: Use this skill to generate well-branded interfaces and assets for MLB Intelligence (jeverett32/mlb-intelligence), either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
 user-invocable: true
 ---
 

@@ -1,7 +1,7 @@
 # MLB Intelligence — Design System
 
 A working design system reverse-engineered from the production
-[`jeverett32/mlb-pipeline`](https://github.com/jeverett32/mlb-pipeline) repo:
+[`jeverett32/mlb-intelligence`](https://github.com/jeverett32/mlb-intelligence) repo:
 a Python/FastAPI dashboard that fronts an ML pipeline predicting MLB games
 and executing wagers on [Kalshi](https://kalshi.com).
 

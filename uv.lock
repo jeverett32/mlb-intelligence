@@ -818,7 +818,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mlb-pipeline"
+name = "mlb-intelligence"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
