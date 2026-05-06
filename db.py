@@ -1101,15 +1101,19 @@ def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
     if table not in BROWSABLE_TABLES:
         raise ValueError(f"Table '{table}' is not browsable")
     conn = get_connection()
+    # Hide future-scheduled games from the admin browser; their feature/score
+    # columns are intentionally empty and add noise to manual review.
+    where_clauses = {"games": "WHERE game_date <= CURRENT_DATE"}
+    where_sql = where_clauses.get(table, "")
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Total row count
-            cur.execute(f"SELECT COUNT(*) FROM {table}")
+            # Total row count (matches paginated SELECT filter)
+            cur.execute(f"SELECT COUNT(*) FROM {table} {where_sql}")
             total = cur.fetchone()["count"]
             # Page of rows (exclude bulky/internal columns for readability)
             if table == "games":
                 cols = "game_pk, game_date, season, home_team, away_team, home_score, away_score, home_win, home_implied_prob, away_implied_prob, close_home_ml, close_away_ml, odds_source"
-                cur.execute(f"SELECT {cols} FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
+                cur.execute(f"SELECT {cols} FROM {table} {where_sql} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
             elif table == "model_artifacts":
                 cols = """
                     id, created_at, model_type, training_fingerprint,
@@ -1119,9 +1123,9 @@ def browse_table(table: str, limit: int = 100, offset: int = 0) -> dict:
                     num_features, git_commit, is_active, feature_columns,
                     early_feature_columns, feature_config, metrics
                 """
-                cur.execute(f"SELECT {cols} FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
+                cur.execute(f"SELECT {cols} FROM {table} {where_sql} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
             else:
-                cur.execute(f"SELECT * FROM {table} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
+                cur.execute(f"SELECT * FROM {table} {where_sql} ORDER BY {_browse_table_order_by(table)} LIMIT %s OFFSET %s", (limit, offset))
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
     finally:
