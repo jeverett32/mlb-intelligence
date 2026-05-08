@@ -69,6 +69,15 @@ uv run pytest -q tests/
 - Treat files under `data/` (CSV/Parquet/TSV) as caches/backups and **possibly stale**.
 - Avoid opening large `*.csv` / `*.parquet` with file-read tools.
 
+## Sandbox model lab
+
+- Experimental feature/model work lives under `sandbox/model_lab/`.
+- Sandbox master data is generated only at `sandbox/model_lab/output/master_sandbox_mlb.csv`.
+- Sandbox training/testing must exclude incomplete seasons: keep only games with `game_date < 2026-01-01` unless the user explicitly changes the cutoff.
+- Sandbox scripts may read Postgres/API/cache data, but must not mutate production tables, production model artifacts, or betting/order flows.
+- Document each sandbox feature source and formula before using it for model comparison.
+- Promote sandbox code to production only after time-split backtests beat the current production baseline.
+
 Example (targeted DB query):
 ```python
 import pandas as pd

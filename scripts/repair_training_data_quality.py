@@ -139,6 +139,83 @@ def apply_wrc_null_repair() -> int:
     return updated
 
 
+def fetch_missing_wrc_2025_count() -> int:
+    sql = """
+        SELECT COUNT(*)
+        FROM games
+        WHERE season = 2025
+          AND (home_wrc_plus IS NULL OR away_wrc_plus IS NULL)
+    """
+    conn = DB.get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql)
+            row = cur.fetchone()
+            return int(row["count"])
+    finally:
+        conn.close()
+
+
+def apply_wrc_2025_proxy_from_woba() -> int:
+    """Fill missing 2025 wRC+ using a simple wOBA-based proxy.
+
+    FanGraphs wRC+ feed is intermittently missing for 2025 in our DB, while
+    team wOBA is present. We approximate wRC+ scale with:
+
+        wrc_plus_proxy = 100 * team_woba / league_woba(season)
+
+    This is not park-adjusted wRC+, but it keeps scale consistent and prevents
+    2025 feature-collapse.
+    """
+    conn = DB.get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT AVG(woba) AS league_woba
+                FROM (
+                    SELECT home_woba AS woba FROM games WHERE season = 2025 AND home_woba IS NOT NULL
+                    UNION ALL
+                    SELECT away_woba AS woba FROM games WHERE season = 2025 AND away_woba IS NOT NULL
+                ) t
+                """
+            )
+            league_woba = cur.fetchone().get("league_woba")
+            league_woba = _parse_float(league_woba)
+            if not league_woba or league_woba <= 0:
+                return 0
+
+        # Update in a separate cursor (avoid mixing fetch + update with dict cursor)
+        with conn.cursor() as cur2:
+            cur2.execute(
+                """
+                UPDATE games
+                SET home_wrc_plus = CASE
+                        WHEN home_wrc_plus IS NULL AND home_woba IS NOT NULL
+                        THEN LEAST(300, GREATEST(10, 100.0 * home_woba / %s))
+                        ELSE home_wrc_plus
+                    END,
+                    away_wrc_plus = CASE
+                        WHEN away_wrc_plus IS NULL AND away_woba IS NOT NULL
+                        THEN LEAST(300, GREATEST(10, 100.0 * away_woba / %s))
+                        ELSE away_wrc_plus
+                    END,
+                    updated_at = NOW()
+                WHERE season = 2025
+                  AND (
+                      (home_wrc_plus IS NULL AND home_woba IS NOT NULL)
+                      OR (away_wrc_plus IS NULL AND away_woba IS NOT NULL)
+                  )
+                """,
+                (league_woba, league_woba),
+            )
+            updated = int(cur2.rowcount or 0)
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
+
+
 def fetch_bad_odds_candidates() -> list[dict[str, Any]]:
     sql = """
         SELECT game_pk, game_date::date AS game_date, home_team, away_team,
@@ -271,6 +348,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="write repairs to DB")
     parser.add_argument("--skip-wrc", action="store_true", help="skip wRC+ null repair")
+    parser.add_argument("--repair-2025-wrc-proxy", action="store_true", help="fill missing 2025 wRC+ from wOBA proxy")
     parser.add_argument("--skip-odds", action="store_true", help="skip SBR odds repair")
     args = parser.parse_args()
 
@@ -280,6 +358,13 @@ def main() -> int:
         if args.apply:
             updated = apply_wrc_null_repair()
             print(f"wrc_plus_rows_updated={updated}")
+
+    if args.repair_2025_wrc_proxy:
+        missing = fetch_missing_wrc_2025_count()
+        print(f"wrc_plus_missing_2025={missing}")
+        if args.apply:
+            updated = apply_wrc_2025_proxy_from_woba()
+            print(f"wrc_plus_2025_proxy_rows_updated={updated}")
 
     if not args.skip_odds:
         candidates = fetch_bad_odds_candidates()
