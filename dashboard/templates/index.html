@@ -2568,7 +2568,7 @@ async function setModelVersion(v) {
   handleRefresh();
 }
 
-function setBetMode(mode) {
+async function setBetMode(mode) {
   state.betMode = mode === 'live' ? 'live' : 'paper';
   localStorage.setItem('bet_mode', state.betMode);
   renderModeToggle();
