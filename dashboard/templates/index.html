@@ -2565,7 +2565,14 @@ async function setModelVersion(v) {
   document.querySelectorAll('.model-toggle button').forEach(btn => {
     btn.classList.toggle('active', btn.id === 'model-' + v);
   });
-  handleRefresh();
+  try {
+    await loadBetModeData();
+    await reloadDashboardState();
+    if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr, { silent: true });
+    renderAll();
+  } catch (e) {
+    console.error('setModelVersion refresh failed:', e);
+  }
 }
 
 async function setBetMode(mode) {
