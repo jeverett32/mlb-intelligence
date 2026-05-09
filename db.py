@@ -4550,7 +4550,33 @@ def init_model_artifacts_v2() -> None:
         conn.commit()
 
 
+def init_games_v2() -> None:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS games_v2 (
+                    game_pk BIGINT PRIMARY KEY,
+                    game_date DATE,
+                    season INT,
+                    home_team TEXT,
+                    away_team TEXT,
+                    home_win BOOLEAN,
+                    close_home_ml DOUBLE PRECISION,
+                    close_away_ml DOUBLE PRECISION,
+                    market_implied_prob DOUBLE PRECISION,
+                    features JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_games_v2_date ON games_v2(game_date)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_games_v2_season ON games_v2(season)")
+        conn.commit()
+
+
 def init_v2_tables() -> None:
+    init_games_v2()
     init_bets_v2()
     init_paper_orders_v2()
     init_model_artifacts_v2()
@@ -4828,3 +4854,112 @@ def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFr
         r.pop("updated_at", None)
         records.append(r)
     return pd.DataFrame(records)
+
+def upsert_games_v2_row(
+    game_pk: int,
+    game_date: str | None,
+    season: int | None,
+    home_team: str | None,
+    away_team: str | None,
+    home_win: bool | None,
+    close_home_ml: float | None,
+    close_away_ml: float | None,
+    market_implied_prob: float | None,
+    features: dict
+) -> None:
+    """UPSERT a single game row into games_v2, merging features JSONB."""
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO games_v2 (
+                    game_pk, game_date, season, home_team, away_team, 
+                    home_win, close_home_ml, close_away_ml, market_implied_prob, 
+                    features, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (game_pk) DO UPDATE SET
+                    game_date = EXCLUDED.game_date,
+                    season = EXCLUDED.season,
+                    home_team = EXCLUDED.home_team,
+                    away_team = EXCLUDED.away_team,
+                    home_win = EXCLUDED.home_win,
+                    close_home_ml = EXCLUDED.close_home_ml,
+                    close_away_ml = EXCLUDED.close_away_ml,
+                    market_implied_prob = EXCLUDED.market_implied_prob,
+                    features = games_v2.features || EXCLUDED.features,
+                    updated_at = NOW()
+                """,
+                (
+                    int(game_pk), game_date, season, home_team, away_team,
+                    home_win, close_home_ml, close_away_ml, market_implied_prob,
+                    psycopg2.extras.Json(features)
+                )
+            )
+        conn.commit()
+
+def bulk_upsert_games_v2(rows: list[dict]) -> int:
+    """Efficiently UPSERT many games_v2 rows."""
+    if not rows:
+        return 0
+
+    sql = """
+        INSERT INTO games_v2 (
+            game_pk, game_date, season, home_team, away_team, 
+            home_win, close_home_ml, close_away_ml, market_implied_prob, 
+            features
+        )
+        VALUES %s
+        ON CONFLICT (game_pk) DO UPDATE SET
+            game_date = EXCLUDED.game_date,
+            season = EXCLUDED.season,
+            home_team = EXCLUDED.home_team,
+            away_team = EXCLUDED.away_team,
+            home_win = EXCLUDED.home_win,
+            close_home_ml = EXCLUDED.close_home_ml,
+            close_away_ml = EXCLUDED.close_away_ml,
+            market_implied_prob = EXCLUDED.market_implied_prob,
+            features = games_v2.features || EXCLUDED.features,
+            updated_at = NOW()
+    """
+
+    values = []
+    for r in rows:
+        values.append((
+            int(r["game_pk"]), r.get("game_date"), r.get("season"),
+            r.get("home_team"), r.get("away_team"), r.get("home_win"),
+            r.get("close_home_ml"), r.get("close_away_ml"), r.get("market_implied_prob"),
+            psycopg2.extras.Json(r.get("features", {}))
+        ))
+
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, sql, values)
+        conn.commit()
+    return len(rows)
+
+def load_games_v2_frame(cutoff: str | None = None) -> pd.DataFrame:
+    """
+    Load all rows from games_v2, exploding features JSONB into columns.
+    Returns DataFrame matching the sandbox engineered frame shape.
+    """
+    sql = "SELECT * FROM games_v2"
+    params = []
+    if cutoff:
+        sql += " WHERE game_date < %s"
+        params.append(cutoff)
+        
+    with pooled_connection() as conn:
+        df = pd.read_sql_query(sql, conn, params=params)
+        
+    if df.empty:
+        return df
+        
+    # Explode features JSONB
+    # Note: features column in df will be a list of dicts (already parsed by psycopg2/Json)
+    features_df = pd.json_normalize(df['features'])
+    
+    # Drop the original features column and join the exploded ones
+    df = df.drop(columns=['features']).join(features_df)
+    
+    return df

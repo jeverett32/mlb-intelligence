@@ -27,6 +27,7 @@ import db as DB
 import notify as NOTIFY
 from config import ACTIVE_SEASON, CURRENT_CSV
 import model_v2.predict as PREDICT_V2
+from model_v2.ingest_features import ingest_features
 from fetch.fetch_data import main as fetch_data_main, refresh_odds_only
 
 EASTERN = ZoneInfo("America/New_York")
@@ -69,7 +70,59 @@ def _mark_fetched() -> None:
 def _fetch_is_fresh() -> bool:
     return (time.time() - _LAST_FETCH_TS) < FETCH_STALE_SECONDS
 
+
+def ensure_v2_features_ready(games: list[dict], no_ingest: bool = False) -> None:
+    """Check if games_v2 has fresh data for these PKs, otherwise ingest."""
+    if no_ingest:
+        return
+
+    pks = [int(g["game_pk"]) for g in games]
+    if not pks:
+        return
+
+    # Check for missing or stale rows (>24h)
+    with DB.pooled_connection() as conn:
+        df = pd.read_sql_query(
+            "SELECT game_pk, updated_at FROM games_v2 WHERE game_pk = ANY(%s)",
+            conn,
+            params=(pks,),
+        )
+
+    missing = set(pks) - set(df["game_pk"].tolist())
+    stale = []
+    now = datetime.now(timezone.utc)
+    for _, r in df.iterrows():
+        # Ensure updated_at is tz-aware for comparison if it's not already
+        ua = r["updated_at"]
+        if ua.tzinfo is None:
+            ua = ua.replace(tzinfo=timezone.utc)
+        if now - ua > timedelta(hours=24):
+            stale.append(int(r["game_pk"]))
+
+    if missing or stale:
+        print(
+            f"[v2] Triggering feature ingest (missing={len(missing)}, stale={len(stale)})..."
+        )
+        # Ingest for today
+        earliest_date = min(
+            g.get("game_date", datetime.now().strftime("%Y-%m-%d")) for g in games
+        )
+        # Use a 1-day window around the games
+        start_date = earliest_date
+        end_date = (pd.Timestamp(earliest_date) + pd.Timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
+
+        try:
+            ingest_features(
+                season=ACTIVE_SEASON, start_date=start_date, end_date=end_date
+            )
+        except Exception as e:
+            print(f"[v2] Feature ingest failed: {e}")
+
+
 def settle_v2_paper_orders():
+
     """Backfill results for V2 paper orders from games table."""
     try:
         count = DB.backfill_paper_order_v2_results()
@@ -191,13 +244,17 @@ def _predict_v2(game_pk: str, shared: dict) -> None:
     except Exception as e:
         print(f"  [v2] PREDICT ERROR game_pk={game_pk}: {e}")
 
-def run_batch(games: list[dict]) -> None:
+def run_batch(games: list[dict], no_ingest: bool = False) -> None:
     labels = ", ".join(f"{g.get('away_team')}@{g.get('home_team')}" for g in games)
     print(f"\n{'=' * 60}")
     print(f"[v2] BATCH START — {len(games)} game(s): {labels}")
     print(f"{'=' * 60}")
 
     pks_list = [str(g["game_pk"]) for g in games]
+
+    # Ensure V2 features are in DB before predicting
+    ensure_v2_features_ready(games, no_ingest=no_ingest)
+
     try:
         refresh_fetch_data_if_stale(
             "Shared fetch",
@@ -268,6 +325,7 @@ def main():
     group.add_argument("--game_pk", type=str, help="Run once for a specific game_pk")
     group.add_argument("--now", action="store_true", help="Run once for the next batch")
     group.add_argument("--once", action="store_true", help="Run once for the next batch (alias for --now)")
+    parser.add_argument("--no-ingest", action="store_true", help="Skip feature ingestion check")
     args = parser.parse_args()
 
     if args.game_pk:
@@ -306,7 +364,7 @@ def main():
             print(f"[v2] Sleeping {sleep_secs / 60:.1f} minutes...")
             _watchdog_sleep(sleep_secs)
 
-        run_batch(batch)
+        run_batch(batch, no_ingest=args.no_ingest)
 
         if args.now or args.once:
             print("\n[v2] Exiting after one batch.")

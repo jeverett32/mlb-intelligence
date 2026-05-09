@@ -1,0 +1,18 @@
+[Unit]
+Description=MLB Betting Pipeline V2 (Parallel Backup)
+After=network.target postgresql.service mlb-dashboard.service
+
+[Service]
+Type=notify
+User=mlb
+Group=mlb
+WorkingDirectory=/opt/mlb/pipeline
+ExecStart=/opt/mlb/pipeline/.venv/bin/python run_pipeline_v2.py
+Restart=on-failure
+RestartSec=10
+WatchdogSec=60
+Environment=PYTHONPATH=.
+# V2 is hardcoded to DRY_RUN_KALSHI=True in code, so no ENV needed for safety.
+
+[Install]
+WantedBy=multi-user.target

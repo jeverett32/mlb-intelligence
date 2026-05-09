@@ -13,8 +13,8 @@ sys.path.insert(0, ROOT)
 
 import db as DB
 from model_v2 import config as C
+from model_v2.feature_loader import load_or_build_engineered_frame_from_db
 from sandbox.model_lab.feature_engineer import (
-    load_or_build_engineered_frame,
     load_or_build_feature_sets,
     recency_weights
 )
@@ -26,22 +26,19 @@ class PredictV2Error(RuntimeError):
 
 def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     """
-    Loads data, fits LGBM on history before game_date, 
+    Loads data from DB, fits LGBM on history before game_date, 
     and extracts target rows for specified PKs.
     """
     try:
-        cache_dir = Path(ROOT) / "sandbox/model_lab/output/cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir = os.path.join(ROOT, "sandbox/model_lab/output/cache")
 
-        # 1. Load engineered frame (sandbox master)
-        # We pass game_date as the cutoff to prevent leakage.
-        df = load_or_build_engineered_frame(
-            input_path=Path(ROOT) / "sandbox/model_lab/output/master_sandbox_mlb.csv",
-            cutoff=game_date,
+        # 1. Load engineered frame from DB
+        df = load_or_build_engineered_frame_from_db(
+            cutoff=game_date, 
             cache_dir=cache_dir,
             use_cache=True
         )
-        
+
         # 2. Get top-K features
         fs = load_or_build_feature_sets(
             df,
@@ -52,6 +49,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
             use_cache=True,
             selected_by=C.SELECTED_BY
         )
+
         feature_cols = list(fs["selected"])
         
         # 3. Filter for training (date < target_date)
