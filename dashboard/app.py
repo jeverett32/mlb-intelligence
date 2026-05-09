@@ -1057,14 +1057,21 @@ def _ensure_paper_backfill(email: str) -> None:
         print(f"Paper financials recompute failed for {email}: {exc}")
 
 
-def _orders_for_mode(email: str, mode: str) -> pd.DataFrame:
+def _orders_for_mode(email: str, mode: str, version: str = "v1") -> pd.DataFrame:
     if mode == "paper":
         _ensure_paper_backfill(email)
-    return DB.get_paper_orders(email) if mode == "paper" else DB.get_user_orders(email)
+        if version == "v2":
+            return DB.get_paper_orders(email, version="v2")
+        return DB.get_paper_orders(email)
+    return DB.get_user_orders(email)
 
 
-def _all_orders_for_mode(mode: str) -> pd.DataFrame:
-    return DB.get_all_paper_orders() if mode == "paper" else DB.get_all_user_orders()
+def _all_orders_for_mode(mode: str, version: str = "v1") -> pd.DataFrame:
+    if mode == "paper":
+        if version == "v2":
+            return DB.get_all_paper_orders(version="v2")
+        return DB.get_all_paper_orders()
+    return DB.get_all_user_orders()
 
 
 def _is_open_position_frame(df: pd.DataFrame, active_statuses: set[str] = ACTIVE_BET_STATUSES) -> pd.Series:
@@ -1083,10 +1090,21 @@ def get_bets(
     offset: int = 0,
     status: str = "all",
     mode: str = "paper",
+    model: str = "v1",
     user: dict = Depends(require_approved_user),
 ):
+    if model not in ("v1", "v2"):
+        model = "v1"
     mode = _validate_bet_mode(mode)
-    df = _orders_for_mode(user["email"], mode)
+    if mode == "paper":
+        if model == "v2":
+            df = DB.get_paper_orders(user["email"], version="v2")
+        else:
+            df = DB.get_paper_orders(user["email"])
+    else:
+        # Live mode only supported for v1 right now
+        df = DB.get_all_bets(version="v1") if model == "v1" else pd.DataFrame()
+
     if df.empty:
         return {"bets": [], "total": 0}
 
@@ -1144,7 +1162,9 @@ def get_bets(
 
 
 @app.get("/api/open-bets")
-def get_open_bets(mode: str = "paper", user: dict = Depends(require_approved_user)):
+def get_open_bets(mode: str = "paper", model: str = "v1", user: dict = Depends(require_approved_user)):
+    if model not in ("v1", "v2"):
+        model = "v1"
     mode = _validate_bet_mode(mode)
     if mode == "paper":
         _ensure_paper_backfill(user["email"])
@@ -1152,7 +1172,7 @@ def get_open_bets(mode: str = "paper", user: dict = Depends(require_approved_use
         refresh_due_orders(stale_seconds=300, limit=25)
     except Exception as exc:
         print(f"Market mark refresh skipped during open-bets read: {exc}")
-    df = _orders_for_mode(user["email"], mode)
+    df = _orders_for_mode(user["email"], mode, version=model)
     if df.empty:
         return {"bets": [], "total": 0}
 
@@ -1526,8 +1546,11 @@ def get_teams(user: dict = Depends(require_approved_user)):
 def get_games_by_date(
     date: str = None,
     mode: str = "paper",
+    model: str = "v1",
     user: dict = Depends(require_approved_user),
 ):
+    if model not in ("v1", "v2"):
+        model = "v1"
     user_tz = ZoneInfo(
         DB.get_user_setting(
             user["email"], "dashboard_timezone", _get_dashboard_timezone()
@@ -1568,7 +1591,10 @@ def get_games_by_date(
     else:
         day_games = games_df[games_df["game_date"].dt.date == target.date()].copy()
 
-    bets_df = DB.get_all_bets()
+    if model == "v2":
+        bets_df = DB.get_all_bets(version="v2")
+    else:
+        bets_df = DB.get_all_bets()
     if not bets_df.empty:
         pred_cols = [
             "game_pk", "predicted_prob", "edge", "bet_side", "bet_frac",
@@ -1581,7 +1607,7 @@ def get_games_by_date(
         day_games = day_games.merge(bets_df[available], on="game_pk", how="left")
 
     orders = (
-        DB.get_paper_orders(user["email"]) if mode == "paper"
+        DB.get_paper_orders(user["email"], version=model) if mode == "paper"
         else DB.get_user_orders(user["email"])
     )
     if not orders.empty:
@@ -1631,7 +1657,9 @@ def get_games_by_date(
 
 
 @app.get("/api/upcoming")
-def get_upcoming(user: dict = Depends(require_approved_user)):
+def get_upcoming(model: str = "v1", user: dict = Depends(require_approved_user)):
+    if model not in ("v1", "v2"):
+        model = "v1"
     try:
         refresh_scores_for_date()
     except Exception as exc:
@@ -1674,7 +1702,10 @@ def get_upcoming(user: dict = Depends(require_approved_user)):
             & (games_df["game_date"] <= today + pd.Timedelta(days=1))
         ].copy()
 
-    bets_df = DB.get_all_bets()
+    if model == "v2":
+        bets_df = DB.get_all_bets(version="v2")
+    else:
+        bets_df = DB.get_all_bets()
     if not bets_df.empty:
         pred_cols = [
             "game_pk",
@@ -1782,12 +1813,13 @@ def _build_public_performance(
     email: str | None = None,
     *,
     mode: str = "live",
+    model: str = "v1",
 ) -> PublicPerformanceResponse:
     mode = _validate_bet_mode(mode)
     if email is None and mode == "paper":
-        settled = _settled_public_bets()
+        settled = _settled_public_bets(model=model)
     else:
-        bets_df = _orders_for_mode(email, mode) if email else _all_orders_for_mode(mode)
+        bets_df = _orders_for_mode(email, mode, version=model) if email else _all_orders_for_mode(mode, version=model)
         if bets_df.empty:
             return _empty_public_performance()
 
@@ -1874,41 +1906,44 @@ def _empty_public_performance() -> PublicPerformanceResponse:
 
 
 @app.get("/api/performance", response_model=PublicPerformanceResponse)
-def get_performance(mode: str = "paper", user: dict = Depends(require_approved_user)):
-    return _build_public_performance(user["email"], mode=mode)
+def get_performance(mode: str = "paper", model: str = "v1", user: dict = Depends(require_approved_user)):
+    return _build_public_performance(user["email"], mode=mode, model=model)
 
 
 @app.get("/api/public/performance", response_model=PublicPerformanceResponse)
 @limiter.limit("30/minute")
-def get_public_performance(request: Request):
-    return _build_public_performance(mode="paper")
+def get_public_performance(request: Request, model: str = "v1"):
+    return _build_public_performance(mode="paper", model=model)
 
 
 @app.get("/api/public/model-accuracy", response_model=PublicModelAccuracyResponse)
 @limiter.limit("30/minute")
-def get_public_model_accuracy(request: Request):
-    return _build_public_model_accuracy()
+def get_public_model_accuracy(request: Request, model: str = "v1"):
+    return _build_public_model_accuracy(model=model)
 
 
 @app.get("/api/public/summary", response_model=PublicSummaryResponse)
 @limiter.limit("30/minute")
-def get_public_summary(request: Request):
-    return _build_public_summary()
+def get_public_summary(request: Request, model: str = "v1"):
+    return _build_public_summary(model=model)
 
 
 @app.get("/api/public/receipts", response_model=PublicReceiptsResponse)
 @limiter.limit("30/minute")
-def get_public_receipts(request: Request):
-    return _build_public_receipts()
+def get_public_receipts(request: Request, model: str = "v1"):
+    return _build_public_receipts(model=model)
 
 
 @app.get("/api/model-accuracy", response_model=PrivateModelAccuracyResponse)
-def get_model_accuracy(user: dict = Depends(require_approved_user)):
-    return _build_private_model_accuracy()
+def get_model_accuracy(model: str = "v1", user: dict = Depends(require_approved_user)):
+    return _build_private_model_accuracy(model=model)
 
 
-def _compute_model_accuracy_metrics() -> tuple[dict, pd.DataFrame]:
-    df = DB.get_model_picks()
+def _compute_model_accuracy_metrics(model: str = "v1") -> tuple[dict, pd.DataFrame]:
+    if model == "v2":
+        df = DB.get_model_picks(version="v2")
+    else:
+        df = DB.get_model_picks()
     if df.empty:
         return (_empty_model_accuracy_metrics(), df)
 
@@ -1994,27 +2029,27 @@ def _build_recent_model_picks(df: pd.DataFrame, limit: int = 20) -> list[RecentM
     return recent
 
 
-def _compute_public_model_accuracy() -> tuple[PublicModelAccuracyResponse, pd.DataFrame]:
-    metrics, df = _compute_model_accuracy_metrics()
+def _compute_public_model_accuracy(model: str = "v1") -> tuple[PublicModelAccuracyResponse, pd.DataFrame]:
+    metrics, df = _compute_model_accuracy_metrics(model=model)
     return PublicModelAccuracyResponse(**metrics), df
 
 
-def _build_public_model_accuracy() -> PublicModelAccuracyResponse:
-    model_accuracy, _ = _compute_public_model_accuracy()
+def _build_public_model_accuracy(model: str = "v1") -> PublicModelAccuracyResponse:
+    model_accuracy, _ = _compute_public_model_accuracy(model=model)
     return model_accuracy
 
 
-def _build_private_model_accuracy() -> PrivateModelAccuracyResponse:
-    model_accuracy, df = _compute_public_model_accuracy()
+def _build_private_model_accuracy(model: str = "v1") -> PrivateModelAccuracyResponse:
+    model_accuracy, df = _compute_public_model_accuracy(model=model)
     return PrivateModelAccuracyResponse(
         **model_accuracy.model_dump(),
         recent=_build_recent_model_picks(df),
     )
 
 
-def _build_public_summary() -> PublicSummaryResponse:
-    performance = _build_public_performance(mode="paper")
-    model_accuracy = _build_public_model_accuracy()
+def _build_public_summary(model: str = "v1") -> PublicSummaryResponse:
+    performance = _build_public_performance(mode="paper", model=model)
+    model_accuracy = _build_public_model_accuracy(model=model)
     return PublicSummaryResponse(
         performance=performance,
         model_accuracy=model_accuracy,
@@ -2033,8 +2068,11 @@ def _dedupe_public_bet_games(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop_duplicates(subset=["game_pk"], keep="first").copy()
 
 
-def _settled_public_bets() -> pd.DataFrame:
-    bets_df = DB.get_all_paper_orders()
+def _settled_public_bets(model: str = "v1") -> pd.DataFrame:
+    if model == "v2":
+        bets_df = DB.get_all_paper_orders(version="v2")
+    else:
+        bets_df = DB.get_all_paper_orders()
     if bets_df.empty:
         return pd.DataFrame()
 
@@ -2089,8 +2127,8 @@ def _side_probability(row: pd.Series, column: str) -> float | None:
     return round(value, 4)
 
 
-def _build_public_receipts() -> PublicReceiptsResponse:
-    settled = _settled_public_bets()
+def _build_public_receipts(model: str = "v1") -> PublicReceiptsResponse:
+    settled = _settled_public_bets(model=model)
     now_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     if settled.empty:
         return PublicReceiptsResponse(
@@ -2352,8 +2390,11 @@ def set_admin_note_done(
 
 
 @app.get("/api/admin/model-metrics")
-def get_admin_model_metrics(user: dict = Depends(require_admin)):
-    runs = DB.get_model_metric_snapshots(limit=50)
+def get_admin_model_metrics(model: str = "v1", user: dict = Depends(require_admin)):
+    if model == "v2":
+        runs = DB.get_model_metric_snapshots(limit=50, version="v2")
+    else:
+        runs = DB.get_model_metric_snapshots(limit=50)
     for r in runs:
         if r.get("trained_at"):
             r["trained_at"] = r["trained_at"].isoformat()
@@ -2372,8 +2413,11 @@ def get_admin_pipeline_runs(user: dict = Depends(require_admin)):
 
 
 @app.get("/api/admin/model-artifacts/fi-history")
-def get_admin_model_artifact_fi_history(user: dict = Depends(require_admin)):
-    rows = DB.get_model_artifact_fi_history(limit=100)
+def get_admin_model_artifact_fi_history(model: str = "v1", user: dict = Depends(require_admin)):
+    if model == "v2":
+        rows = DB.get_model_artifact_fi_history(limit=100, version="v2")
+    else:
+        rows = DB.get_model_artifact_fi_history(limit=100)
     for r in rows:
         if r.get("created_at"):
             r["created_at"] = r["created_at"].isoformat()
@@ -2385,13 +2429,17 @@ def get_admin_model_artifact_fi_history(user: dict = Depends(require_admin)):
 @app.get("/api/admin/model-accuracy-by-month")
 def get_admin_model_accuracy_by_month(
     year: int | None = None,
+    model: str = "v1",
     user: dict = Depends(require_admin),
 ):
     """
     Per-month accuracy/Brier from latest training run's walk-forward
     validation predictions across all training years.
     """
-    run = DB.get_latest_model_metric_snapshot()
+    if model == "v2":
+        run = DB.get_latest_model_metric_snapshot(version="v2")
+    else:
+        run = DB.get_latest_model_metric_snapshot()
     raw = (run or {}).get("monthly_accuracy") or []
     if isinstance(raw, str):
         try:
@@ -2446,8 +2494,11 @@ def get_admin_model_accuracy_by_month(
 
 
 @app.get("/api/admin/model-metrics/latest")
-def get_admin_model_metrics_latest(user: dict = Depends(require_admin)):
-    run = DB.get_latest_model_metric_snapshot()
+def get_admin_model_metrics_latest(model: str = "v1", user: dict = Depends(require_admin)):
+    if model == "v2":
+        run = DB.get_latest_model_metric_snapshot(version="v2")
+    else:
+        run = DB.get_latest_model_metric_snapshot()
     if not run:
         return {"run": None}
     if run.get("trained_at"):

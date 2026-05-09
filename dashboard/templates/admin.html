@@ -151,6 +151,30 @@
       border-bottom-color: var(--accent);
     }
 
+    .mode-toggle {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-elevated);
+    }
+    .mode-toggle button {
+      border: none;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 5px 12px;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .mode-toggle button.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
     main { padding: 28px 32px; max-width: 1440px; margin: 0 auto; }
 
     .tab-pane { display: none; }
@@ -750,6 +774,13 @@
 
   <!-- Model Insights tab -->
   <div class="tab-pane" id="tab-model">
+    <div style="margin-bottom:20px; display:flex; align-items:center; gap:12px;">
+      <span style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em;">Model Version:</span>
+      <div class="mode-toggle" id="admin-model-toggle" role="group">
+        <button id="admin-model-v1" class="active" type="button" onclick="setAdminModelVersion('v1')">V1</button>
+        <button id="admin-model-v2" type="button" onclick="setAdminModelVersion('v2')">V2</button>
+      </div>
+    </div>
     <div class="metrics-grid" id="model-summary-cards"></div>
 
     <!-- FI Over Time charts hidden (not useful currently; re-enable when needed)
@@ -917,6 +948,15 @@
 
 let dbOffset = 0;
 const DB_LIMIT = 50;
+let adminModelVersion = 'v1';
+
+function setAdminModelVersion(v) {
+  adminModelVersion = v;
+  document.querySelectorAll('#admin-model-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.id === 'admin-model-' + v);
+  });
+  loadModelInsights();
+}
 
 function showTab(name, btn) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
@@ -1243,8 +1283,8 @@ function makeModelChart(id, cfg) {
 async function loadModelInsights() {
   try {
     const [latestResp, allResp, pipelineResp] = await Promise.all([
-      fetch('/api/admin/model-metrics/latest'),
-      fetch('/api/admin/model-metrics'),
+      fetch(\`/api/admin/model-metrics/latest?model=\${adminModelVersion}\`),
+      fetch(\`/api/admin/model-metrics?model=\${adminModelVersion}\`),
       fetch('/api/admin/pipeline-runs'),
     ]);
     if (!latestResp.ok || !allResp.ok) return;
@@ -1386,7 +1426,7 @@ let _fiProdChartConfig = null;
 
 async function loadProductionFi() {
   try {
-    const resp = await fetch('/api/admin/model-artifacts/fi-history');
+    const resp = await fetch(\`/api/admin/model-artifacts/fi-history?model=\${adminModelVersion}\`);
     if (!resp.ok) return;
     const { artifacts } = await resp.json();
     renderProductionFi(artifacts || []);
@@ -1485,6 +1525,7 @@ async function loadAccuracyByMonth() {
 
   const params = new URLSearchParams();
   if (yrSel.value) params.set('year', yrSel.value);
+  params.set('model', adminModelVersion);
   const url = '/api/admin/model-accuracy-by-month' + (params.toString() ? '?' + params : '');
 
   try {

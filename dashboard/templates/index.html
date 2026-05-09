@@ -1526,6 +1526,13 @@
   <button data-page="bets" onclick="showPage('bets', this)">Bets</button>
   <button data-page="performance" onclick="showPage('performance', this)">Performance</button>
   <div class="mode-bar">
+    <span class="mode-label">Model</span>
+    <div class="mode-toggle model-toggle" role="group" aria-label="Model version">
+      <button id="model-v1" type="button" onclick="setModelVersion('v1')">V1</button>
+      <button id="model-v2" type="button" onclick="setModelVersion('v2')">V2</button>
+    </div>
+  </div>
+  <div class="mode-bar">
     <span class="mode-label">Bet View</span>
     <div class="mode-toggle" role="group" aria-label="Bet view mode">
       <button id="mode-paper" type="button" onclick="setBetMode('paper')">Paper</button>
@@ -1538,6 +1545,9 @@
   var serverLive = {{EFFECTIVE_LIVE_BETTING}};
   var mode = serverLive ? 'live' : 'paper';
   document.getElementById('mode-' + mode).classList.add('active');
+  
+  var model = localStorage.getItem('mlb_model_version') || 'v1';
+  document.getElementById('model-' + model).classList.add('active');
 })();
 </script>
 
@@ -1825,6 +1835,7 @@ const state = {
   account: null,
   settings: { live_betting: false, dashboard_timezone: 'America/Denver' },
   betMode: 'paper',
+  modelVersion: localStorage.getItem('mlb_model_version') || 'v1',
   balance: null,
   paperBankroll: null,
   performance: null,
@@ -2548,7 +2559,16 @@ function renderModeToggle() {
   document.getElementById('mode-live')?.classList.toggle('active', state.betMode === 'live');
 }
 
-async function setBetMode(mode) {
+async function setModelVersion(v) {
+  state.modelVersion = v;
+  localStorage.setItem('mlb_model_version', v);
+  document.querySelectorAll('.model-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.id === 'model-' + v);
+  });
+  handleRefresh();
+}
+
+function setBetMode(mode) {
   state.betMode = mode === 'live' ? 'live' : 'paper';
   localStorage.setItem('bet_mode', state.betMode);
   renderModeToggle();
@@ -2703,7 +2723,7 @@ function renderSettledBets(data) {
 
 async function betsPage(dir) {
   betsOffset = Math.max(0, betsOffset + dir * BETS_LIMIT);
-  const data = await fetch(`/api/bets?mode=${state.betMode}&status=settled&limit=${BETS_LIMIT}&offset=${betsOffset}`).then(r => r.json());
+  const data = await fetch(\`/api/bets?mode=\${state.betMode}&status=settled&limit=\${BETS_LIMIT}&offset=\${betsOffset}&model=\${state.modelVersion}\`).then(r => r.json());
   state.settledBets = data;
   renderSettledBets(data);
 }
@@ -3100,7 +3120,7 @@ async function loadGamesForDate(dateStr, opts = {}) {
     setGamesRefreshError('');
   }
   try {
-    const res = await fetch(`/api/games-by-date?date=${dateStr}&mode=${state.betMode}`);
+    const res = await fetch(\`/api/games-by-date?date=\${dateStr}&mode=\${state.betMode}&model=\${state.modelVersion}\`);
     const data = await res.json();
     const games = data.games || [];
     setGamesRefreshError('');
@@ -3319,9 +3339,9 @@ function renderAll() {
 
 async function loadBetModeData() {
   const [performance, settledBets, openBets] = await Promise.all([
-    fetch(`/api/performance?mode=${state.betMode}`).then(r => { if (!r.ok) throw new Error('performance failed'); return r.json(); }),
-    fetch(`/api/bets?mode=${state.betMode}&status=settled&limit=${BETS_LIMIT}&offset=0`).then(r => { if (!r.ok) throw new Error('bets failed'); return r.json(); }),
-    fetch(`/api/open-bets?mode=${state.betMode}`).then(r => { if (!r.ok) throw new Error('open bets failed'); return r.json(); }),
+    fetch(\`/api/performance?mode=\${state.betMode}&model=\${state.modelVersion}\`).then(r => { if (!r.ok) throw new Error('performance failed'); return r.json(); }),
+    fetch(\`/api/bets?mode=\${state.betMode}&status=settled&limit=\${BETS_LIMIT}&offset=0&model=\${state.modelVersion}\`).then(r => { if (!r.ok) throw new Error('bets failed'); return r.json(); }),
+    fetch(\`/api/open-bets?mode=\${state.betMode}&model=\${state.modelVersion}\`).then(r => { if (!r.ok) throw new Error('open bets failed'); return r.json(); }),
   ]);
   betsOffset = 0;
   state.performance = performance;
@@ -3336,9 +3356,9 @@ async function reloadDashboardState() {
     fetch('/api/settings').then(r => { if (!r.ok) throw new Error('settings failed'); return r.json(); }),
     fetch('/api/balance').then(r => { if (!r.ok) throw new Error('balance failed'); return r.json(); }),
     fetch('/api/paper-bankroll').then(r => { if (!r.ok) throw new Error('paper bankroll failed'); return r.json(); }),
-    fetch('/api/upcoming').then(r => { if (!r.ok) throw new Error('upcoming failed'); return r.json(); }),
+    fetch(\`/api/upcoming?model=\${state.modelVersion}\`).then(r => { if (!r.ok) throw new Error('upcoming failed'); return r.json(); }),
     fetch('/api/teams').then(r => { if (!r.ok) throw new Error('teams failed'); return r.json(); }),
-    fetch('/api/model-accuracy').then(r => { if (!r.ok) throw new Error('model accuracy failed'); return r.json(); }),
+    fetch(\`/api/model-accuracy?model=\${state.modelVersion}\`).then(r => { if (!r.ok) throw new Error('model accuracy failed'); return r.json(); }),
   ]);
   betsOffset = 0;
   modelPicksOffset = 0;

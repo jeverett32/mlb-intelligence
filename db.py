@@ -957,38 +957,47 @@ def get_upcoming_bet_signals(limit: int = 50) -> list[dict]:
         conn.close()
 
 
-def get_all_bets() -> pd.DataFrame:
+def get_all_bets(version: str = "v1") -> pd.DataFrame:
+    table = "bets_v2" if version == "v2" else "bets"
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM bets ORDER BY game_date DESC, game_pk")
+            cur.execute(f"SELECT * FROM {table} ORDER BY game_date DESC, game_pk")
             rows = cur.fetchall()
     finally:
         conn.close()
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
-    df = _money_alias_df(df)
+    if version == "v1":
+        df = _money_alias_df(df)
+    else:
+        # V2 uses bet_frac as units, alias it to bet_dollars for the dashboard
+        if "bet_frac" in df.columns:
+            df["bet_dollars"] = df["bet_frac"]
+        if "pnl" in df.columns:
+            df["profit_loss"] = df["pnl"]
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
 
-def get_model_picks() -> pd.DataFrame:
+def get_model_picks(version: str = "v1") -> pd.DataFrame:
     """
     Return all predicted games that have a known result (home_win).
     Joins bets (for predictions) with games (for actual outcome).
     Used to measure model accuracy independent of whether a bet was placed.
     Excludes postponed/cancelled games so voided markets do not affect stats.
     """
+    bets_table = "bets_v2" if version == "v2" else "bets"
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT b.game_pk, b.game_date, b.home_team, b.away_team,
                        b.predicted_prob, b.bet_side, b.bet_frac, b.edge,
                        b.market_implied_prob,
                        g.home_win
-                FROM bets b
+                FROM {bets_table} b
                 JOIN games g ON b.game_pk = g.game_pk
                 WHERE b.predicted_prob IS NOT NULL
                   AND g.home_win IS NOT NULL
@@ -2924,41 +2933,59 @@ def upsert_paper_order(
         conn.close()
 
 
-def get_paper_orders(email: str) -> pd.DataFrame:
+def get_paper_orders(email: str, version: str = "v1") -> pd.DataFrame:
     # Paper mode is universal (same for every user).
     _ = email
+    table = "paper_orders_v2" if version == "v2" else "paper_orders"
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT *
-                FROM paper_orders
-                WHERE email = %s
-                ORDER BY game_date DESC NULLS LAST, game_pk DESC
-                """,
-                (PAPER_UNIVERSAL_EMAIL,),
-            )
+            if version == "v2":
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {table}
+                    ORDER BY placed_at DESC NULLS LAST, game_pk DESC
+                    """
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {table}
+                    WHERE email = %s
+                    ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                    """,
+                    (PAPER_UNIVERSAL_EMAIL,),
+                )
             rows = cur.fetchall()
     finally:
         conn.close()
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
-    df = _money_alias_df(df)
+    if version == "v1":
+        df = _money_alias_df(df)
+    else:
+        # V2 uses bet_frac as units, alias it to bet_dollars for the dashboard
+        if "bet_frac" in df.columns:
+            df["bet_dollars"] = df["bet_frac"]
+        if "pnl" in df.columns:
+            df["profit_loss"] = df["pnl"]
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
 
-def get_all_paper_orders() -> pd.DataFrame:
+def get_all_paper_orders(version: str = "v1") -> pd.DataFrame:
+    table = "paper_orders_v2" if version == "v2" else "paper_orders"
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """
+                f"""
                 SELECT *
-                FROM paper_orders
-                ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                FROM {table}
+                ORDER BY {'placed_at' if version == 'v2' else 'game_date'} DESC NULLS LAST, game_pk DESC
                 """
             )
             rows = cur.fetchall()
@@ -2967,7 +2994,11 @@ def get_all_paper_orders() -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([dict(r) for r in rows])
-    df = _money_alias_df(df)
+    if version == "v1":
+        df = _money_alias_df(df)
+    else:
+        if "bet_frac" in df.columns:
+            df["bet_dollars"] = df["bet_frac"]
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -3798,21 +3829,42 @@ def save_model_metric_snapshot(data: dict) -> int:
         conn.close()
 
 
-def get_model_metric_snapshots(limit: int = 50) -> list[dict]:
+def get_model_metric_snapshots(limit: int = 50, version: str = "v1") -> list[dict]:
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(f"""
-                SELECT * FROM {MODEL_METRIC_SNAPSHOTS_TABLE}
-                ORDER BY trained_at DESC LIMIT %s
-            """, (limit,))
-            return [dict(r) for r in cur.fetchall()]
+            if version == "v2":
+                # Synthesize snapshots from model_artifacts_v2
+                cur.execute("""
+                    SELECT id, created_at as trained_at, metrics 
+                    FROM model_artifacts_v2
+                    ORDER BY created_at DESC LIMIT %s
+                """, (int(limit),))
+                rows = cur.fetchall()
+                out = []
+                for r in rows:
+                    m = r.get("metrics") or {}
+                    if isinstance(m, str):
+                        try:
+                            m = json.loads(m)
+                        except (ValueError, TypeError):
+                            m = {}
+                    row_dict = {"id": r["id"], "trained_at": r["trained_at"]}
+                    row_dict.update(m)
+                    out.append(row_dict)
+                return out
+            else:
+                cur.execute(f"""
+                    SELECT * FROM {MODEL_METRIC_SNAPSHOTS_TABLE}
+                    ORDER BY trained_at DESC LIMIT %s
+                """, (limit,))
+                return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
 
-def get_latest_model_metric_snapshot() -> dict | None:
-    snapshots = get_model_metric_snapshots(limit=1)
+def get_latest_model_metric_snapshot(version: str = "v1") -> dict | None:
+    snapshots = get_model_metric_snapshots(limit=1, version=version)
     return snapshots[0] if snapshots else None
 
 
@@ -4186,7 +4238,8 @@ def save_model_artifact(data: dict) -> int:
         conn.close()
 
 
-def get_model_artifact_fi_history(limit: int = 50) -> list[dict]:
+def get_model_artifact_fi_history(limit: int = 50, version: str = "v1") -> list[dict]:
+    table = "model_artifacts_v2" if version == "v2" else MODEL_ARTIFACTS_TABLE
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -4195,7 +4248,7 @@ def get_model_artifact_fi_history(limit: int = 50) -> list[dict]:
                 SELECT id, created_at, model_type, training_fingerprint,
                        num_features, settled_row_count, max_settled_game_date,
                        feature_importances
-                FROM {MODEL_ARTIFACTS_TABLE}
+                FROM {table}
                 ORDER BY created_at DESC NULLS LAST, id DESC
                 LIMIT %s
                 """,
@@ -4385,3 +4438,364 @@ def ping() -> bool:
             conn.close()
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# v2 shadow tables (parallel backup pipeline)
+# ---------------------------------------------------------------------------
+
+
+def init_bets_v2() -> None:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bets_v2 (
+                    game_pk BIGINT PRIMARY KEY,
+                    game_date DATE,
+                    home_team TEXT,
+                    away_team TEXT,
+                    predicted_prob DOUBLE PRECISION,
+                    market_implied_prob DOUBLE PRECISION,
+                    edge DOUBLE PRECISION,
+                    bet_side TEXT,
+                    bet_frac DOUBLE PRECISION,
+                    model_artifact_id BIGINT NULL,
+                    model_version TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        conn.commit()
+
+
+def init_paper_orders_v2() -> None:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS paper_orders_v2 (
+                    id BIGSERIAL PRIMARY KEY,
+                    game_pk BIGINT NOT NULL,
+                    bet_side TEXT NOT NULL,
+                    bet_frac DOUBLE PRECISION NOT NULL,
+                    predicted_prob DOUBLE PRECISION,
+                    market_implied_prob DOUBLE PRECISION,
+                    edge DOUBLE PRECISION,
+                    placed_at TIMESTAMPTZ DEFAULT NOW(),
+                    result TEXT NULL,
+                    pnl DOUBLE PRECISION NULL,
+                    model_version TEXT,
+                    UNIQUE(game_pk, bet_side)
+                )
+                """
+            )
+        conn.commit()
+
+
+def init_model_artifacts_v2() -> None:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS model_artifacts_v2 (
+                    id BIGSERIAL PRIMARY KEY,
+                    model_type TEXT NOT NULL,
+                    model_version TEXT NOT NULL,
+                    training_fingerprint TEXT NOT NULL UNIQUE,
+                    artifact_format TEXT DEFAULT 'pickle',
+                    artifact_bytes BYTEA NOT NULL,
+                    artifact_sha256 TEXT NOT NULL,
+                    settled_row_count INT,
+                    max_settled_game_date DATE,
+                    num_features INT,
+                    feature_columns JSONB,
+                    feature_config JSONB,
+                    metrics JSONB,
+                    git_commit TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        conn.commit()
+
+
+def init_v2_tables() -> None:
+    init_bets_v2()
+    init_paper_orders_v2()
+    init_model_artifacts_v2()
+
+
+def update_bet_v2_prediction(
+    game_pk: int,
+    predicted_prob: float,
+    edge: float | None,
+    bet_side: str,
+    bet_frac: float,
+    market_implied_prob: float | None,
+    model_artifact_id: int | None,
+    model_version: str = "v2-lgbm-k306-phase25",
+) -> None:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO bets_v2 (
+                    game_pk,
+                    predicted_prob,
+                    market_implied_prob,
+                    edge,
+                    bet_side,
+                    bet_frac,
+                    model_artifact_id,
+                    model_version,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (game_pk) DO UPDATE SET
+                    predicted_prob = EXCLUDED.predicted_prob,
+                    market_implied_prob = EXCLUDED.market_implied_prob,
+                    edge = EXCLUDED.edge,
+                    bet_side = EXCLUDED.bet_side,
+                    bet_frac = EXCLUDED.bet_frac,
+                    model_artifact_id = EXCLUDED.model_artifact_id,
+                    model_version = EXCLUDED.model_version,
+                    updated_at = NOW()
+                """,
+                (
+                    int(game_pk),
+                    float(predicted_prob) if predicted_prob is not None else None,
+                    float(market_implied_prob) if market_implied_prob is not None else None,
+                    float(edge) if edge is not None and edge == edge else None,
+                    bet_side,
+                    float(bet_frac) if bet_frac is not None else None,
+                    int(model_artifact_id) if model_artifact_id is not None else None,
+                    model_version,
+                ),
+            )
+        conn.commit()
+
+
+def upsert_paper_order_v2(
+    game_pk: int,
+    bet_side: str,
+    bet_frac: float,
+    predicted_prob: float | None,
+    market_implied_prob: float | None,
+    edge: float | None,
+    model_version: str = "v2-lgbm-k306-phase25",
+) -> None:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO paper_orders_v2 (
+                    game_pk,
+                    bet_side,
+                    bet_frac,
+                    predicted_prob,
+                    market_implied_prob,
+                    edge,
+                    model_version
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (game_pk, bet_side) DO UPDATE SET
+                    bet_frac = EXCLUDED.bet_frac,
+                    predicted_prob = EXCLUDED.predicted_prob,
+                    market_implied_prob = EXCLUDED.market_implied_prob,
+                    edge = EXCLUDED.edge,
+                    model_version = EXCLUDED.model_version
+                """,
+                (
+                    int(game_pk),
+                    bet_side,
+                    float(bet_frac) if bet_frac is not None else None,
+                    float(predicted_prob) if predicted_prob is not None else None,
+                    float(market_implied_prob) if market_implied_prob is not None else None,
+                    float(edge) if edge is not None and edge == edge else None,
+                    model_version,
+                ),
+            )
+        conn.commit()
+
+
+def save_model_artifact_v2(payload: dict) -> int:
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO model_artifacts_v2 (
+                    model_type,
+                    model_version,
+                    training_fingerprint,
+                    artifact_format,
+                    artifact_bytes,
+                    artifact_sha256,
+                    settled_row_count,
+                    max_settled_game_date,
+                    num_features,
+                    feature_columns,
+                    feature_config,
+                    metrics,
+                    git_commit
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (training_fingerprint) DO UPDATE SET
+                    model_type = EXCLUDED.model_type,
+                    model_version = EXCLUDED.model_version,
+                    artifact_format = EXCLUDED.artifact_format,
+                    artifact_bytes = EXCLUDED.artifact_bytes,
+                    artifact_sha256 = EXCLUDED.artifact_sha256,
+                    settled_row_count = EXCLUDED.settled_row_count,
+                    max_settled_game_date = EXCLUDED.max_settled_game_date,
+                    num_features = EXCLUDED.num_features,
+                    feature_columns = EXCLUDED.feature_columns,
+                    feature_config = EXCLUDED.feature_config,
+                    metrics = EXCLUDED.metrics,
+                    git_commit = EXCLUDED.git_commit
+                RETURNING id
+                """,
+                (
+                    payload["model_type"],
+                    payload["model_version"],
+                    payload["training_fingerprint"],
+                    payload.get("artifact_format", "pickle"),
+                    psycopg2.Binary(payload["artifact_bytes"]),
+                    payload["artifact_sha256"],
+                    payload.get("settled_row_count"),
+                    payload.get("max_settled_game_date"),
+                    payload.get("num_features"),
+                    json.dumps(payload.get("feature_columns")) if payload.get("feature_columns") is not None else None,
+                    json.dumps(payload.get("feature_config")) if payload.get("feature_config") is not None else None,
+                    json.dumps(payload.get("metrics")) if payload.get("metrics") is not None else None,
+                    payload.get("git_commit"),
+                ),
+            )
+            artifact_id = cur.fetchone()[0]
+        conn.commit()
+        return int(artifact_id)
+
+
+def get_model_artifact_v2_by_fingerprint(fingerprint: str) -> dict | None:
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM model_artifacts_v2
+                WHERE training_fingerprint = %s
+                LIMIT 1
+                """,
+                (fingerprint,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def get_v2_paper_orders(limit: int = 200) -> list[dict]:
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM paper_orders_v2
+                ORDER BY placed_at DESC NULLS LAST, id DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+def backfill_paper_order_v2_results():
+    """
+    Find paper_orders_v2 with no result, join with games to see if settled,
+    and update result/pnl.
+    """
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Join with games where home_win is not null
+            cur.execute(
+                """
+                SELECT 
+                    o.id, o.game_pk, o.bet_side, o.bet_frac, 
+                    g.home_win, g.close_home_ml, g.close_away_ml
+                FROM paper_orders_v2 o
+                JOIN games g ON o.game_pk = g.game_pk
+                WHERE o.result IS NULL AND g.home_win IS NOT NULL
+                """
+            )
+            rows = cur.fetchall()
+            
+            if not rows:
+                return 0
+                
+            updates = []
+            for r in rows:
+                won = (r['bet_side'] == 'home' and r['home_win'] is True) or                       (r['bet_side'] == 'away' and r['home_win'] is False)
+                
+                res_str = 'win' if won else 'loss'
+                
+                # Calculate PnL
+                if won:
+                    ml = r['close_home_ml'] if r['bet_side'] == 'home' else r['close_away_ml']
+                    try:
+                        ml = float(ml)
+                        if ml < 0:
+                            dec = 1.0 + 100.0 / abs(ml)
+                        else:
+                            dec = 1.0 + ml / 100.0
+                    except (TypeError, ValueError):
+                        # Fallback to no-vig if close_ml is missing? 
+                        # Or just use 1.0 (breakeven odds) as safer floor.
+                        dec = 1.91 # standard -110 fallback
+                        
+                    pnl = float(r['bet_frac']) * (dec - 1.0)
+                else:
+                    pnl = -float(r['bet_frac'])
+                
+                updates.append((res_str, pnl, r['id']))
+            
+            if updates:
+                execute_values(
+                    cur,
+                    "UPDATE paper_orders_v2 SET result = %s, pnl = %s WHERE id = %s",
+                    updates
+                )
+            conn.commit()
+            return len(updates)
+
+def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFrame:
+    """
+    V2 version of get_upcoming_needing_prediction, checking bets_v2.
+    """
+    sql = """
+        SELECT g.*
+        FROM games g
+        LEFT JOIN bets_v2 b ON b.game_pk = g.game_pk
+        WHERE g.season = %s
+          AND g.home_win IS NULL
+          AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+          AND (
+              b.game_pk IS NULL
+              OR b.predicted_prob IS NULL
+          )
+        ORDER BY g.game_date, g.game_pk
+    """
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, (season,))
+            rows = cur.fetchall()
+    if not rows:
+        return pd.DataFrame()
+    records = []
+    for row in rows:
+        r = dict(row)
+        extra = r.pop("extra", None) or {}
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        r.update(extra)
+        r.pop("created_at", None)
+        r.pop("updated_at", None)
+        records.append(r)
+    return pd.DataFrame(records)
