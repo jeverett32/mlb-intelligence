@@ -1283,8 +1283,8 @@ function makeModelChart(id, cfg) {
 async function loadModelInsights() {
   try {
     const [latestResp, allResp, pipelineResp] = await Promise.all([
-      fetch(\`/api/admin/model-metrics/latest?model=\${adminModelVersion}\`),
-      fetch(\`/api/admin/model-metrics?model=\${adminModelVersion}\`),
+      fetch(`/api/admin/model-metrics/latest?model=${adminModelVersion}`),
+      fetch(`/api/admin/model-metrics?model=${adminModelVersion}`),
       fetch('/api/admin/pipeline-runs'),
     ]);
     if (!latestResp.ok || !allResp.ok) return;
@@ -1426,7 +1426,7 @@ let _fiProdChartConfig = null;
 
 async function loadProductionFi() {
   try {
-    const resp = await fetch(\`/api/admin/model-artifacts/fi-history?model=\${adminModelVersion}\`);
+    const resp = await fetch(`/api/admin/model-artifacts/fi-history?model=${adminModelVersion}`);
     if (!resp.ok) return;
     const { artifacts } = await resp.json();
     renderProductionFi(artifacts || []);
