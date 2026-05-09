@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from sklearn.pipeline import Pipeline
@@ -29,14 +30,14 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     and extracts target rows for specified PKs.
     """
     try:
-        cache_dir = os.path.join(ROOT, "sandbox/model_lab/output/cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        
+        cache_dir = Path(ROOT) / "sandbox/model_lab/output/cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
         # 1. Load engineered frame (sandbox master)
         # We pass game_date as the cutoff to prevent leakage.
         df = load_or_build_engineered_frame(
-            input_path=os.path.join(ROOT, "sandbox/model_lab/output/master_sandbox_mlb.csv"),
-            cutoff=game_date, 
+            input_path=Path(ROOT) / "sandbox/model_lab/output/master_sandbox_mlb.csv",
+            cutoff=game_date,
             cache_dir=cache_dir,
             use_cache=True
         )

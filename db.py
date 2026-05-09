@@ -976,7 +976,16 @@ def get_all_bets(version: str = "v1") -> pd.DataFrame:
         if "bet_frac" in df.columns:
             df["bet_dollars"] = df["bet_frac"]
         if "pnl" in df.columns:
-            df["profit_loss"] = df["pnl"]
+            df["profit_loss"] = pd.to_numeric(df["pnl"], errors="coerce")
+        if "result" in df.columns and "bet_side" in df.columns:
+            res = df["result"].astype("string")
+            side = df["bet_side"].astype("string")
+            home_win = pd.Series(pd.NA, index=df.index, dtype="boolean")
+            home_win[(res == "win") & (side == "home")] = True
+            home_win[(res == "loss") & (side == "home")] = False
+            home_win[(res == "win") & (side == "away")] = False
+            home_win[(res == "loss") & (side == "away")] = True
+            df["result"] = home_win
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -2971,7 +2980,16 @@ def get_paper_orders(email: str, version: str = "v1") -> pd.DataFrame:
         if "bet_frac" in df.columns:
             df["bet_dollars"] = df["bet_frac"]
         if "pnl" in df.columns:
-            df["profit_loss"] = df["pnl"]
+            df["profit_loss"] = pd.to_numeric(df["pnl"], errors="coerce")
+        if "result" in df.columns and "bet_side" in df.columns:
+            res = df["result"].astype("string")
+            side = df["bet_side"].astype("string")
+            home_win = pd.Series(pd.NA, index=df.index, dtype="boolean")
+            home_win[(res == "win") & (side == "home")] = True
+            home_win[(res == "loss") & (side == "home")] = False
+            home_win[(res == "win") & (side == "away")] = False
+            home_win[(res == "loss") & (side == "away")] = True
+            df["result"] = home_win
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
@@ -2999,6 +3017,17 @@ def get_all_paper_orders(version: str = "v1") -> pd.DataFrame:
     else:
         if "bet_frac" in df.columns:
             df["bet_dollars"] = df["bet_frac"]
+        if "pnl" in df.columns:
+            df["profit_loss"] = pd.to_numeric(df["pnl"], errors="coerce")
+        if "result" in df.columns and "bet_side" in df.columns:
+            res = df["result"].astype("string")
+            side = df["bet_side"].astype("string")
+            home_win = pd.Series(pd.NA, index=df.index, dtype="boolean")
+            home_win[(res == "win") & (side == "home")] = True
+            home_win[(res == "loss") & (side == "home")] = False
+            home_win[(res == "win") & (side == "away")] = False
+            home_win[(res == "loss") & (side == "away")] = True
+            df["result"] = home_win
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
 
