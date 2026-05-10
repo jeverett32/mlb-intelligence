@@ -41,6 +41,9 @@ STATE_FILE = "signal_follower_state.json"
 ORDER_SLIPPAGE_CENTS = 3
 EXECUTION_MIN_EDGE = 0.0
 KALSHI_ORDER_ENDPOINT = "legacy"  # "legacy" or "events"
+MAX_BET_FRAC = 0.25
+MIN_BET_DOLLARS = 1.0
+MAX_BET_DOLLARS = 0.0  # 0 = no cap
 
 
 KALSHI_BASES = {
@@ -400,8 +403,12 @@ def execute_signal(signal: dict) -> tuple[dict, int]:
         }, balance_cents
 
     stake_frac = float(signal.get("recommended_stake_frac") or 0.0)
+    if MAX_BET_FRAC and MAX_BET_FRAC > 0:
+        stake_frac = min(stake_frac, float(MAX_BET_FRAC))
     bet_dollars = round((balance_cents / 100.0) * stake_frac, 2)
-    if bet_dollars < 0.01:
+    if MAX_BET_DOLLARS and MAX_BET_DOLLARS > 0:
+        bet_dollars = min(bet_dollars, float(MAX_BET_DOLLARS))
+    if bet_dollars < MIN_BET_DOLLARS:
         return {"game_pk": signal["game_pk"], "status": "skipped_too_small"}, balance_cents
 
     live_price_cents = max(1, min(99, int(round(live_price * 100))))

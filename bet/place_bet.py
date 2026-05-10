@@ -26,8 +26,10 @@ MLB_SERIES = "KXMLBGAME"
 ORDER_SLIPPAGE_CENTS = int(os.environ.get("KALSHI_ORDER_SLIPPAGE_CENTS", "3"))
 EXECUTION_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
 KALSHI_ORDER_ENDPOINT = os.environ.get("KALSHI_ORDER_ENDPOINT", "legacy").strip().lower()
-KELLY_FRACTION = 0.25
-MAX_BET_FRAC = 0.25
+KELLY_FRACTION = float(os.environ.get("KALSHI_KELLY_FRACTION", "0.25"))
+MAX_BET_FRAC = float(os.environ.get("KALSHI_MAX_BET_FRAC", "0.25"))
+MIN_BET_DOLLARS = float(os.environ.get("KALSHI_MIN_BET_DOLLARS", "1.0"))
+MAX_BET_DOLLARS = float(os.environ.get("KALSHI_MAX_BET_DOLLARS", "0") or 0)
 
 # Kalshi uses different abbreviations than the MLB Stats API for some teams.
 MLB_TO_KALSHI = {
@@ -437,6 +439,8 @@ def _execute_bet_row(
 
     balance_dollars = balance_cents / 100.0
     bet_dollars = round(balance_dollars * bet_frac, 2)
+    if MAX_BET_DOLLARS and MAX_BET_DOLLARS > 0:
+        bet_dollars = min(bet_dollars, float(MAX_BET_DOLLARS))
 
     print(f"  Bankroll:         ${balance_dollars:.2f}")
     print(f"  Sportsbook market:{market_prob:>9.4f}")
@@ -445,8 +449,8 @@ def _execute_bet_row(
     print(f"  Kelly fraction:  {bet_frac * 100:.2f}%")
     print(f"  Bet amount:      ${bet_dollars:.2f} on {bet_side.upper()}")
 
-    if bet_dollars < 0.01:
-        print("  Bet rounds to $0.00 — skipping.")
+    if bet_dollars < MIN_BET_DOLLARS:
+        print(f"  Bet below ${MIN_BET_DOLLARS:.2f} minimum — skipping.")
         return {"game_pk": str(row.get("game_pk")), "status": "skipped_too_small"}
 
     live_price_cents = max(1, min(99, int(round(live_price * 100))))
