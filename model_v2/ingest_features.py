@@ -24,28 +24,24 @@ def ingest_features(season, start_date=None, end_date=None):
         
     print(f"Refreshing features for {season} ({start_date} to {end_date})...")
     
+    py = sys.executable
+
     # 1. Refresh sandbox parquet caches
-    # leaderboard_sources.py fetch --start-season {season} --end-season {season}
     run_cmd([
-        "python3", "sandbox/model_lab/leaderboard_sources.py", "fetch", 
+        py, "sandbox/model_lab/leaderboard_sources.py", "fetch",
         "--start-season", str(season), "--end-season", str(season)
     ])
-    
-    # savant_sources.py fetch --start {start_date} --end {end_date}
+
     run_cmd([
-        "python3", "sandbox/model_lab/savant_sources.py", "fetch",
+        py, "sandbox/model_lab/savant_sources.py", "fetch",
         "--start", start_date, "--end", end_date
     ])
-    
-    # real_sources.py fetch-mlb (needs a master CSV with these games, or it might just scan all if we don't pass --master)
-    # Actually, real_sources.py fetch-mlb scans the master CSV by default. 
-    # If the master CSV doesn't have 2026 games, we might need a different approach.
-    # Let's check how real_sources.py fetch-mlb works without --master.
+
     run_cmd([
-        "python3", "sandbox/model_lab/real_sources.py", "fetch-mlb"
+        py, "sandbox/model_lab/real_sources.py", "fetch-mlb"
     ])
     run_cmd([
-        "python3", "sandbox/model_lab/real_sources.py", "fetch-weather"
+        py, "sandbox/model_lab/real_sources.py", "fetch-weather"
     ])
     
     # 2. Rebuild the master frame (in memory)

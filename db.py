@@ -4925,9 +4925,13 @@ def bulk_upsert_games_v2(rows: list[dict]) -> int:
 
     values = []
     for r in rows:
+        hw = r.get("home_win")
+        hw = None if hw is None else bool(int(hw))
+        season = r.get("season")
+        season = None if season is None else int(season)
         values.append((
-            int(r["game_pk"]), r.get("game_date"), r.get("season"),
-            r.get("home_team"), r.get("away_team"), r.get("home_win"),
+            int(r["game_pk"]), r.get("game_date"), season,
+            r.get("home_team"), r.get("away_team"), hw,
             r.get("close_home_ml"), r.get("close_away_ml"), r.get("market_implied_prob"),
             psycopg2.extras.Json(r.get("features", {}))
         ))
@@ -4950,16 +4954,15 @@ def load_games_v2_frame(cutoff: str | None = None) -> pd.DataFrame:
         params.append(cutoff)
         
     with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SET LOCAL statement_timeout = 0")
         df = pd.read_sql_query(sql, conn, params=params)
-        
+        conn.rollback()
+
     if df.empty:
         return df
-        
-    # Explode features JSONB
-    # Note: features column in df will be a list of dicts (already parsed by psycopg2/Json)
+
     features_df = pd.json_normalize(df['features'])
-    
-    # Drop the original features column and join the exploded ones
     df = df.drop(columns=['features']).join(features_df)
-    
+
     return df

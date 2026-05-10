@@ -1,9 +1,19 @@
+import os
+
 import pytest
 import pandas as pd
 import numpy as np
 import db as DB
 
+
+def _requires_db_env() -> None:
+    missing = [n for n in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD") if not os.environ.get(n)]
+    if missing:
+        pytest.skip("DB env missing: " + ", ".join(missing))
+
+
 def test_games_v2_roundtrip(monkeypatch):
+    _requires_db_env()
     """Verify bulk_upsert_games_v2 and load_games_v2_frame work as expected."""
     # Ensure tables exist
     DB.init_games_v2()
