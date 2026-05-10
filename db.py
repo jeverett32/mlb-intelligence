@@ -2428,47 +2428,68 @@ def get_user_balance_daily_history(email: str) -> pd.DataFrame:
     return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
 
-def get_paper_bankroll_dollars(email: str) -> float:
+def get_paper_bankroll_dollars(email: str, version: str = "v1") -> float:
     # Paper mode is universal (same for every user).
     _ = email
+    table = "paper_orders_v2" if version == "v2" else "paper_orders"
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COALESCE(
-                    SUM(COALESCE(profit_loss_cents, ROUND(profit_loss * 100)::bigint)),
-                    0
+            if version == "v2":
+                cur.execute(
+                    f"SELECT COALESCE(SUM(pnl), 0) FROM {table}"
                 )
-                FROM paper_orders
-                WHERE email = %s
-                  AND (profit_loss_cents IS NOT NULL OR profit_loss IS NOT NULL)
-                """,
-                (PAPER_UNIVERSAL_EMAIL,),
-            )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT COALESCE(
+                        SUM(COALESCE(profit_loss_cents, ROUND(profit_loss * 100)::bigint)),
+                        0
+                    )
+                    FROM {table}
+                    WHERE email = %s
+                      AND (profit_loss_cents IS NOT NULL OR profit_loss IS NOT NULL)
+                    """,
+                    (PAPER_UNIVERSAL_EMAIL,),
+                )
             row = cur.fetchone()
-            paper_profit = (int(row[0] or 0) / 100.0) if row else 0.0
+            if version == "v2":
+                paper_profit = float(row[0] or 0)
+            else:
+                paper_profit = (int(row[0] or 0) / 100.0) if row else 0.0
             return round(PAPER_STARTING_BANKROLL_DOLLARS + paper_profit, 2)
     finally:
         conn.close()
 
 
-def get_paper_bankroll_history(email: str) -> list[dict]:
+def get_paper_bankroll_history(email: str, version: str = "v1") -> list[dict]:
     # Paper mode is universal (same for every user).
     _ = email
+    table = "paper_orders_v2" if version == "v2" else "paper_orders"
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT game_date, game_pk, paper_bankroll_after, paper_bankroll_after_cents
-                FROM paper_orders
-                WHERE email = %s
-                  AND (paper_bankroll_after_cents IS NOT NULL OR paper_bankroll_after IS NOT NULL)
-                ORDER BY game_date ASC NULLS LAST, game_pk ASC
-                """,
-                (PAPER_UNIVERSAL_EMAIL,),
-            )
+            if version == "v2":
+                cur.execute(
+                    f"""
+                    SELECT g.game_date, o.game_pk, o.paper_bankroll_after
+                    FROM {table} o
+                    JOIN games g ON o.game_pk = g.game_pk
+                    WHERE o.paper_bankroll_after IS NOT NULL
+                    ORDER BY g.game_date ASC, o.placed_at ASC, o.id ASC
+                    """
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT game_date, game_pk, paper_bankroll_after, paper_bankroll_after_cents
+                    FROM {table}
+                    WHERE email = %s
+                      AND (paper_bankroll_after_cents IS NOT NULL OR paper_bankroll_after IS NOT NULL)
+                    ORDER BY game_date ASC NULLS LAST, game_pk ASC
+                    """,
+                    (PAPER_UNIVERSAL_EMAIL,),
+                )
             rows = [dict(row) for row in cur.fetchall()]
     finally:
         conn.close()
@@ -2481,14 +2502,21 @@ def get_paper_bankroll_history(email: str) -> list[dict]:
         }
     ]
     for row in rows:
+        if version == "v2":
+            balance = float(row["paper_bankroll_after"])
+            recorded_at = row.get("game_date")
+        else:
+            balance = (
+                _cents_to_dollars(row.get("paper_bankroll_after_cents"))
+                if row.get("paper_bankroll_after_cents") is not None
+                else float(row["paper_bankroll_after"])
+            )
+            recorded_at = row.get("game_date")
+            
         history.append(
             {
-                "recorded_at": row.get("game_date"),
-                "balance_dollars": (
-                    _cents_to_dollars(row.get("paper_bankroll_after_cents"))
-                    if row.get("paper_bankroll_after_cents") is not None
-                    else float(row["paper_bankroll_after"])
-                ),
+                "recorded_at": recorded_at,
+                "balance_dollars": balance,
                 "game_pk": row.get("game_pk"),
                 "source": "paper",
             }
@@ -4542,17 +4570,25 @@ def init_paper_orders_v2() -> None:
                     game_pk BIGINT NOT NULL,
                     bet_side TEXT NOT NULL,
                     bet_frac DOUBLE PRECISION NOT NULL,
+                    bet_dollars DOUBLE PRECISION NULL,
                     predicted_prob DOUBLE PRECISION,
                     market_implied_prob DOUBLE PRECISION,
                     edge DOUBLE PRECISION,
                     placed_at TIMESTAMPTZ DEFAULT NOW(),
                     result TEXT NULL,
                     pnl DOUBLE PRECISION NULL,
+                    paper_bankroll_before DOUBLE PRECISION NULL,
+                    paper_bankroll_after DOUBLE PRECISION NULL,
                     model_version TEXT,
                     UNIQUE(game_pk, bet_side)
                 )
                 """
             )
+            cur.execute("ALTER TABLE paper_orders_v2 ADD COLUMN IF NOT EXISTS bet_dollars DOUBLE PRECISION NULL")
+            cur.execute("ALTER TABLE paper_orders_v2 ADD COLUMN IF NOT EXISTS paper_bankroll_before DOUBLE PRECISION NULL")
+            cur.execute("ALTER TABLE paper_orders_v2 ADD COLUMN IF NOT EXISTS paper_bankroll_after DOUBLE PRECISION NULL")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_orders_v2_game_pk ON paper_orders_v2(game_pk)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_orders_v2_placed_at ON paper_orders_v2(placed_at)")
         conn.commit()
 
 
@@ -4854,14 +4890,16 @@ def backfill_paper_order_v2_results():
                     pnl = -float(r['bet_frac'])
                 
                 updates.append((res_str, pnl, r['id']))
-            
             if updates:
-                cur.executemany(
+                execute_values(
+                    cur,
                     "UPDATE paper_orders_v2 SET result = %s, pnl = %s WHERE id = %s",
                     updates
                 )
             conn.commit()
+            recompute_paper_order_v2_financials()
             return len(updates)
+
 
 def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
@@ -5012,3 +5050,72 @@ def load_games_v2_frame(cutoff: str | None = None) -> pd.DataFrame:
     df = df.drop(columns=['features']).join(features_df)
 
     return df
+
+def recompute_paper_order_v2_financials() -> int:
+    """
+    Compute paper_bankroll_before / paper_bankroll_after for V2 orders.
+    Uses chronological order and PAPER_STARTING_BANKROLL_DOLLARS.
+    """
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # We need odds and result to compute PnL properly
+            cur.execute(
+                """
+                SELECT o.id, o.game_pk, o.bet_side, o.bet_frac, o.result,
+                       g.game_date, g.close_home_ml, g.close_away_ml
+                FROM paper_orders_v2 o
+                JOIN games g ON o.game_pk = g.game_pk
+                ORDER BY g.game_date ASC NULLS LAST, o.placed_at ASC, o.id ASC
+                """
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            if not rows:
+                return 0
+                
+            bankroll = PAPER_STARTING_BANKROLL_DOLLARS
+            updates = []
+            
+            for r in rows:
+                if r['result'] is None:
+                    continue
+                    
+                before = bankroll
+                # Stake in dollars = current bankroll * fraction
+                stake_dollars = round(bankroll * float(r['bet_frac']), 2)
+                
+                if r['result'] == 'win':
+                    ml = r['close_home_ml'] if r['bet_side'] == 'home' else r['close_away_ml']
+                    try:
+                        ml = float(ml)
+                        if ml < 0:
+                            dec = 1.0 + 100.0 / abs(ml)
+                        else:
+                            dec = 1.0 + ml / 100.0
+                    except (TypeError, ValueError):
+                        dec = 1.91 # fallback
+                    
+                    # PnL in dollars
+                    pnl_dollars = round(stake_dollars * (dec - 1.0), 2)
+                else:
+                    pnl_dollars = -stake_dollars
+                
+                after = round(bankroll + pnl_dollars, 2)
+                updates.append((stake_dollars, pnl_dollars, before, after, r['id']))
+                bankroll = after
+                
+            if updates:
+                execute_values(
+                    cur,
+                    """
+                    UPDATE paper_orders_v2 AS o
+                    SET bet_dollars = v.bet_dollars,
+                        pnl = v.pnl,
+                        paper_bankroll_before = v.br_before,
+                        paper_bankroll_after = v.br_after
+                    FROM (VALUES %s) AS v (bet_dollars, pnl, br_before, br_after, id)
+                    WHERE o.id = v.id
+                    """,
+                    updates
+                )
+            conn.commit()
+            return len(updates)

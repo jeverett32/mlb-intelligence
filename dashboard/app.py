@@ -1308,12 +1308,30 @@ def get_balance(user: dict = Depends(require_approved_user)):
 
 
 @app.get("/api/paper-bankroll")
-def get_paper_bankroll(user: dict = Depends(require_approved_user)):
-    _ensure_paper_backfill(user["email"])
+def get_paper_bankroll(model: str = "v1", user: dict = Depends(require_approved_user)):
+    if model not in ("v1", "v2"):
+        model = "v1"
+        
+    if model == "v1":
+        _ensure_paper_backfill(user["email"])
+    else:
+        # V2 paper settlement is global
+        try:
+            DB.backfill_paper_order_v2_results()
+        except Exception as exc:
+            print(f"V2 paper backfill failed: {exc}")
+
+    if model == "v2":
+        current_dollars = DB.get_paper_bankroll_dollars(user["email"], version="v2")
+        history = DB.get_paper_bankroll_history(user["email"], version="v2")
+    else:
+        current_dollars = DB.get_paper_bankroll_dollars(user["email"])
+        history = DB.get_paper_bankroll_history(user["email"])
+
     return {
         "starting_dollars": DB.PAPER_STARTING_BANKROLL_DOLLARS,
-        "current_dollars": DB.get_paper_bankroll_dollars(user["email"]),
-        "history": DB.get_paper_bankroll_history(user["email"]),
+        "current_dollars": current_dollars,
+        "history": history,
     }
 
 
