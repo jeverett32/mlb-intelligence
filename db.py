@@ -962,7 +962,20 @@ def get_all_bets(version: str = "v1") -> pd.DataFrame:
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(f"SELECT * FROM {table} ORDER BY game_date DESC, game_pk")
+            if version == "v2":
+                cur.execute(
+                    f"""
+                    SELECT b.game_pk, b.predicted_prob, b.market_implied_prob, 
+                           b.edge, b.bet_side, b.bet_frac, b.model_artifact_id, 
+                           b.model_version,
+                           g.game_date, g.home_team, g.away_team, g.game_time_utc
+                    FROM {table} b
+                    LEFT JOIN games g ON b.game_pk = g.game_pk
+                    ORDER BY g.game_date DESC, b.game_pk
+                    """
+                )
+            else:
+                cur.execute(f"SELECT * FROM {table} ORDER BY game_date DESC, game_pk")
             rows = cur.fetchall()
     finally:
         conn.close()
@@ -990,6 +1003,7 @@ def get_all_bets(version: str = "v1") -> pd.DataFrame:
     return df
 
 
+
 def get_model_picks(version: str = "v1") -> pd.DataFrame:
     """
     Return all predicted games that have a known result (home_win).
@@ -1002,7 +1016,7 @@ def get_model_picks(version: str = "v1") -> pd.DataFrame:
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(f"""
-                SELECT b.game_pk, b.game_date, b.home_team, b.away_team,
+                SELECT b.game_pk, g.game_date, g.home_team, g.away_team,
                        b.predicted_prob, b.bet_side, b.bet_frac, b.edge,
                        b.market_implied_prob,
                        g.home_win
@@ -1011,12 +1025,13 @@ def get_model_picks(version: str = "v1") -> pd.DataFrame:
                 WHERE b.predicted_prob IS NOT NULL
                   AND g.home_win IS NOT NULL
                   AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-                ORDER BY b.game_date DESC
+                ORDER BY g.game_date DESC
             """)
             rows = cur.fetchall()
     finally:
         conn.close()
     return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
 
 
 # ---------------------------------------------------------------------------
@@ -2952,9 +2967,12 @@ def get_paper_orders(email: str, version: str = "v1") -> pd.DataFrame:
             if version == "v2":
                 cur.execute(
                     f"""
-                    SELECT *
-                    FROM {table}
-                    ORDER BY placed_at DESC NULLS LAST, game_pk DESC
+                    SELECT o.*, 
+                           g.game_date, g.home_team, g.away_team, g.game_time_utc,
+                           'dry_run' as status
+                    FROM {table} o
+                    LEFT JOIN games g ON o.game_pk = g.game_pk
+                    ORDER BY o.placed_at DESC NULLS LAST, o.game_pk DESC
                     """
                 )
             else:
@@ -2999,13 +3017,25 @@ def get_all_paper_orders(version: str = "v1") -> pd.DataFrame:
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                f"""
-                SELECT *
-                FROM {table}
-                ORDER BY {'placed_at' if version == 'v2' else 'game_date'} DESC NULLS LAST, game_pk DESC
-                """
-            )
+            if version == "v2":
+                cur.execute(
+                    f"""
+                    SELECT o.*, 
+                           g.game_date, g.home_team, g.away_team, g.game_time_utc,
+                           'dry_run' as status
+                    FROM {table} o
+                    LEFT JOIN games g ON o.game_pk = g.game_pk
+                    ORDER BY o.placed_at DESC NULLS LAST, o.game_pk DESC
+                    """
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {table}
+                    ORDER BY game_date DESC NULLS LAST, game_pk DESC
+                    """
+                )
             rows = cur.fetchall()
     finally:
         conn.close()
@@ -3030,6 +3060,9 @@ def get_all_paper_orders(version: str = "v1") -> pd.DataFrame:
             df["result"] = home_win
     df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
     return df
+
+
+
 
 
 def get_paper_order(email: str, game_pk: str | int) -> dict | None:
@@ -4598,6 +4631,9 @@ def update_bet_v2_prediction(
                 """
                 INSERT INTO bets_v2 (
                     game_pk,
+                    game_date,
+                    home_team,
+                    away_team,
                     predicted_prob,
                     market_implied_prob,
                     edge,
@@ -4607,7 +4643,14 @@ def update_bet_v2_prediction(
                     model_version,
                     updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                SELECT 
+                    g.game_pk,
+                    g.game_date,
+                    g.home_team,
+                    g.away_team,
+                    %s, %s, %s, %s, %s, %s, %s, NOW()
+                FROM games g
+                WHERE g.game_pk = %s
                 ON CONFLICT (game_pk) DO UPDATE SET
                     predicted_prob = EXCLUDED.predicted_prob,
                     market_implied_prob = EXCLUDED.market_implied_prob,
@@ -4619,7 +4662,6 @@ def update_bet_v2_prediction(
                     updated_at = NOW()
                 """,
                 (
-                    int(game_pk),
                     float(predicted_prob) if predicted_prob is not None else None,
                     float(market_implied_prob) if market_implied_prob is not None else None,
                     float(edge) if edge is not None and edge == edge else None,
@@ -4627,9 +4669,11 @@ def update_bet_v2_prediction(
                     float(bet_frac) if bet_frac is not None else None,
                     int(model_artifact_id) if model_artifact_id is not None else None,
                     model_version,
+                    int(game_pk),
                 ),
             )
         conn.commit()
+
 
 
 def upsert_paper_order_v2(
@@ -4812,8 +4856,7 @@ def backfill_paper_order_v2_results():
                 updates.append((res_str, pnl, r['id']))
             
             if updates:
-                execute_values(
-                    cur,
+                cur.executemany(
                     "UPDATE paper_orders_v2 SET result = %s, pnl = %s WHERE id = %s",
                     updates
                 )
@@ -4961,6 +5004,9 @@ def load_games_v2_frame(cutoff: str | None = None) -> pd.DataFrame:
 
     if df.empty:
         return df
+
+    if "game_date" in df.columns:
+        df["game_date"] = pd.to_datetime(df["game_date"], errors="coerce")
 
     features_df = pd.json_normalize(df['features'])
     df = df.drop(columns=['features']).join(features_df)

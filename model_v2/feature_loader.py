@@ -12,6 +12,15 @@ import db as DB
 from sandbox.model_lab.feature_engineer import load_or_build_feature_sets
 from model_v2 import config as C
 
+_FRAME_CACHE: dict = {"df": None}
+
+
+def _load_frame() -> pd.DataFrame:
+    if _FRAME_CACHE["df"] is None:
+        _FRAME_CACHE["df"] = DB.load_games_v2_frame(cutoff=None)
+    return _FRAME_CACHE["df"]
+
+
 def load_or_build_engineered_frame_from_db(cutoff: str, cache_dir: str, use_cache: bool = True) -> pd.DataFrame:
     """
     Pulls rows from games_v2, explodes features, and applies sandbox feature sets.
@@ -19,9 +28,8 @@ def load_or_build_engineered_frame_from_db(cutoff: str, cache_dir: str, use_cach
     """
     cache_path = Path(cache_dir)
     os.makedirs(cache_path, exist_ok=True)
-    
-    # 1. Load from DB
-    df = DB.load_games_v2_frame(cutoff=cutoff)
+
+    df = _load_frame()
     if df.empty:
         return df
         
@@ -35,7 +43,7 @@ def load_or_build_engineered_frame_from_db(cutoff: str, cache_dir: str, use_cach
         min_coverage=C.MIN_COVERAGE,
         corr_threshold=C.CORR_THRESHOLD,
         top_k=C.K_FEATURES,
-        cache_dir=str(cache_path),
+        cache_dir=cache_path,
         use_cache=use_cache,
         selected_by=C.SELECTED_BY
     )

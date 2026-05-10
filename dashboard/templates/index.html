@@ -2566,7 +2566,6 @@ async function setModelVersion(v) {
     btn.classList.toggle('active', btn.id === 'model-' + v);
   });
   try {
-    await loadBetModeData();
     await reloadDashboardState();
     if (state.gamesDateStr) await loadGamesForDate(state.gamesDateStr, { silent: true });
     renderAll();

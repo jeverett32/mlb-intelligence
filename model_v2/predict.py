@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import hashlib
+from pathlib import Path
 
 # Absolute imports to reach sandbox and main repo
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -30,7 +31,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     and extracts target rows for specified PKs.
     """
     try:
-        cache_dir = os.path.join(ROOT, "sandbox/model_lab/output/cache")
+        cache_dir = Path(ROOT) / "sandbox/model_lab/output/cache"
 
         # 1. Load engineered frame from DB
         df = load_or_build_engineered_frame_from_db(
