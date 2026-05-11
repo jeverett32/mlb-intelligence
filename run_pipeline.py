@@ -37,9 +37,8 @@ load_dotenv()
 import db as DB
 import notify as NOTIFY
 from config import ACTIVE_SEASON, CURRENT_CSV
-sys.path.insert(0, str(Path(__file__).parent / "model"))
 sys.path.insert(0, str(Path(__file__).parent / "bet"))
-from model import predict as PREDICT  # noqa: E402
+from models.model_v1 import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
 from fetch.fetch_data import main as fetch_data_main, refresh_odds_only  # noqa: E402

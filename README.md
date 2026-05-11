@@ -62,8 +62,8 @@ Key components:
 ```text
 run_pipeline.py       # Main orchestrator
 fetch/                # Data ingestion — odds, weather, stats
-model/train.py        # Model training + walk-forward evaluation
-model/predict.py      # Inference — win probabilities + sizing
+models/model_v1/train.py   # Model training + walk-forward evaluation
+models/model_v1/predict.py # Inference — win probabilities + sizing
 bet/place_bet.py      # Kalshi execution
 settle_games.py       # Post-game settlement
 dashboard/app.py      # Dashboard API

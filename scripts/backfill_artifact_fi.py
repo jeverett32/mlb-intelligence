@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db as DB
-from model.predict import _artifact_feature_importances
+from models.model_v1.predict import _artifact_feature_importances
 
 
 def main():

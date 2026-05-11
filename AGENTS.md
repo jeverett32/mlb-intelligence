@@ -34,7 +34,7 @@ db.py                # All DB access (Postgres via psycopg2)
 
 bet/place_bet.py     # Kalshi bet placement
 fetch/               # Data fetchers (stats, odds, weather, balance)
-model/               # Train + predict (LR/LightGBM/XGBoost/MLP/ensemble)
+models/              # model_v1 (train + predict) and model_v2 (+ sandbox lab)
 
 dashboard/app.py     # FastAPI dashboard backend
 settle_games.py      # Post-game settlement
@@ -71,8 +71,8 @@ uv run pytest -q tests/
 
 ## Sandbox model lab
 
-- Experimental feature/model work lives under `sandbox/model_lab/`.
-- Sandbox master data is generated only at `sandbox/model_lab/output/master_sandbox_mlb.csv`.
+- Experimental feature/model work lives under `models/model_v2/sandbox/model_lab/`.
+- Sandbox master data is generated only at `models/model_v2/sandbox/model_lab/output/master_sandbox_mlb.csv`.
 - Sandbox training/testing must exclude incomplete seasons: keep only games with `game_date < 2026-01-01` unless the user explicitly changes the cutoff.
 - Sandbox scripts may read Postgres/API/cache data, but must not mutate production tables, production model artifacts, or betting/order flows.
 - Document each sandbox feature source and formula before using it for model comparison.

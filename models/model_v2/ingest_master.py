@@ -5,8 +5,9 @@ import argparse
 from tqdm import tqdm
 
 # Absolute imports to reach db and config
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, ROOT)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_V2_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _REPO_ROOT)
 
 import db as DB
 
@@ -16,7 +17,7 @@ METADATA_COLS = [
 ]
 
 def ingest_master(limit=None):
-    csv_path = os.path.join(ROOT, "sandbox/model_lab/output/master_sandbox_mlb.csv")
+    csv_path = os.path.join(_V2_DIR, "sandbox", "model_lab", "output", "master_sandbox_mlb.csv")
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found.")
         return

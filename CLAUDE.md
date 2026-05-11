@@ -76,7 +76,8 @@ print(df.head())
 | `run_pipeline.py` | Orchestrates end-to-end pipeline |
 | `db.py` | All Postgres access |
 | `fetch/` | Schedules, odds, weather, stats, balances |
-| `model/` | Training + inference |
+| `models/model_v1/` | Training + inference (v1) |
+| `models/model_v2/` | V2 pipeline + sandbox lab |
 | `bet/place_bet.py` | Kalshi execution |
 | `dashboard/app.py` | FastAPI dashboard |
 | `settle_games.py` | Post-game settlement |

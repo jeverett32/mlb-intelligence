@@ -4,10 +4,13 @@ import argparse
 import subprocess
 import pandas as pd
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # Absolute imports
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, ROOT)
+_V2_DIR = Path(__file__).resolve().parent
+_LAB_DIR = _V2_DIR / "sandbox" / "model_lab"
+_REPO_ROOT = _V2_DIR.parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
 
 import db as DB
 
@@ -28,26 +31,24 @@ def ingest_features(season, start_date=None, end_date=None):
 
     # 1. Refresh sandbox parquet caches
     run_cmd([
-        py, "sandbox/model_lab/leaderboard_sources.py", "fetch",
+        py, str(_LAB_DIR / "leaderboard_sources.py"), "fetch",
         "--start-season", str(season), "--end-season", str(season)
     ])
 
     run_cmd([
-        py, "sandbox/model_lab/savant_sources.py", "fetch",
+        py, str(_LAB_DIR / "savant_sources.py"), "fetch",
         "--start", start_date, "--end", end_date
     ])
 
     run_cmd([
-        py, "sandbox/model_lab/real_sources.py", "fetch-mlb"
+        py, str(_LAB_DIR / "real_sources.py"), "fetch-mlb"
     ])
     run_cmd([
-        py, "sandbox/model_lab/real_sources.py", "fetch-weather"
+        py, str(_LAB_DIR / "real_sources.py"), "fetch-weather"
     ])
     
     # 2. Rebuild the master frame (in memory)
-    # We use build_master from sandbox.model_lab.build_master
-    sys.path.insert(0, os.path.join(ROOT, "sandbox/model_lab"))
-    from sandbox.model_lab.build_master import build_master
+    from models.model_v2.sandbox.model_lab.build_master import build_master
     
     # Use tomorrow as cutoff to include today's games if they are in prod db
     cutoff = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")

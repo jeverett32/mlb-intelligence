@@ -8,8 +8,8 @@ Library API:
     result = predict_one(game_pk, shared)   # writes to DB, returns dict
 
 CLI (for debug/one-off use):
-    uv run model/predict.py --game_pk 12345
-    uv run model/predict.py --game_date 2026-04-01 --home_team NYY --away_team BOS
+    uv run models/model_v1/predict.py --game_pk 12345
+    uv run models/model_v1/predict.py --game_date 2026-04-01 --home_team NYY --away_team BOS
 """
 
 import argparse
@@ -36,7 +36,7 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 
 sys.path.insert(0, os.path.dirname(__file__))
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 import train as T
 import db as DB
 from config import ACTIVE_SEASON, CURRENT_CSV

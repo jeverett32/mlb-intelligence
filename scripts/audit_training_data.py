@@ -12,10 +12,9 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "model"))
 
 import db  # noqa: E402
-import model.train as T  # noqa: E402
+import models.model_v1.train as T  # noqa: E402
 
 
 def _records(df: pd.DataFrame, cols: list[str], limit: int) -> list[dict]:

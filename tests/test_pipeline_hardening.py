@@ -194,7 +194,7 @@ def test_next_batch_runs_late_game_before_first_pitch(monkeypatch):
 
 
 def test_model_training_fingerprint_tracks_feature_inputs(monkeypatch):
-    from model import predict
+    from models.model_v1 import predict
 
     monkeypatch.setattr(predict, "_git_commit", lambda: "abc123")
     df = pd.DataFrame(

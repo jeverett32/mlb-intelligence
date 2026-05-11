@@ -16,11 +16,11 @@ warnings.filterwarnings("ignore")
 
 import pandas as pd
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, ROOT)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, _REPO_ROOT)
 
 import db as DB
-from model_v2.predict import prepare_shared, predict_one, PredictV2Error
+from models.model_v2.predict import prepare_shared, predict_one, PredictV2Error
 
 
 def get_settled_dates(season: int) -> list[tuple[str, list[str]]]:

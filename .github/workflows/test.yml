@@ -25,7 +25,7 @@ jobs:
 
       - name: Syntax check
         run: |
-          uv run python -m compileall -q bet dashboard fetch model db.py notify.py run_pipeline.py settle_games.py
+          uv run python -m compileall -q bet dashboard fetch models db.py notify.py run_pipeline.py run_pipeline_v2.py settle_games.py
 
       - name: Run tests (DB-backed tests skip automatically without DATABASE)
         run: |

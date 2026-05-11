@@ -6,7 +6,7 @@ import sys
 import pytest
 
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "model"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "models", "model_v1"))
 import asb  # type: ignore  # local module via sys.path tweak
 
 

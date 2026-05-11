@@ -4,10 +4,10 @@ import os
 from datetime import datetime
 
 # Absolute imports to reach sandbox and main repo
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, ROOT)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, _REPO_ROOT)
 
-from model_v2 import predict as P
+from models.model_v2 import predict as P
 
 def main():
     parser = argparse.ArgumentParser(description="V2 Model Standalone CLI")

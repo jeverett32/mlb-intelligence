@@ -26,8 +26,8 @@ load_dotenv()
 import db as DB
 import notify as NOTIFY
 from config import ACTIVE_SEASON, CURRENT_CSV
-import model_v2.predict as PREDICT_V2
-from model_v2.ingest_features import ingest_features
+import models.model_v2.predict as PREDICT_V2
+from models.model_v2.ingest_features import ingest_features
 from fetch.fetch_data import main as fetch_data_main, refresh_odds_only
 
 EASTERN = ZoneInfo("America/New_York")

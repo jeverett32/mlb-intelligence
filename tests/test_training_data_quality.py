@@ -5,9 +5,9 @@ import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "model"))
+sys.path.insert(0, str(ROOT))
 
-import model.train as T
+import models.model_v1.train as T
 from fetch.fetch_data import _fip_from_components, _parse_fg_wrc_plus, _parse_ip
 
 

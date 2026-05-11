@@ -1,6 +1,6 @@
 import pandas as pd
 
-from model.predict import _engineered_history_fingerprint
+from models.model_v1.predict import _engineered_history_fingerprint
 
 
 def test_engineered_history_fingerprint_changes_for_mid_table_value_change():

@@ -29,7 +29,7 @@ import xgboost as xgb
 
 import asb
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
 from config import ACTIVE_SEASON, CURRENT_CSV
 
 # ---------------------------------------------------------------------------
@@ -1426,7 +1426,7 @@ if __name__ == "__main__":
     # Save to DB
     try:
         import sys
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
         import db
         duration = time.time() - t_start
         run_data = {

@@ -17,7 +17,7 @@ All times UTC.
 | Time | Unit | Purpose |
 |------|------|---------|
 | 03:30 daily | `mlb-backup.timer` → `mlb-backup.service` | Run `scripts/backup_db.sh` (Postgres backup) |
-| 08:00 daily | `mlb-retrain.timer` → `mlb-retrain.service` | Run `model/train.py` (daily model retrain) |
+| 08:00 daily | `mlb-retrain.timer` → `mlb-retrain.service` | Run `models/model_v1/train.py` (daily model retrain) |
 
 ### Persistent services
 

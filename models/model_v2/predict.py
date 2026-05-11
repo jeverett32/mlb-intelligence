@@ -7,21 +7,21 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import hashlib
 import pickle
-from pathlib import Path
 
 # Absolute imports to reach sandbox and main repo
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, ROOT)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_V2_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _REPO_ROOT)
 
 import db as DB
-from model_v2 import config as C
-from model_v2.feature_loader import load_or_build_engineered_frame_from_db
-from sandbox.model_lab.feature_engineer import (
+from models.model_v2 import config as C
+from models.model_v2.feature_loader import load_or_build_engineered_frame_from_db
+from models.model_v2.sandbox.model_lab.feature_engineer import (
     load_or_build_feature_sets,
     recency_weights
 )
-from sandbox.model_lab.training.models import make_lgbm
-from sandbox.model_lab.roi_eval import ml_to_dec
+from models.model_v2.sandbox.model_lab.training.models import make_lgbm
+from models.model_v2.sandbox.model_lab.roi_eval import ml_to_dec
 
 class PredictV2Error(RuntimeError):
     pass
@@ -106,7 +106,7 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     and extracts target rows for specified PKs.
     """
     try:
-        cache_dir = Path(ROOT) / "sandbox/model_lab/output/cache"
+        cache_dir = Path(_V2_DIR) / "sandbox" / "model_lab" / "output" / "cache"
 
         # 1. Load engineered frame from DB
         df = load_or_build_engineered_frame_from_db(

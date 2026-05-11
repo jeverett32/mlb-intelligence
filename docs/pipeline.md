@@ -12,7 +12,7 @@ This is the single, end-to-end operational doc for the MLB betting pipeline.
 
 - Orchestrator: `run_pipeline.py`
 - MLB ingest: `fetch/fetch_data.py`
-- Model inference: `model/predict.py`
+- Model inference: `models/model_v1/predict.py`
 - Bet execution: `bet/place_bet.py`
 - Dashboard: `dashboard/app.py`
 - DB access layer: `db.py`
@@ -96,18 +96,18 @@ Behavior:
 
 ### Step B — Run model inference
 
-Script: `model/predict.py`
+Script: `models/model_v1/predict.py`
 
 Predict by `game_pk`:
 
 ```bash
-uv run model/predict.py --game_pk <game_pk>
+uv run models/model_v1/predict.py --game_pk <game_pk>
 ```
 
 Or by date + teams:
 
 ```bash
-uv run model/predict.py --game_date <YYYY-MM-DD> --home_team <HOME> --away_team <AWAY>
+uv run models/model_v1/predict.py --game_date <YYYY-MM-DD> --home_team <HOME> --away_team <AWAY>
 ```
 
 Inputs:
