@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly V2 walk-forward eval (08:30 UTC daily)
+
+[Timer]
+OnCalendar=*-*-* 08:30:00
+Persistent=true
+Unit=mlb-pipeline-v2-eval.service
+
+[Install]
+WantedBy=timers.target

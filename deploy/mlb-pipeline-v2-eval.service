@@ -1,0 +1,15 @@
+[Unit]
+Description=MLB V2 walk-forward evaluation (nightly metrics for dashboard)
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=mlb
+Group=mlb
+WorkingDirectory=/opt/mlb/pipeline
+ExecStart=/opt/mlb/pipeline/.venv/bin/python -m models.model_v2.eval
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONPATH=.
+Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=2h
