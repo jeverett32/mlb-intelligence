@@ -12,6 +12,8 @@ import random
 import warnings
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
 os.environ['PYTHONHASHSEED'] = '42'
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -29,7 +31,6 @@ import xgboost as xgb
 
 import asb
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
 from config import ACTIVE_SEASON, CURRENT_CSV
 
 # ---------------------------------------------------------------------------
@@ -620,7 +621,11 @@ def load_training_frame(*, allow_csv_fallback: bool = True):
 
 
 def load_and_engineer_features(*, allow_csv_fallback: bool = True):
-    df = load_training_frame(allow_csv_fallback=allow_csv_fallback)
+    df = (
+        load_training_frame()
+        if allow_csv_fallback
+        else load_training_frame(allow_csv_fallback=False)
+    )
 
     df["game_date"] = pd.to_datetime(df["game_date"])
     df["season"]    = df["game_date"].dt.year
