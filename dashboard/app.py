@@ -1102,8 +1102,10 @@ def get_bets(
         else:
             df = DB.get_paper_orders(user["email"])
     else:
-        # Live mode only supported for v1 right now
-        df = DB.get_all_bets(version="v1") if model == "v1" else pd.DataFrame()
+        # Live: show this user's Kalshi rows (same source as /api/open-bets + performance).
+        # Using get_all_bets() was wrong — the `bets` table is model output and often has
+        # no bet_dollars; /api/bets then filters everything out.
+        df = DB.get_user_orders(user["email"])
 
     if df.empty:
         return {"bets": [], "total": 0}
