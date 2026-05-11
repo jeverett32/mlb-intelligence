@@ -52,7 +52,7 @@ def ingest_features(season, start_date=None, end_date=None):
     
     # Use tomorrow as cutoff to include today's games if they are in prod db
     cutoff = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    df = build_master(cutoff=cutoff)
+    df = build_master(cutoff=cutoff, allow_csv_fallback=False)
     
     # Filter for requested window
     df['game_date'] = pd.to_datetime(df['game_date'])

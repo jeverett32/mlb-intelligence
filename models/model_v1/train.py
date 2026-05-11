@@ -585,7 +585,7 @@ def _sanitize_training_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_training_frame():
+def load_training_frame(*, allow_csv_fallback: bool = True):
     try:
         import db
         hist = db.get_games_df()
@@ -602,6 +602,8 @@ def load_training_frame():
         print(f"  {len(hist):,} historical rows + {len(curr):,} current rows loaded")
         return _sanitize_training_df(df)
     except Exception as e:
+        if not allow_csv_fallback:
+            raise
         print(f"Loading CSV... DB unavailable ({e})")
         hist = pd.read_csv(CSV_INPUT_PATH, low_memory=False)
         if os.path.exists(CURRENT_CSV):
@@ -617,8 +619,8 @@ def load_training_frame():
         return _sanitize_training_df(hist)
 
 
-def load_and_engineer_features():
-    df = load_training_frame()
+def load_and_engineer_features(*, allow_csv_fallback: bool = True):
+    df = load_training_frame(allow_csv_fallback=allow_csv_fallback)
 
     df["game_date"] = pd.to_datetime(df["game_date"])
     df["season"]    = df["game_date"].dt.year

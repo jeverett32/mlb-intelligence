@@ -380,6 +380,7 @@ def get_games_df(season: int = None, upcoming_only: bool = False) -> pd.DataFram
                     "COALESCE(extra->>'game_status', '') NOT IN ('postponed', 'cancelled')"
                 )
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            cur.execute("SET LOCAL statement_timeout = 0")
             cur.execute(f"SELECT * FROM games {where} ORDER BY game_date, game_pk", params)
             rows = cur.fetchall()
     finally:
