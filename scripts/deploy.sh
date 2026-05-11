@@ -231,12 +231,16 @@ deploy_from_archive() {
     log INFO "Stopping services for restart"
     run_systemctl stop mlb-dashboard || log WARN "Failed to stop mlb-dashboard"
     run_systemctl stop mlb-pipeline || log WARN "Failed to stop mlb-pipeline"
+    run_systemctl stop mlb-pipeline-v2 || log WARN "Failed to stop mlb-pipeline-v2"
 
     log INFO "Starting mlb-dashboard service"
     run_systemctl start mlb-dashboard || error_exit "Failed to start mlb-dashboard"
 
     log INFO "Starting mlb-pipeline service"
     run_systemctl start mlb-pipeline || error_exit "Failed to start mlb-pipeline"
+
+    log INFO "Starting mlb-pipeline-v2 service"
+    run_systemctl start mlb-pipeline-v2 || log WARN "Failed to start mlb-pipeline-v2"
 
     sleep 5
 
@@ -426,6 +430,7 @@ deploy() {
 
     if [[ "$pipeline_restart_needed" == true ]]; then
         run_systemctl stop mlb-pipeline || log WARN "Failed to stop mlb-pipeline"
+        run_systemctl stop mlb-pipeline-v2 || log WARN "Failed to stop mlb-pipeline-v2"
     fi
 
     # Start services
@@ -446,6 +451,9 @@ deploy() {
             run_systemctl start mlb-dashboard || log ERROR "Failed to start mlb-dashboard after rollback"
             error_exit "Pipeline service start failed"
         }
+
+        log INFO "Starting mlb-pipeline-v2 service"
+        run_systemctl start mlb-pipeline-v2 || log WARN "Failed to start mlb-pipeline-v2"
     fi
 
     # Wait a moment for services to initialize

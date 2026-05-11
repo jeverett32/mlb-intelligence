@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import os
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -317,9 +318,30 @@ def run_pipeline_for_game(game_pk: str):
     shared = PREDICT_V2.prepare_shared([str(game_pk)], game_date)
     _predict_v2(str(game_pk), shared)
 
+def _warm_cache_background() -> None:
+    """Prewarm V2 frame + model artifact for today so first T-10 batch hits warm path."""
+    try:
+        today = datetime.now(EASTERN).date().isoformat()
+        with DB.pooled_connection() as conn:
+            row = pd.read_sql_query(
+                "SELECT game_pk FROM games WHERE game_date::date = %s LIMIT 1",
+                conn, params=(today,),
+            )
+        if row.empty:
+            print(f"[v2] Warm-cache: no games on {today}, skipping.")
+            return
+        pk = str(int(row.iloc[0]["game_pk"]))
+        t0 = time.time()
+        print(f"[v2] Warm-cache start (today={today}, sample pk={pk})...")
+        PREDICT_V2.prepare_shared([pk], today)
+        print(f"[v2] Warm-cache complete in {time.time()-t0:.1f}s")
+    except Exception as e:
+        print(f"[v2] Warm-cache failed: {e}")
+
+
 def main():
     DB.init_v2_tables()
-    
+
     parser = argparse.ArgumentParser(description="V2 MLB betting pipeline orchestrator.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--game_pk", type=str, help="Run once for a specific game_pk")
@@ -334,6 +356,8 @@ def main():
 
     print("MLB V2 pipeline orchestrator started. Press Ctrl+C to stop.\n")
     _sd_notify("READY=1")
+
+    threading.Thread(target=_warm_cache_background, name="v2-warm", daemon=True).start()
 
     while True:
         _sd_notify("WATCHDOG=1")
