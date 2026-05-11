@@ -2757,7 +2757,7 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
             updated = 0
             cur.execute(
                 """
-                SELECT id, game_pk, game_date, bet_side, bet_frac, bet_dollars, bet_cents,
+                SELECT id, game_pk, game_date, status, bet_side, bet_frac, bet_dollars, bet_cents,
                        predicted_prob, edge, market_implied_prob, live_price,
                        n_contracts, result, profit_loss, profit_loss_cents,
                        paper_bankroll_before, paper_bankroll_before_cents,
@@ -2780,6 +2780,13 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                     frac = 0.0
                 frac = max(0.0, frac)
 
+                status = str(r.get("status") or "")
+                n_contracts = r.get("n_contracts")
+                try:
+                    n_contracts_i = int(n_contracts) if n_contracts is not None else None
+                except Exception:
+                    n_contracts_i = None
+
                 stake_existing = (
                     _cents_to_dollars(r.get("bet_cents"))
                     if r.get("bet_cents") is not None
@@ -2789,8 +2796,16 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                     stake_existing_f = float(stake_existing) if stake_existing is not None else None
                 except Exception:
                     stake_existing_f = None
+
+                # Historical paper rows were accidentally stored as flat $100
+                # stakes. For pure simulated v1 rows, recompute stake from the
+                # same rolling-bankroll fraction used by the v1 bet signal.
                 stake = stake_existing_f
-                if stake is None and frac > 0:
+                if status.startswith("skipped_no_") or status == "skipped_too_small" or bet_side not in {"home", "away"}:
+                    stake = 0.0 if stake_existing_f is not None else None
+                elif n_contracts_i is None and frac > 0:
+                    stake = round(bankroll * frac, 2)
+                elif stake is None and frac > 0:
                     stake = round(bankroll * frac, 2)
                 if stake is not None and stake < 0:
                     stake = None
@@ -2825,14 +2840,8 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                 except Exception:
                     pnl_existing_f = None
 
-                n_contracts = r.get("n_contracts")
-                try:
-                    n_contracts_i = int(n_contracts) if n_contracts is not None else None
-                except Exception:
-                    n_contracts_i = None
-
                 pnl = pnl_existing_f
-                if pnl is None and result is not None and stake is not None and stake > 0 and bet_side in {"home", "away"}:
+                if result is not None and stake is not None and stake > 0 and bet_side in {"home", "away"}:
                     side_price = _paper_side_price(
                         bet_side=bet_side,
                         predicted_prob=r.get("predicted_prob"),
@@ -2849,23 +2858,23 @@ def recompute_paper_order_financials(email: str | None = None) -> int:
                     desired_after = round(bankroll + pnl, 2)
 
                 needs_update = (
-                    (stake_existing_f is None and stake is not None)
-                    or (pb_before_f is None)
-                    or (pb_after_f is None and result is not None)
-                    or (pnl_existing_f is None and pnl is not None)
+                    (stake is not None and stake_existing_f != stake)
+                    or (pb_before_f != desired_before)
+                    or (result is not None and pb_after_f != desired_after)
+                    or (pnl is not None and pnl_existing_f != pnl)
                 )
                 if needs_update:
                     cur.execute(
                         """
                         UPDATE paper_orders
-                        SET bet_dollars = COALESCE(bet_dollars, %s),
-                            bet_cents = COALESCE(bet_cents, %s),
-                            profit_loss = COALESCE(profit_loss, %s),
-                            profit_loss_cents = COALESCE(profit_loss_cents, %s),
-                            paper_bankroll_before = COALESCE(paper_bankroll_before, %s),
-                            paper_bankroll_before_cents = COALESCE(paper_bankroll_before_cents, %s),
-                            paper_bankroll_after = COALESCE(paper_bankroll_after, %s),
-                            paper_bankroll_after_cents = COALESCE(paper_bankroll_after_cents, %s),
+                        SET bet_dollars = %s,
+                            bet_cents = %s,
+                            profit_loss = %s,
+                            profit_loss_cents = %s,
+                            paper_bankroll_before = %s,
+                            paper_bankroll_before_cents = %s,
+                            paper_bankroll_after = %s,
+                            paper_bankroll_after_cents = %s,
                             updated_at = NOW()
                         WHERE id = %s
                         """,
