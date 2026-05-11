@@ -985,9 +985,16 @@ def get_all_bets(version: str = "v1") -> pd.DataFrame:
     if version == "v1":
         df = _money_alias_df(df)
     else:
-        # V2 uses bet_frac as units, alias it to bet_dollars for the dashboard
-        if "bet_frac" in df.columns:
-            df["bet_dollars"] = df["bet_frac"]
+        # V2: prefer real dollar stake; fall back to bankroll_before * bet_frac for
+        # legacy rows where bet_dollars hasn't been recomputed yet.
+        if "bet_dollars" not in df.columns:
+            df["bet_dollars"] = pd.NA
+        bd = pd.to_numeric(df["bet_dollars"], errors="coerce")
+        if "bet_frac" in df.columns and "paper_bankroll_before" in df.columns:
+            bb = pd.to_numeric(df["paper_bankroll_before"], errors="coerce")
+            bf = pd.to_numeric(df["bet_frac"], errors="coerce")
+            bd = bd.fillna(bb * bf)
+        df["bet_dollars"] = bd
         if "pnl" in df.columns:
             df["profit_loss"] = pd.to_numeric(df["pnl"], errors="coerce")
         if "result" in df.columns and "bet_side" in df.columns:
@@ -2229,6 +2236,23 @@ def is_user_live_betting(email: str) -> bool:
     return get_user_setting(email, "live_betting", "false").lower() == "true"
 
 
+# Which model version is currently allowed to route through live Kalshi betting.
+# Only the matching pipeline will place real bets; others stay paper-only.
+LIVE_MODEL_VERSIONS = ("v1", "v2")
+
+
+def get_active_live_model_version() -> str:
+    val = get_setting("active_live_model_version", "v1").lower().strip()
+    return val if val in LIVE_MODEL_VERSIONS else "v1"
+
+
+def set_active_live_model_version(version: str) -> None:
+    v = (version or "").lower().strip()
+    if v not in LIVE_MODEL_VERSIONS:
+        raise ValueError(f"Unsupported live model version: {version!r}")
+    set_setting("active_live_model_version", v)
+
+
 def upsert_kalshi_account(
     email: str,
     *,
@@ -3031,9 +3055,16 @@ def get_paper_orders(email: str, version: str = "v1") -> pd.DataFrame:
     if version == "v1":
         df = _money_alias_df(df)
     else:
-        # V2 uses bet_frac as units, alias it to bet_dollars for the dashboard
-        if "bet_frac" in df.columns:
-            df["bet_dollars"] = df["bet_frac"]
+        # V2: prefer real dollar stake; fall back to bankroll_before * bet_frac for
+        # legacy rows where bet_dollars hasn't been recomputed yet.
+        if "bet_dollars" not in df.columns:
+            df["bet_dollars"] = pd.NA
+        bd = pd.to_numeric(df["bet_dollars"], errors="coerce")
+        if "bet_frac" in df.columns and "paper_bankroll_before" in df.columns:
+            bb = pd.to_numeric(df["paper_bankroll_before"], errors="coerce")
+            bf = pd.to_numeric(df["bet_frac"], errors="coerce")
+            bd = bd.fillna(bb * bf)
+        df["bet_dollars"] = bd
         if "pnl" in df.columns:
             df["profit_loss"] = pd.to_numeric(df["pnl"], errors="coerce")
         if "result" in df.columns and "bet_side" in df.columns:
@@ -3082,8 +3113,16 @@ def get_all_paper_orders(version: str = "v1") -> pd.DataFrame:
     if version == "v1":
         df = _money_alias_df(df)
     else:
-        if "bet_frac" in df.columns:
-            df["bet_dollars"] = df["bet_frac"]
+        # V2: prefer real dollar stake; fall back to bankroll_before * bet_frac for
+        # legacy rows where bet_dollars hasn't been recomputed yet.
+        if "bet_dollars" not in df.columns:
+            df["bet_dollars"] = pd.NA
+        bd = pd.to_numeric(df["bet_dollars"], errors="coerce")
+        if "bet_frac" in df.columns and "paper_bankroll_before" in df.columns:
+            bb = pd.to_numeric(df["paper_bankroll_before"], errors="coerce")
+            bf = pd.to_numeric(df["bet_frac"], errors="coerce")
+            bd = bd.fillna(bb * bf)
+        df["bet_dollars"] = bd
         if "pnl" in df.columns:
             df["profit_loss"] = pd.to_numeric(df["pnl"], errors="coerce")
         if "result" in df.columns and "bet_side" in df.columns:
@@ -4730,6 +4769,18 @@ def upsert_paper_order_v2(
     edge: float | None,
     model_version: str = "v2-lgbm-k306-phase25",
 ) -> None:
+    # Snapshot current paper bankroll so the open position has a real $ stake
+    # before settle/recompute touches it.
+    try:
+        bankroll_before = get_paper_bankroll_dollars(PAPER_UNIVERSAL_EMAIL, version="v2")
+    except Exception:
+        bankroll_before = None
+    frac = float(bet_frac) if bet_frac is not None else 0.0
+    bet_dollars = (
+        round(float(bankroll_before) * frac, 2)
+        if bankroll_before is not None and frac > 0
+        else None
+    )
     with pooled_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -4738,14 +4789,18 @@ def upsert_paper_order_v2(
                     game_pk,
                     bet_side,
                     bet_frac,
+                    bet_dollars,
+                    paper_bankroll_before,
                     predicted_prob,
                     market_implied_prob,
                     edge,
                     model_version
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (game_pk, bet_side) DO UPDATE SET
                     bet_frac = EXCLUDED.bet_frac,
+                    bet_dollars = COALESCE(paper_orders_v2.bet_dollars, EXCLUDED.bet_dollars),
+                    paper_bankroll_before = COALESCE(paper_orders_v2.paper_bankroll_before, EXCLUDED.paper_bankroll_before),
                     predicted_prob = EXCLUDED.predicted_prob,
                     market_implied_prob = EXCLUDED.market_implied_prob,
                     edge = EXCLUDED.edge,
@@ -4754,7 +4809,9 @@ def upsert_paper_order_v2(
                 (
                     int(game_pk),
                     bet_side,
-                    float(bet_frac) if bet_frac is not None else None,
+                    frac if bet_frac is not None else None,
+                    bet_dollars,
+                    float(bankroll_before) if bankroll_before is not None else None,
                     float(predicted_prob) if predicted_prob is not None else None,
                     float(market_implied_prob) if market_implied_prob is not None else None,
                     float(edge) if edge is not None and edge == edge else None,

@@ -1834,7 +1834,7 @@ const state = {
   currentUser: null,
   account: null,
   settings: { live_betting: false, dashboard_timezone: 'America/Denver' },
-  betMode: 'paper',
+  betMode: localStorage.getItem('bet_mode') === 'live' ? 'live' : 'paper',
   modelVersion: localStorage.getItem('mlb_model_version') || 'v1',
   balance: null,
   paperBankroll: null,
@@ -2792,8 +2792,8 @@ function renderOverview() {
   const nowMs = Date.now();
   const nextGame = upcomingGames.find(g => g.game_time_utc && new Date(g.game_time_utc).getTime() > nowMs)
     ?? upcomingGames[0];
-  const isV2 = state.modelVersion === 'v2';
-  const balance = (state.betMode === 'paper' || isV2)
+  const isPaper = state.betMode === 'paper';
+  const balance = isPaper
     ? Number(paperBankroll.current_dollars || paperBankroll.starting_dollars || 10000)
     : Number(bal.current_dollars || 0);
   const openExposure = openBets.reduce((sum, b) => sum + Number(b.bet_dollars || 0), 0);
@@ -2801,17 +2801,17 @@ function renderOverview() {
     const marked = b.current_value == null ? b.bet_dollars : b.current_value;
     return sum + Number(marked || 0);
   }, 0);
-  const availableCash = (state.betMode === 'paper' || isV2)
+  const availableCash = isPaper
     ? Math.max(0, balance - openExposure)
     : balance;
-  const estimatedBankroll = (state.betMode === 'paper' || isV2)
+  const estimatedBankroll = isPaper
     ? balance
     : balance + openMarkedValue;
   const delta = ((modelAcc.accuracy || 0) - (modelAcc.market_accuracy || 0)) * 100;
 
   document.getElementById('hdr-balance').textContent = fmt$(estimatedBankroll);
   document.getElementById('s-balance').textContent = fmt$(estimatedBankroll);
-  document.getElementById('s-balance-copy').textContent = (state.betMode === 'paper' || isV2)
+  document.getElementById('s-balance-copy').textContent = isPaper
     ? `Estimated bankroll includes ${fmt$(openExposure)} in open simulated positions. Available paper cash: ${fmt$(availableCash)}.`
     : `Estimated bankroll is available cash (${fmt$(availableCash)}) plus ${fmt$(openMarkedValue)} marked open positions.`;
   document.getElementById('s-open-bets').textContent = String(openBets.length);
@@ -3374,7 +3374,12 @@ async function reloadDashboardState() {
   state.currentUser = me;
   state.account = account;
   state.settings = settings;
-  state.betMode = settings.effective_live_betting === true ? 'live' : 'paper';
+  // Preserve user's Paper/Live choice across model switches and refreshes.
+  // Only fall back to server setting on first load when nothing was stored.
+  if (localStorage.getItem('bet_mode') == null) {
+    state.betMode = settings.effective_live_betting === true ? 'live' : 'paper';
+    localStorage.setItem('bet_mode', state.betMode);
+  }
   state.balance = balance;
   state.paperBankroll = paperBankroll;
   state.upcoming = upcoming;

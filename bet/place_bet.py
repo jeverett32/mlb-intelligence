@@ -601,7 +601,13 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     if execution_mode == "paper_only":
         return {**paper_result, "email": email, "mode": "paper"}
 
-    live_enabled = DB.is_global_live_betting() and DB.is_user_live_betting(email)
+    # v1 places live bets only when admin has selected v1 as the active live model.
+    active_live_model = DB.get_active_live_model_version()
+    live_enabled = (
+        active_live_model == "v1"
+        and DB.is_global_live_betting()
+        and DB.is_user_live_betting(email)
+    )
     if not live_enabled or paper_result.get("status", "").startswith("skipped_no_"):
         return {**paper_result, "email": email, "mode": "paper"}
 
