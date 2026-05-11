@@ -1,10 +1,8 @@
 """
-V2 walk-forward evaluation.
+V2 walk-forward evaluation — mirrors sandbox `bayes_lgbm_experiment.py`.
 
-Runs season-by-season walk-forward CV on the V2 LightGBM pipeline, computes
-metrics (brier, roi, monthly accuracy, edge distribution, feature accuracy),
-and persists the bundle into the latest model_artifacts_v2.metrics JSON so the
-admin model-insights dashboard can render v2 the same way it does v1.
+4 folds (2022-2025), 16-bootstrap LGBM with recency-weighted training,
+edge-band Kelly ROI (edge 0.18-0.25, ML cap 250, kelly 0.5).
 
 Run:
     uv run python -m models.model_v2.eval
@@ -21,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.pipeline import Pipeline
@@ -32,29 +31,125 @@ import db as DB
 from models.model_v2 import config as C
 from models.model_v2.feature_loader import load_or_build_engineered_frame_from_db
 from models.model_v2.sandbox.model_lab.feature_engineer import (
+    FOLDS,
     load_or_build_feature_sets,
     recency_weights,
 )
-from models.model_v2.sandbox.model_lab.roi_eval import ml_to_dec, roi_sim
+from models.model_v2.sandbox.model_lab.roi_eval import ml_to_dec
 from models.model_v2.sandbox.model_lab.training.models import make_lgbm
 
-MIN_TRAIN_SEASONS = 3
+N_BOOT = 16
+N_JOBS = 4
 
 
-def _build_pipeline() -> Pipeline:
+def _make_pipe() -> Pipeline:
     return Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("model", make_lgbm()),
     ])
 
 
-def _bucketed_feature_accuracy(
-    val_df: pd.DataFrame,
-    probs: np.ndarray,
-    y: np.ndarray,
-    feature_cols: list[str],
-    top_n: int = 20,
+def _fit_one(seed: int, X_tr, y_tr, sw, X_va):
+    rng = np.random.default_rng(seed)
+    n = len(X_tr)
+    idx = rng.integers(0, n, size=n)
+    sw_b = sw[idx] if sw is not None else None
+    pipe = _make_pipe()
+    pipe.fit(X_tr[idx], y_tr[idx], model__sample_weight=sw_b)
+    importances = getattr(pipe.named_steps["model"], "feature_importances_", None)
+    probs = pipe.predict_proba(X_va)[:, 1]
+    return probs, importances
+
+
+def _bootstrap(train_df, val_df, cols, sw, n_boot):
+    X_tr = train_df[cols].apply(pd.to_numeric, errors="coerce").to_numpy()
+    X_va = val_df[cols].apply(pd.to_numeric, errors="coerce").to_numpy()
+    y_tr = train_df["home_win"].astype(int).to_numpy()
+    seeds = [42 + b * 1000 for b in range(n_boot)]
+    out = Parallel(n_jobs=N_JOBS, backend="loky", verbose=0)(
+        delayed(_fit_one)(s, X_tr, y_tr, sw, X_va) for s in seeds
+    )
+    probs = np.array([o[0] for o in out])
+    imps = np.array([o[1] for o in out if o[1] is not None])
+    return probs, imps
+
+
+def _evaluate_kelly(
+    full: pd.DataFrame,
+    *,
+    edge_min: float,
+    edge_max: float | None,
+    ml_cap: float | None,
+    kelly_factor: float,
 ) -> dict:
+    home_dec = ml_to_dec(full["close_home_ml"])
+    away_dec = ml_to_dec(full["close_away_ml"])
+    valid = np.isfinite(home_dec) & np.isfinite(away_dec)
+    total_imp = (1.0 / home_dec) + (1.0 / away_dec)
+    home_mkt = (1.0 / home_dec) / total_imp
+    p_mean = full["_p_mean"].to_numpy()
+    edge_h = p_mean - home_mkt
+    abs_edge = np.abs(edge_h)
+    edge_pass = abs_edge > edge_min
+    if edge_max is not None:
+        edge_pass &= abs_edge <= edge_max
+    bet_home = valid & (edge_h > 0) & edge_pass
+    bet_away = valid & (edge_h < 0) & edge_pass
+    ml_h = pd.to_numeric(full["close_home_ml"], errors="coerce").to_numpy()
+    ml_a = pd.to_numeric(full["close_away_ml"], errors="coerce").to_numpy()
+    if ml_cap is not None:
+        bet_home &= ml_h <= ml_cap
+        bet_away &= ml_a <= ml_cap
+
+    outcome = full["home_win"].to_numpy()
+    seasons = full["season"].to_numpy()
+    by_season: dict = {}
+    total_pnl = total_staked = 0.0
+    bets = wins = 0
+    for i in np.where(bet_home | bet_away)[0]:
+        is_home = bool(bet_home[i])
+        p = p_mean[i] if is_home else 1 - p_mean[i]
+        b = (home_dec[i] if is_home else away_dec[i]) - 1
+        ev = p * b - (1 - p)
+        if ev <= 0:
+            continue
+        kf = (ev / b) * kelly_factor
+        won = (outcome[i] == 1) if is_home else (outcome[i] == 0)
+        pnl = kf * b if won else -kf
+        total_staked += kf
+        total_pnl += pnl
+        bets += 1
+        wins += int(won)
+        s = int(seasons[i])
+        rs = by_season.setdefault(s, {"bets": 0, "wins": 0, "pnl": 0.0, "staked": 0.0})
+        rs["bets"] += 1
+        rs["wins"] += int(won)
+        rs["pnl"] += pnl
+        rs["staked"] += kf
+
+    roi = total_pnl / total_staked if total_staked > 0 else 0.0
+    return {
+        "roi": round(float(roi), 6),
+        "bets": int(bets),
+        "wins": int(wins),
+        "pnl": round(float(total_pnl), 6),
+        "staked": round(float(total_staked), 6),
+        "win_rate": round(wins / max(bets, 1), 6),
+        "by_season": {
+            int(s): {
+                "bets": int(rs["bets"]),
+                "wins": int(rs["wins"]),
+                "pnl": round(float(rs["pnl"]), 6),
+                "staked": round(float(rs["staked"]), 6),
+                "roi": round(rs["pnl"] / rs["staked"], 6) if rs["staked"] > 0 else 0.0,
+                "win_rate": round(rs["wins"] / max(rs["bets"], 1), 6),
+            }
+            for s, rs in by_season.items()
+        },
+    }
+
+
+def _bucketed_feature_accuracy(val_df, probs, y, feature_cols, top_n=20):
     buckets: dict = {}
     if not len(val_df):
         return buckets
@@ -102,85 +197,84 @@ def run_eval(cutoff: str | None = None) -> dict:
     feature_cols = list(fs["selected"])
     print(f"[v2-eval] Selected {len(feature_cols)} features")
 
-    df = df[df["game_date"].notna()].copy()
-    df["game_date"] = pd.to_datetime(df["game_date"])
-    df = df.dropna(subset=["home_win"]).copy()
-    df = df.sort_values("game_date").reset_index(drop=True)
+    settled = df.dropna(subset=["home_win"]).copy()
+    settled["home_win"] = settled["home_win"].astype(int)
+    settled["game_date"] = pd.to_datetime(settled["game_date"], errors="coerce")
+    settled = settled.dropna(subset=["game_date"]).sort_values("game_date").reset_index(drop=True)
 
-    seasons = sorted(df["season"].dropna().unique().tolist())
     fold_results: list[dict] = []
-    stitched_probs: list[np.ndarray] = []
-    stitched_y: list[np.ndarray] = []
-    stitched_mkt: list[np.ndarray] = []
-    stitched_dates: list[np.ndarray] = []
-    stitched_idx: list[np.ndarray] = []
+    all_val_frames: list[pd.DataFrame] = []
+    all_means: list[np.ndarray] = []
+    all_stds: list[np.ndarray] = []
+    all_y: list[np.ndarray] = []
+    all_imps: list[np.ndarray] = []
 
-    for s in seasons:
-        train_df = df[df["season"] < s]
-        val_df = df[df["season"] == s]
-        if train_df.empty or val_df.empty:
+    for train_end, val_end in FOLDS:
+        train_ts = pd.Timestamp(train_end)
+        val_ts = pd.Timestamp(val_end)
+        tr = settled[settled["game_date"] < train_ts]
+        va = settled[(settled["game_date"] >= train_ts) & (settled["game_date"] < val_ts)]
+        if tr.empty or va.empty:
             continue
-        if train_df["season"].nunique() < MIN_TRAIN_SEASONS:
-            continue
+        sw = recency_weights(tr["season"], train_ts.year - 1, C.RECENCY_HALF_LIFE)
+        t0 = time.time()
+        probs, imps = _bootstrap(tr, va, feature_cols, sw, N_BOOT)
+        mean_p = probs.mean(axis=0)
+        std_p = probs.std(axis=0)
+        y_vl = va["home_win"].astype(int).to_numpy()
 
-        sw = recency_weights(train_df["season"], int(s) - 1, C.RECENCY_HALF_LIFE)
-        X_tr = train_df[feature_cols].apply(pd.to_numeric, errors="coerce")
-        y_tr = train_df["home_win"].astype(int)
-        X_vl = val_df[feature_cols].apply(pd.to_numeric, errors="coerce")
-        y_vl = val_df["home_win"].astype(int).to_numpy()
-
-        pipe = _build_pipeline()
-        pipe.fit(X_tr, y_tr, model__sample_weight=sw)
-        probs = pipe.predict_proba(X_vl)[:, 1]
-
-        brier = float(brier_score_loss(y_vl, probs))
+        brier = float(brier_score_loss(y_vl, mean_p))
         try:
-            ll = float(log_loss(y_vl, np.clip(probs, 1e-6, 1 - 1e-6)))
+            ll = float(log_loss(y_vl, np.clip(mean_p, 1e-6, 1 - 1e-6)))
         except Exception:
             ll = float("nan")
-        sim = roi_sim(val_df.reset_index(drop=True), probs, edge_thresh=C.EDGE_MIN)
-
-        mkt = pd.to_numeric(val_df.get("market_implied_prob"), errors="coerce").to_numpy()
 
         fold_results.append({
-            "season": int(s),
-            "fold": len(fold_results) + 1,
-            "train_rows": int(len(train_df)),
-            "val_rows": int(len(val_df)),
+            "fold": f"{train_ts.year}",
+            "train_end": train_end,
+            "val_end": val_end,
+            "train_rows": int(len(tr)),
+            "val_rows": int(len(va)),
             "brier": round(brier, 6),
             "log_loss": round(ll, 6) if not math.isnan(ll) else None,
-            "roi": sim["roi"],
-            "n_bets": sim["bets"],
-            "pnl": sim["pnl"],
-            "win_rate": sim["win_rate"],
+            "std_mean": round(float(std_p.mean()), 6),
+            "std_p95": round(float(np.percentile(std_p, 95)), 6),
         })
-        print(f"[v2-eval] season={int(s)} train_rows={len(train_df)} val_rows={len(val_df)} "
-              f"brier={brier:.4f} roi={sim['roi']} bets={sim['bets']}")
+        print(f"[v2-eval] fold={train_end} val_rows={len(va)} brier={brier:.4f} "
+              f"std_mean={std_p.mean():.4f} elapsed={time.time()-t0:.1f}s")
 
-        stitched_probs.append(probs)
-        stitched_y.append(y_vl)
-        stitched_mkt.append(mkt)
-        stitched_dates.append(val_df["game_date"].to_numpy())
-        stitched_idx.append(val_df.index.to_numpy())
+        all_val_frames.append(va.assign(_p_mean=mean_p, _p_std=std_p, season=va["season"]))
+        all_means.append(mean_p)
+        all_stds.append(std_p)
+        all_y.append(y_vl)
+        if imps.size:
+            all_imps.append(imps.mean(axis=0))
 
     if not fold_results:
-        raise RuntimeError("No walk-forward folds produced")
+        raise RuntimeError("No folds produced")
 
-    all_probs = np.concatenate(stitched_probs)
-    all_y = np.concatenate(stitched_y).astype(float)
-    all_mkt = np.concatenate(stitched_mkt)
-    all_dates = pd.to_datetime(np.concatenate(stitched_dates))
-    all_idx = np.concatenate(stitched_idx)
+    full = pd.concat(all_val_frames, ignore_index=True)
+    all_probs = np.concatenate(all_means)
+    all_y_concat = np.concatenate(all_y).astype(float)
+    all_mkt = pd.to_numeric(full.get("market_implied_prob"), errors="coerce").to_numpy()
+    all_dates = pd.to_datetime(full["game_date"])
 
-    rois = [r["roi"] for r in fold_results if r["roi"] is not None]
-    briers = [r["brier"] for r in fold_results if r["brier"] is not None]
-    bets = [r["n_bets"] for r in fold_results]
-    mean_roi = float(np.mean(rois)) if rois else None
-    mean_brier = float(np.mean(briers)) if briers else None
-    total_bets = int(np.sum(bets))
+    overall_brier = float(brier_score_loss(all_y_concat, all_probs))
+    try:
+        overall_ll = float(log_loss(all_y_concat, np.clip(all_probs, 1e-6, 1 - 1e-6)))
+    except Exception:
+        overall_ll = float("nan")
+
+    roi_summary = _evaluate_kelly(
+        full,
+        edge_min=C.EDGE_MIN,
+        edge_max=C.EDGE_MAX,
+        ml_cap=C.ML_CAP,
+        kelly_factor=C.KELLY_FACTOR,
+    )
 
     # edge distribution (model_prob - market_implied_prob)
-    edges = (all_probs - all_mkt)
+    edges = all_probs - all_mkt
     edges_valid = edges[~np.isnan(edges)]
     edge_distribution: dict = {}
     if edges_valid.size:
@@ -191,15 +285,15 @@ def run_eval(cutoff: str | None = None) -> dict:
         }
 
     # monthly accuracy
-    years = all_dates.year.values
-    months = all_dates.month.values
+    years = all_dates.dt.year.to_numpy()
+    months = all_dates.dt.month.to_numpy()
     keys = years * 100 + months
     monthly: list[dict] = []
     for key in sorted({int(k) for k in keys}):
         mask = keys == key
         yr = int(key // 100)
         mo = int(key % 100)
-        y_m = all_y[mask]
+        y_m = all_y_concat[mask]
         p_m = all_probs[mask]
         mk_m = all_mkt[mask]
         mk_valid = ~np.isnan(mk_m)
@@ -222,49 +316,67 @@ def run_eval(cutoff: str | None = None) -> dict:
             "market_accuracy": round(market_accuracy, 6) if market_accuracy is not None else None,
         })
 
-    # feature accuracy on last fold's val_df + its probs
-    last_val_df = df.loc[stitched_idx[-1]]
-    last_probs = stitched_probs[-1]
-    last_y = stitched_y[-1]
-    feature_accuracy = _bucketed_feature_accuracy(last_val_df, last_probs, last_y, feature_cols)
+    # feature accuracy on last fold
+    last_val = all_val_frames[-1].reset_index(drop=True)
+    last_probs = all_means[-1]
+    last_y = all_y[-1]
+    feature_accuracy = _bucketed_feature_accuracy(last_val, last_probs, last_y, feature_cols)
+
+    # feature importances averaged across all bootstrap fits across all folds
+    feature_importances = None
+    if all_imps:
+        avg_imp = np.mean(np.stack(all_imps, axis=0), axis=0)
+        pairs = sorted(
+            ({"feature": f, "importance": float(v)} for f, v in zip(feature_cols, avg_imp)),
+            key=lambda r: r["importance"],
+            reverse=True,
+        )
+        feature_importances = pairs
 
     duration = time.time() - t_start
     metrics = {
-        "model_type": "lgbm_pipeline",
-        "mean_brier": round(mean_brier, 6) if mean_brier is not None else None,
-        "mean_roi": round(mean_roi, 6) if mean_roi is not None else None,
-        "total_bets": total_bets,
+        "model_type": "lgbm_bootstrap_pipeline",
+        "n_boot": N_BOOT,
+        "overall_brier": round(overall_brier, 6),
+        "overall_log_loss": round(overall_ll, 6) if not math.isnan(overall_ll) else None,
+        "mean_brier": round(float(np.mean([r["brier"] for r in fold_results])), 6),
+        "mean_roi": roi_summary["roi"],
+        "total_bets": roi_summary["bets"],
+        "win_rate": roi_summary["win_rate"],
         "num_folds": len(fold_results),
         "num_features": len(feature_cols),
         "training_rows": int(fold_results[-1]["train_rows"]),
         "val_rows": int(fold_results[-1]["val_rows"]),
         "duration_seconds": round(duration, 1),
         "fold_results": fold_results,
+        "roi_summary": roi_summary,
         "edge_distribution": edge_distribution,
         "monthly_accuracy": monthly,
         "feature_accuracy": feature_accuracy,
+        "feature_importances": feature_importances,
         "config": {
             "k_features": C.K_FEATURES,
             "edge_min": C.EDGE_MIN,
             "edge_max": C.EDGE_MAX,
+            "ml_cap": C.ML_CAP,
             "kelly_factor": C.KELLY_FACTOR,
             "min_coverage": C.MIN_COVERAGE,
             "corr_threshold": C.CORR_THRESHOLD,
             "selected_by": C.SELECTED_BY,
             "recency_half_life": C.RECENCY_HALF_LIFE,
-            "min_train_seasons": MIN_TRAIN_SEASONS,
+            "n_boot": N_BOOT,
+            "folds": [list(f) for f in FOLDS],
         },
     }
 
     artifact_id = _persist_metrics(metrics)
     print(f"[v2-eval] Persisted metrics to model_artifacts_v2.id={artifact_id} "
-          f"(mean_brier={mean_brier} mean_roi={mean_roi} folds={len(fold_results)} "
-          f"duration={duration:.1f}s)")
+          f"(brier={overall_brier:.4f} roi={roi_summary['roi']:.4f} "
+          f"bets={roi_summary['bets']} duration={duration:.1f}s)")
     return metrics
 
 
 def _persist_metrics(metrics: dict) -> int | None:
-    """Update metrics JSON on the most recent model_artifacts_v2 row."""
     with DB.pooled_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(

@@ -1,0 +1,15 @@
+[Unit]
+Description=MLB V1 daily model retrain
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=mlb
+Group=mlb
+WorkingDirectory=/opt/mlb/pipeline
+ExecStart=/opt/mlb/pipeline/.venv/bin/python -m models.model_v1.train
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONPATH=.
+Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=1h

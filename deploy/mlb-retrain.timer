@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly V1 model retrain (08:00 UTC daily)
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+Unit=mlb-retrain.service
+
+[Install]
+WantedBy=timers.target

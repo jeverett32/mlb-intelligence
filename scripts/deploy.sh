@@ -200,7 +200,6 @@ sync_repo_from_archive() {
         --exclude '.venv/' \
         --exclude '.cache/' \
         --exclude 'data/' \
-        --exclude 'sandbox/' \
         --exclude '.git/' \
         --exclude '.pytest_cache/' \
         --exclude '__pycache__/' \
