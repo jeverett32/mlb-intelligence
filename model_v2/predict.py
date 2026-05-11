@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import hashlib
+import pickle
 from pathlib import Path
 
 # Absolute imports to reach sandbox and main repo
@@ -24,6 +25,80 @@ from sandbox.model_lab.roi_eval import ml_to_dec
 
 class PredictV2Error(RuntimeError):
     pass
+
+
+_SHARED_MODEL_CACHE: dict[str, tuple[Pipeline, int | None]] = {}
+
+
+def _artifact_feature_config(game_date: str) -> dict:
+    return {
+        "game_date": str(game_date)[:10],
+        "k_features": C.K_FEATURES,
+        "min_coverage": C.MIN_COVERAGE,
+        "corr_threshold": C.CORR_THRESHOLD,
+        "selected_by": C.SELECTED_BY,
+        "recency_half_life": C.RECENCY_HALF_LIFE,
+        "model_version": C.MODEL_VERSION,
+    }
+
+
+def _training_fingerprint(feature_cols: list[str], history: pd.DataFrame, game_date: str) -> str:
+    max_date = pd.to_datetime(history["game_date"]).max()
+    raw = {
+        "feature_cols": sorted(feature_cols),
+        "history_rows": int(len(history)),
+        "max_history_game_date": str(max_date.date()) if pd.notna(max_date) else None,
+        "config": _artifact_feature_config(game_date),
+    }
+    return hashlib.sha256(repr(raw).encode()).hexdigest()[:24]
+
+
+def _load_cached_model(fingerprint: str) -> tuple[Pipeline, int | None] | None:
+    if fingerprint in _SHARED_MODEL_CACHE:
+        return _SHARED_MODEL_CACHE[fingerprint]
+    row = DB.get_model_artifact_v2_by_fingerprint(fingerprint)
+    if not row:
+        return None
+    try:
+        payload = pickle.loads(bytes(row["artifact_bytes"]))
+        clf = payload["clf"]
+    except Exception as exc:
+        raise PredictV2Error(f"Could not load cached V2 model artifact {fingerprint}: {exc}")
+    artifact_id = int(row["id"]) if row.get("id") is not None else None
+    _SHARED_MODEL_CACHE[fingerprint] = (clf, artifact_id)
+    return clf, artifact_id
+
+
+def _save_cached_model(
+    *,
+    fingerprint: str,
+    clf: Pipeline,
+    feature_cols: list[str],
+    history: pd.DataFrame,
+    game_date: str,
+) -> int | None:
+    try:
+        artifact_bytes = pickle.dumps({"clf": clf}, protocol=pickle.HIGHEST_PROTOCOL)
+        artifact_id = DB.save_model_artifact_v2({
+            "model_type": "lgbm_pipeline",
+            "model_version": C.MODEL_VERSION,
+            "training_fingerprint": fingerprint,
+            "artifact_format": "pickle",
+            "artifact_bytes": artifact_bytes,
+            "artifact_sha256": hashlib.sha256(artifact_bytes).hexdigest(),
+            "settled_row_count": int(len(history)),
+            "max_settled_game_date": str(pd.to_datetime(history["game_date"]).max().date()),
+            "num_features": len(feature_cols),
+            "feature_columns": feature_cols,
+            "feature_config": _artifact_feature_config(game_date),
+            "metrics": None,
+            "git_commit": None,
+        })
+        _SHARED_MODEL_CACHE[fingerprint] = (clf, artifact_id)
+        return artifact_id
+    except Exception as exc:
+        print(f"  V2 model artifact save skipped: {exc}")
+        return None
 
 def prepare_shared(game_pks: list[str], game_date: str) -> dict:
     """
@@ -74,29 +149,38 @@ def prepare_shared(game_pks: list[str], game_date: str) -> dict:
                 # Silently skip missing rows for now, predict_one will handle it
                 pass
 
-        # 5. Fit LGBM Pipeline
-        # Anchored on the year before game_date
-        sw = recency_weights(history["season"], cutoff_ts.year - 1, C.RECENCY_HALF_LIFE)
-        
-        X_tr = history[feature_cols].apply(pd.to_numeric, errors="coerce")
-        y_tr = history["home_win"].astype(int)
-        
-        pipe = Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-            ("model", make_lgbm()),
-        ])
-        
-        pipe.fit(X_tr, y_tr, model__sample_weight=sw)
-        
-        # Create a training fingerprint
-        fingerprint_raw = ",".join(sorted(feature_cols)) + str(len(history))
-        training_fingerprint = hashlib.sha256(fingerprint_raw.encode()).hexdigest()[:12]
+        training_fingerprint = _training_fingerprint(feature_cols, history, game_date)
+        cached = _load_cached_model(training_fingerprint)
+        if cached is None:
+            # 5. Fit LGBM Pipeline
+            # Anchored on the year before game_date
+            sw = recency_weights(history["season"], cutoff_ts.year - 1, C.RECENCY_HALF_LIFE)
+
+            X_tr = history[feature_cols].apply(pd.to_numeric, errors="coerce")
+            y_tr = history["home_win"].astype(int)
+
+            pipe = Pipeline([
+                ("imputer", SimpleImputer(strategy="median")),
+                ("model", make_lgbm()),
+            ])
+
+            pipe.fit(X_tr, y_tr, model__sample_weight=sw)
+            model_artifact_id = _save_cached_model(
+                fingerprint=training_fingerprint,
+                clf=pipe,
+                feature_cols=feature_cols,
+                history=history,
+                game_date=game_date,
+            )
+        else:
+            pipe, model_artifact_id = cached
         
         return {
             "clf": pipe,
             "feature_cols": feature_cols,
             "target_rows": target_rows,
-            "training_fingerprint": training_fingerprint
+            "training_fingerprint": training_fingerprint,
+            "model_artifact_id": model_artifact_id,
         }
         
     except Exception as e:
@@ -185,7 +269,7 @@ def predict_one(game_pk: str, shared: dict, dry_run: bool = False) -> dict:
                     bet_side=bet_side,
                     bet_frac=bet_frac,
                     market_implied_prob=market_implied_prob,
-                    model_artifact_id=None
+                    model_artifact_id=shared.get("model_artifact_id")
                 )
             except Exception as e:
                 print(f"  V2 DB Update Error (bet): {e}")
