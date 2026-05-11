@@ -577,6 +577,14 @@ def build_pitcher_features(df):
     return out
 
 
+def _sanitize_training_df(df: pd.DataFrame) -> pd.DataFrame:
+    if "home_win" in df.columns:
+        df["home_win"] = df["home_win"].map(
+            {"True": 1.0, "False": 0.0, "true": 1.0, "false": 0.0, True: 1.0, False: 0.0, 1: 1.0, 0: 0.0}
+        ).where(df["home_win"].notna())
+    return df
+
+
 def load_training_frame():
     try:
         import db
@@ -592,7 +600,7 @@ def load_training_frame():
         )
         print("Loading DB games...")
         print(f"  {len(hist):,} historical rows + {len(curr):,} current rows loaded")
-        return df
+        return _sanitize_training_df(df)
     except Exception as e:
         print(f"Loading CSV... DB unavailable ({e})")
         hist = pd.read_csv(CSV_INPUT_PATH, low_memory=False)
@@ -604,9 +612,9 @@ def load_training_frame():
                 ignore_index=True,
             )
             print(f"  {len(hist):,} historical rows + {len(curr):,} current rows loaded")
-            return df
+            return _sanitize_training_df(df)
         print(f"  {len(hist):,} rows loaded")
-        return hist
+        return _sanitize_training_df(hist)
 
 
 def load_and_engineer_features():
