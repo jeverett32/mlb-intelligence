@@ -2569,6 +2569,7 @@ def backfill_paper_orders_from_bets(email: str | None = None) -> int:
                 WHERE b.bet_side IN ('home', 'away')
                   AND COALESCE(b.bet_frac, 0) > 0
                   AND b.predicted_prob IS NOT NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
                 ORDER BY b.game_date ASC NULLS LAST, b.game_pk ASC
                 """
             )
@@ -4970,6 +4971,8 @@ def backfill_paper_order_v2_results():
 def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
     V2 version of get_upcoming_needing_prediction, checking bets_v2.
+    Existing rows created before the T-10 window are refreshed so V2 predictions
+    stay aligned with V1's pregame timing.
     """
     sql = """
         SELECT g.*
@@ -4981,6 +4984,11 @@ def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFr
           AND (
               b.game_pk IS NULL
               OR b.predicted_prob IS NULL
+              OR (
+                  g.game_time_utc IS NOT NULL
+                  AND NOW() >= g.game_time_utc - INTERVAL '10 minutes'
+                  AND b.updated_at < g.game_time_utc - INTERVAL '10 minutes'
+              )
           )
         ORDER BY g.game_date, g.game_pk
     """
