@@ -3976,7 +3976,9 @@ def get_model_metric_snapshots(limit: int = 50, version: str = "v1") -> list[dic
             if version == "v2":
                 # Synthesize snapshots from model_artifacts_v2
                 cur.execute("""
-                    SELECT id, created_at as trained_at, metrics 
+                    SELECT id, created_at AS trained_at, model_type, model_version,
+                           settled_row_count, max_settled_game_date, num_features,
+                           feature_importances, metrics
                     FROM model_artifacts_v2
                     ORDER BY created_at DESC LIMIT %s
                 """, (int(limit),))
@@ -3989,8 +3991,24 @@ def get_model_metric_snapshots(limit: int = 50, version: str = "v1") -> list[dic
                             m = json.loads(m)
                         except (ValueError, TypeError):
                             m = {}
-                    row_dict = {"id": r["id"], "trained_at": r["trained_at"]}
-                    row_dict.update(m)
+                    fi = r.get("feature_importances")
+                    if isinstance(fi, str):
+                        try:
+                            fi = json.loads(fi)
+                        except (ValueError, TypeError):
+                            fi = None
+                    row_dict = {
+                        "id": r["id"],
+                        "trained_at": r["trained_at"],
+                        "model_type": r.get("model_type"),
+                        "model_version": r.get("model_version"),
+                        "num_features": r.get("num_features"),
+                        "training_rows": r.get("settled_row_count"),
+                        "max_settled_game_date": r.get("max_settled_game_date"),
+                        "feature_importances": fi,
+                    }
+                    if isinstance(m, dict):
+                        row_dict.update(m)
                     out.append(row_dict)
                 return out
             else:
@@ -4660,11 +4678,15 @@ def init_model_artifacts_v2() -> None:
                     num_features INT,
                     feature_columns JSONB,
                     feature_config JSONB,
+                    feature_importances JSONB,
                     metrics JSONB,
                     git_commit TEXT,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
                 """
+            )
+            cur.execute(
+                "ALTER TABLE model_artifacts_v2 ADD COLUMN IF NOT EXISTS feature_importances JSONB"
             )
         conn.commit()
 
@@ -4840,10 +4862,11 @@ def save_model_artifact_v2(payload: dict) -> int:
                     num_features,
                     feature_columns,
                     feature_config,
+                    feature_importances,
                     metrics,
                     git_commit
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (training_fingerprint) DO UPDATE SET
                     model_type = EXCLUDED.model_type,
                     model_version = EXCLUDED.model_version,
@@ -4855,6 +4878,7 @@ def save_model_artifact_v2(payload: dict) -> int:
                     num_features = EXCLUDED.num_features,
                     feature_columns = EXCLUDED.feature_columns,
                     feature_config = EXCLUDED.feature_config,
+                    feature_importances = EXCLUDED.feature_importances,
                     metrics = EXCLUDED.metrics,
                     git_commit = EXCLUDED.git_commit
                 RETURNING id
@@ -4871,6 +4895,7 @@ def save_model_artifact_v2(payload: dict) -> int:
                     payload.get("num_features"),
                     json.dumps(payload.get("feature_columns")) if payload.get("feature_columns") is not None else None,
                     json.dumps(payload.get("feature_config")) if payload.get("feature_config") is not None else None,
+                    json.dumps(payload.get("feature_importances")) if payload.get("feature_importances") is not None else None,
                     json.dumps(payload.get("metrics")) if payload.get("metrics") is not None else None,
                     payload.get("git_commit"),
                 ),

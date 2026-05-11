@@ -69,6 +69,22 @@ def _load_cached_model(fingerprint: str) -> tuple[Pipeline, int | None] | None:
     return clf, artifact_id
 
 
+def _extract_feature_importances(clf: Pipeline, feature_cols: list[str]) -> list[dict] | None:
+    try:
+        model = clf.named_steps.get("model")
+        importances = getattr(model, "feature_importances_", None)
+        if importances is None:
+            return None
+        pairs = sorted(
+            ({"feature": f, "importance": float(v)} for f, v in zip(feature_cols, importances)),
+            key=lambda r: r["importance"],
+            reverse=True,
+        )
+        return pairs
+    except Exception:
+        return None
+
+
 def _save_cached_model(
     *,
     fingerprint: str,
@@ -79,6 +95,7 @@ def _save_cached_model(
 ) -> int | None:
     try:
         artifact_bytes = pickle.dumps({"clf": clf}, protocol=pickle.HIGHEST_PROTOCOL)
+        feature_importances = _extract_feature_importances(clf, feature_cols)
         artifact_id = DB.save_model_artifact_v2({
             "model_type": "lgbm_pipeline",
             "model_version": C.MODEL_VERSION,
@@ -91,6 +108,7 @@ def _save_cached_model(
             "num_features": len(feature_cols),
             "feature_columns": feature_cols,
             "feature_config": _artifact_feature_config(game_date),
+            "feature_importances": feature_importances,
             "metrics": None,
             "git_commit": None,
         })
