@@ -64,6 +64,30 @@ def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
         # V2 only settles its own paper orders
         settle_v2_paper_orders()
 
+
+def _run_with_watchdog(fn, *args, **kwargs):
+    """Run fn in a worker thread, pinging the systemd watchdog every 30s while
+    waiting. Without this, long-running subprocess fetches in ingest_features
+    blow past WatchdogSec and SIGABRT the service mid-ingest."""
+    done = threading.Event()
+    holder: dict = {}
+
+    def _work():
+        try:
+            holder["result"] = fn(*args, **kwargs)
+        except BaseException as e:
+            holder["error"] = e
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_work, daemon=True)
+    t.start()
+    while not done.wait(timeout=30.0):
+        _sd_notify("WATCHDOG=1")
+    if "error" in holder:
+        raise holder["error"]
+    return holder.get("result")
+
 def _mark_fetched() -> None:
     global _LAST_FETCH_TS
     _LAST_FETCH_TS = time.time()
@@ -113,8 +137,9 @@ def ensure_v2_features_ready(games: list[dict], no_ingest: bool = False) -> None
         end_date = (pd.Timestamp(start_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
         try:
-            ingest_features(
-                season=ACTIVE_SEASON, start_date=start_date, end_date=end_date
+            _run_with_watchdog(
+                ingest_features,
+                season=ACTIVE_SEASON, start_date=start_date, end_date=end_date,
             )
         except Exception as e:
             print(f"[v2] Feature ingest failed: {e}")
@@ -271,7 +296,7 @@ def run_batch(games: list[dict], no_ingest: bool = False) -> None:
 
     print(f"\n  [v2] Preparing shared model for {prep_date} ({len(pks_list)} game(s))...")
     try:
-        shared = PREDICT_V2.prepare_shared(pks_list, prep_date)
+        shared = _run_with_watchdog(PREDICT_V2.prepare_shared, pks_list, prep_date)
     except Exception as e:
         print(f"[v2] ERROR preparing shared model: {e}")
         return
@@ -313,7 +338,7 @@ def run_pipeline_for_game(game_pk: str):
             return
         game_date = str(df.iloc[0]['game_date'])[:10]
 
-    shared = PREDICT_V2.prepare_shared([str(game_pk)], game_date)
+    shared = _run_with_watchdog(PREDICT_V2.prepare_shared, [str(game_pk)], game_date)
     _predict_v2(str(game_pk), shared)
 
 def _warm_cache_background() -> None:
