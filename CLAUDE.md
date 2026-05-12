@@ -35,6 +35,9 @@ uv run dashboard/app.py --reload --host <bind_addr> --port <port>
 
 # Tests
 uv run pytest -q tests/
+
+# V2 nightly walk-forward eval (deterministic LGBM; updates latest model_artifacts_v2.metrics)
+uv run python -m models.model_v2.eval
 ```
 
 For additional conventions and guardrails, see `.clauderules`.

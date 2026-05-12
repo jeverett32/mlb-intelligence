@@ -137,6 +137,24 @@ To place a bet manually for one user:
 uv run bet/place_bet.py --game_pk <game_pk> --email <user_email>
 ```
 
+## V2 parallel pipeline (LightGBM, `games_v2`)
+
+V2 runs alongside V1: `run_pipeline_v2.py`, inference in `models/model_v2/predict.py`
+(single deterministic LGBM + `SimpleImputer` per training fingerprint — no bootstrap).
+
+**Nightly walk-forward metrics** (dashboard admin / `model_artifacts_v2`):
+
+```bash
+uv run python -m models.model_v2.eval
+```
+
+- One LGBM fit per fold with recency-weighted training (Phase 2.5 / `experiments_advanced.py` style — **not** `sandbox/model_lab/bayes_lgbm_experiment.py`, which is Phase 2.9 research only).
+- Persists JSON metrics onto the **latest** `model_artifacts_v2` row (see `db.py`).
+
+**Homelab:** `deploy/mlb-pipeline-v2-eval.service` + `deploy/mlb-pipeline-v2-eval.timer` (systemd oneshot + daily timer).
+
+**Data:** engineered features live in Postgres `games_v2` (`models/model_v2/ingest_features.py`, `db.bulk_upsert_games_v2`).
+
 ## Dashboard
 
 Dev server:

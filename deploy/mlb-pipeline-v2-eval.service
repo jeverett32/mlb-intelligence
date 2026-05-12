@@ -1,5 +1,5 @@
 [Unit]
-Description=MLB V2 walk-forward evaluation (nightly metrics for dashboard)
+Description=MLB V2 walk-forward eval — deterministic LGBM (Phase 2.5 style metrics)
 After=network-online.target postgresql.service
 
 [Service]

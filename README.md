@@ -61,9 +61,11 @@ Key components:
 
 ```text
 run_pipeline.py       # Main orchestrator
+run_pipeline_v2.py    # Parallel V2 orchestrator (LightGBM; dry-run by default)
 fetch/                # Data ingestion — odds, weather, stats
 models/model_v1/train.py   # Model training + walk-forward evaluation
 models/model_v1/predict.py # Inference — win probabilities + sizing
+models/model_v2/    # V2 LightGBM predict + nightly deterministic eval (`eval.py`)
 bet/place_bet.py      # Kalshi execution
 settle_games.py       # Post-game settlement
 dashboard/app.py      # Dashboard API

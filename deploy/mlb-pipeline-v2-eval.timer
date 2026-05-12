@@ -1,5 +1,5 @@
 [Unit]
-Description=Nightly V2 walk-forward eval (08:30 UTC daily)
+Description=Nightly V2 deterministic LGBM walk-forward eval (08:30 UTC)
 
 [Timer]
 OnCalendar=*-*-* 08:30:00

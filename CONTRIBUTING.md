@@ -56,6 +56,14 @@ uv run dashboard/app.py --reload --host 127.0.0.1 --port 8000
 uv run run_pipeline.py
 ```
 
+### V2 nightly eval (walk-forward metrics)
+
+```bash
+uv run python -m models.model_v2.eval
+```
+
+Writes deterministic LGBM walk-forward metrics to the latest `model_artifacts_v2` row (see `docs/pipeline.md`).
+
 ## Data / DB rules
 
 - **Postgres is the source of truth.** Prefer DB reads via `db.py`.

@@ -13,7 +13,7 @@ To protect the integrity of the 2010–2026 historical data, we will not modify 
     *   Includes a `game_pk` foreign key to link back to the source records.
 *   **`bets_v2`**: Stores predictions, edges, and bet_fracs for the V2 model.
 *   **`paper_orders_v2`**: Tracks simulated ROI for V2 (since V2 will run in Dry-Run mode initially).
-*   **`model_artifacts_v2`**: Isolated storage for LightGBM model blobs.
+*   **`model_artifacts_v2`**: Isolated storage for LightGBM model blobs and nightly **deterministic** walk-forward metrics (`python -m models.model_v2.eval` — not bootstrap LGBM).
 
 ### Data Scope
 *   The V2 model will continue to train on history (2017–2025) but will store its specific feature set in `games_v2`.

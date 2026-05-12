@@ -4,6 +4,7 @@ Isolated workspace for new MLB features, data pulls, and model experiments.
 
 Production rules:
 - Do not mutate production tables, production model artifacts, prediction outputs, or betting/order flows from this folder.
+- **Nightly V2 eval + production parity** use deterministic LGBM: `uv run python -m models.model_v2.eval` and `models/model_v2/predict.py`. For CSV-based Phase 2.5–style research, use `experiments_advanced.py` / `refined_strategy.py`. `bayes_lgbm_experiment.py` is **bootstrap research only** (Phase 2.9); do not wire it into cron or ops.
 - Build sandbox data into `models/model_v2/sandbox/model_lab/output/master_sandbox_mlb.csv`.
 - Training and testing use completed seasons only. Default cutoff: `game_date < 2026-01-01`.
 - Treat generated files in `output/` as disposable artifacts.

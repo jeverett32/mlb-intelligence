@@ -499,6 +499,11 @@ posterior std could push past 18% ROI and improve robustness.
 
 # Phase 2.9 — Bootstrap LGBM (k=306) as Bayesian Approx
 
+> **Production note (post Phase 2.9):** repo nightly eval is `python -m models.model_v2.eval`
+> — **one deterministic LGBM per fold** (Phase 2.5 family). The bootstrap script
+> `bayes_lgbm_experiment.py` stays for research replay only; it is not the live
+> metrics or `predict.py` path.
+
 **Question:** Phase 2.8 confirmed LR posterior std too tight to filter on.
 Hypothesis for LGBM: tail predictions (edge>0.18) sit in sparser feature
 regions, so bootstrap-resampled LGBMs should disagree more there. Per-game

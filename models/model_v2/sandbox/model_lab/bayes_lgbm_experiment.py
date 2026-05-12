@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Bootstrap Bayesian-style LGBM with k=306 and refined filters.
+"""Phase 2.9 research: bootstrap LGBM (posterior mean + std) — not used in production.
+
+**Operations / nightly metrics:** use `python -m models.model_v2.eval` (single
+deterministic LGBM per walk-forward fold, Phase 2.5 style — same family as
+`sandbox/model_lab/experiments_advanced.py` + `roi_eval.fit_predict_proba`).
+
+This script remains for reproducing RESULTS.md Phase 2.9 and exploring std-based
+filters. Do not point cron, backfills, or dashboard expectations at it.
 
 Goal: get per-game posterior std on LGBM probabilities. Hypothesis:
   - High-variance high-edge bets are overconfident garbage (audit found

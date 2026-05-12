@@ -78,6 +78,9 @@ uv run python models/model_v2/sandbox/model_lab/feature_engineer.py
 
 # 5. Retrain v2 model with walk-forward validation
 uv run python -m models.model_v2.sandbox.model_lab.training.train baseline --models lr,lgbm --progress
+
+# 6. Nightly V2 eval on Postgres `games_v2` (deterministic LGBM; updates latest model_artifacts_v2.metrics)
+uv run python -m models.model_v2.eval
 ```
 
 ## Known Gaps
