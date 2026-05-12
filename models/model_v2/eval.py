@@ -1,8 +1,8 @@
 """
-V2 walk-forward evaluation — mirrors sandbox `bayes_lgbm_experiment.py`.
+V2 walk-forward evaluation — Phase 2.5 style deterministic LGBM.
 
-4 folds (2022-2025), 16-bootstrap LGBM with recency-weighted training,
-edge-band Kelly ROI (edge 0.18-0.25, ML cap 250, kelly 0.5).
+4 folds (2022–2025), one median-imputer + LGBM fit per fold (recency-weighted),
+same Kelly ROI as config (edge band, ML cap, half-Kelly).
 
 Run:
     uv run python -m models.model_v2.eval
@@ -19,7 +19,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.pipeline import Pipeline
@@ -38,9 +37,6 @@ from models.model_v2.sandbox.model_lab.feature_engineer import (
 from models.model_v2.sandbox.model_lab.roi_eval import ml_to_dec
 from models.model_v2.sandbox.model_lab.training.models import make_lgbm
 
-N_BOOT = 16
-N_JOBS = 4
-
 
 def _make_pipe() -> Pipeline:
     return Pipeline([
@@ -49,29 +45,24 @@ def _make_pipe() -> Pipeline:
     ])
 
 
-def _fit_one(seed: int, X_tr, y_tr, sw, X_va):
-    rng = np.random.default_rng(seed)
-    n = len(X_tr)
-    idx = rng.integers(0, n, size=n)
-    sw_b = sw[idx] if sw is not None else None
+def _fit_deterministic(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    cols: list[str],
+    sample_weight: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """One LGBM fit on full train; val probabilities and feature importances (or None)."""
     pipe = _make_pipe()
-    pipe.fit(X_tr[idx], y_tr[idx], model__sample_weight=sw_b)
-    importances = getattr(pipe.named_steps["model"], "feature_importances_", None)
-    probs = pipe.predict_proba(X_va)[:, 1]
-    return probs, importances
-
-
-def _bootstrap(train_df, val_df, cols, sw, n_boot):
     X_tr = train_df[cols].apply(pd.to_numeric, errors="coerce").to_numpy()
     X_va = val_df[cols].apply(pd.to_numeric, errors="coerce").to_numpy()
     y_tr = train_df["home_win"].astype(int).to_numpy()
-    seeds = [42 + b * 1000 for b in range(n_boot)]
-    out = Parallel(n_jobs=N_JOBS, backend="loky", verbose=0)(
-        delayed(_fit_one)(s, X_tr, y_tr, sw, X_va) for s in seeds
-    )
-    probs = np.array([o[0] for o in out])
-    imps = np.array([o[1] for o in out if o[1] is not None])
-    return probs, imps
+    fit_kw: dict = {}
+    if sample_weight is not None:
+        fit_kw["model__sample_weight"] = sample_weight
+    pipe.fit(X_tr, y_tr, **fit_kw)
+    probs = pipe.predict_proba(X_va)[:, 1]
+    imp = getattr(pipe.named_steps["model"], "feature_importances_", None)
+    return probs, imp
 
 
 def _evaluate_kelly(
@@ -205,7 +196,6 @@ def run_eval(cutoff: str | None = None) -> dict:
     fold_results: list[dict] = []
     all_val_frames: list[pd.DataFrame] = []
     all_means: list[np.ndarray] = []
-    all_stds: list[np.ndarray] = []
     all_y: list[np.ndarray] = []
     all_imps: list[np.ndarray] = []
 
@@ -218,9 +208,8 @@ def run_eval(cutoff: str | None = None) -> dict:
             continue
         sw = recency_weights(tr["season"], train_ts.year - 1, C.RECENCY_HALF_LIFE)
         t0 = time.time()
-        probs, imps = _bootstrap(tr, va, feature_cols, sw, N_BOOT)
-        mean_p = probs.mean(axis=0)
-        std_p = probs.std(axis=0)
+        mean_p, imp = _fit_deterministic(tr, va, feature_cols, sw)
+        std_p = np.zeros(len(mean_p), dtype=float)
         y_vl = va["home_win"].astype(int).to_numpy()
 
         brier = float(brier_score_loss(y_vl, mean_p))
@@ -237,18 +226,17 @@ def run_eval(cutoff: str | None = None) -> dict:
             "val_rows": int(len(va)),
             "brier": round(brier, 6),
             "log_loss": round(ll, 6) if not math.isnan(ll) else None,
-            "std_mean": round(float(std_p.mean()), 6),
-            "std_p95": round(float(np.percentile(std_p, 95)), 6),
+            "std_mean": 0.0,
+            "std_p95": 0.0,
         })
         print(f"[v2-eval] fold={train_end} val_rows={len(va)} brier={brier:.4f} "
-              f"std_mean={std_p.mean():.4f} elapsed={time.time()-t0:.1f}s")
+              f"elapsed={time.time()-t0:.1f}s")
 
         all_val_frames.append(va.assign(_p_mean=mean_p, _p_std=std_p, season=va["season"]))
         all_means.append(mean_p)
-        all_stds.append(std_p)
         all_y.append(y_vl)
-        if imps.size:
-            all_imps.append(imps.mean(axis=0))
+        if imp is not None:
+            all_imps.append(np.asarray(imp, dtype=np.float64))
 
     if not fold_results:
         raise RuntimeError("No folds produced")
@@ -322,7 +310,6 @@ def run_eval(cutoff: str | None = None) -> dict:
     last_y = all_y[-1]
     feature_accuracy = _bucketed_feature_accuracy(last_val, last_probs, last_y, feature_cols)
 
-    # feature importances averaged across all bootstrap fits across all folds
     feature_importances = None
     if all_imps:
         avg_imp = np.mean(np.stack(all_imps, axis=0), axis=0)
@@ -335,8 +322,8 @@ def run_eval(cutoff: str | None = None) -> dict:
 
     duration = time.time() - t_start
     metrics = {
-        "model_type": "lgbm_bootstrap_pipeline",
-        "n_boot": N_BOOT,
+        "model_type": "lgbm_deterministic_pipeline",
+        "deterministic": True,
         "overall_brier": round(overall_brier, 6),
         "overall_log_loss": round(overall_ll, 6) if not math.isnan(overall_ll) else None,
         "mean_brier": round(float(np.mean([r["brier"] for r in fold_results])), 6),
@@ -364,7 +351,6 @@ def run_eval(cutoff: str | None = None) -> dict:
             "corr_threshold": C.CORR_THRESHOLD,
             "selected_by": C.SELECTED_BY,
             "recency_half_life": C.RECENCY_HALF_LIFE,
-            "n_boot": N_BOOT,
             "folds": [list(f) for f in FOLDS],
         },
     }
@@ -387,10 +373,17 @@ def _persist_metrics(metrics: dict) -> int | None:
                 print("[v2-eval] No model_artifacts_v2 rows exist; metrics not saved.")
                 return None
             artifact_id = int(row[0])
-            cur.execute(
-                "UPDATE model_artifacts_v2 SET metrics = %s WHERE id = %s",
-                (json.dumps(metrics), artifact_id),
-            )
+            mt = metrics.get("model_type")
+            if isinstance(mt, str) and mt:
+                cur.execute(
+                    "UPDATE model_artifacts_v2 SET metrics = %s, model_type = %s WHERE id = %s",
+                    (json.dumps(metrics), mt, artifact_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE model_artifacts_v2 SET metrics = %s WHERE id = %s",
+                    (json.dumps(metrics), artifact_id),
+                )
         conn.commit()
     return artifact_id
 
