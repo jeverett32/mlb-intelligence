@@ -1314,7 +1314,7 @@ async function loadModelInsights() {
 function renderModelSummary(run) {
   const el = document.getElementById('model-summary-cards');
   const cards = [
-    { label: 'Model', value: (run.model_type || '—').toUpperCase() },
+    { label: 'Model', value: ((run.model_type || '—').split('_')[0] || '—').toUpperCase() },
     { label: 'Brier Score', value: run.mean_brier != null ? run.mean_brier.toFixed(4) : '—' },
     { label: 'ROI', value: run.mean_roi != null ? (run.mean_roi * 100).toFixed(2) + '%' : '—' },
     { label: 'Total Bets', value: run.total_bets ?? '—' },
@@ -1898,7 +1898,7 @@ function renderTrainingHistory(runs) {
   el.innerHTML = runs.map(r => `
     <div class="training-history-row">
       <div>${r.trained_at ? r.trained_at.slice(0, 10) : '—'}</div>
-      <div>${(r.model_type || '—').toUpperCase()}</div>
+      <div>${((r.model_type || '—').split('_')[0] || '—').toUpperCase()}</div>
       <div style="font-family:monospace;font-size:0.72rem">${r.git_commit || '—'}</div>
       <div>${r.mean_brier != null ? r.mean_brier.toFixed(4) : '—'}</div>
       <div style="color:${r.mean_roi >= 0 ? 'var(--success)' : 'var(--danger)'}">${r.mean_roi != null ? (r.mean_roi * 100).toFixed(2) + '%' : '—'}</div>

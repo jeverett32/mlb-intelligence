@@ -322,7 +322,7 @@ def run_eval(cutoff: str | None = None) -> dict:
 
     duration = time.time() - t_start
     metrics = {
-        "model_type": "lgbm_deterministic_pipeline",
+        "model_type": "lgbm",
         "deterministic": True,
         "overall_brier": round(overall_brier, 6),
         "overall_log_loss": round(overall_ll, 6) if not math.isnan(overall_ll) else None,

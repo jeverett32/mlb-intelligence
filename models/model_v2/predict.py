@@ -97,7 +97,7 @@ def _save_cached_model(
         artifact_bytes = pickle.dumps({"clf": clf}, protocol=pickle.HIGHEST_PROTOCOL)
         feature_importances = _extract_feature_importances(clf, feature_cols)
         artifact_id = DB.save_model_artifact_v2({
-            "model_type": "lgbm_pipeline",
+            "model_type": "lgbm",
             "model_version": C.MODEL_VERSION,
             "training_fingerprint": fingerprint,
             "artifact_format": "pickle",
