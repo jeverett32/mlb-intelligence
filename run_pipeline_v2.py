@@ -104,15 +104,13 @@ def ensure_v2_features_ready(games: list[dict], no_ingest: bool = False) -> None
         print(
             f"[v2] Triggering feature ingest (missing={len(missing)}, stale={len(stale)})..."
         )
-        # Ingest for today
-        earliest_date = min(
-            g.get("game_date", datetime.now().strftime("%Y-%m-%d")) for g in games
+        # Ingest for today. Coerce game_date (may be datetime.date from DB) to ISO string
+        # so subprocess argv stays str-only — otherwise run_cmd's ' '.join(cmd) fails.
+        earliest_raw = min(
+            g.get("game_date") or datetime.now().strftime("%Y-%m-%d") for g in games
         )
-        # Use a 1-day window around the games
-        start_date = earliest_date
-        end_date = (pd.Timestamp(earliest_date) + pd.Timedelta(days=1)).strftime(
-            "%Y-%m-%d"
-        )
+        start_date = pd.Timestamp(earliest_raw).strftime("%Y-%m-%d")
+        end_date = (pd.Timestamp(start_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
         try:
             ingest_features(
@@ -388,11 +386,28 @@ def main():
             print(f"[v2] Sleeping {sleep_secs / 60:.1f} minutes...")
             _watchdog_sleep(sleep_secs)
 
+        batch_pks = {str(g["game_pk"]) for g in batch}
         run_batch(batch, no_ingest=args.no_ingest)
 
         if args.now or args.once:
             print("\n[v2] Exiting after one batch.")
             return
+
+        # Guard against hot-loop when a batch fails mid-pipeline (no bets_v2 row
+        # written → same game requalifies immediately with run_at_utc in the past).
+        try:
+            with DB.pooled_connection() as conn:
+                df = pd.read_sql_query(
+                    "SELECT game_pk FROM bets_v2 WHERE game_pk = ANY(%s) AND predicted_prob IS NOT NULL",
+                    conn,
+                    params=([int(pk) for pk in batch_pks],),
+                )
+            written = {str(pk) for pk in df["game_pk"].tolist()}
+        except Exception:
+            written = set()
+        if batch_pks - written:
+            print(f"[v2] Batch incomplete ({len(batch_pks - written)} unwritten), backing off 60s.")
+            _watchdog_sleep(60)
 
 if __name__ == "__main__":
     main()
