@@ -825,7 +825,10 @@
             <label style="font-size:0.72rem;display:inline-flex;align-items:center;gap:3px;">
               <input type="checkbox" id="acc-month-show-brier" checked> Brier
             </label>
-            <span class="info-icon" tabindex="0" data-tooltip="Per-month accuracy and Brier score from the latest training run's walk-forward validation predictions across all training years. Filter to a single year, or view the full history.">i</span>
+            <label style="font-size:0.72rem;display:inline-flex;align-items:center;gap:3px;">
+              <input type="checkbox" id="acc-month-show-logloss"> Log Loss
+            </label>
+            <span class="info-icon" tabindex="0" data-tooltip="Per-month accuracy, Brier score, and log loss from the latest training run's walk-forward validation predictions across all training years. Filter to a single year, or view the full history.">i</span>
           </span>
         </div>
         <div class="chart-wrap"><canvas id="chart-accuracy-by-month"></canvas></div>
@@ -1319,7 +1322,7 @@ function renderModelSummary(run) {
     { label: 'ROI', value: run.mean_roi != null ? (run.mean_roi * 100).toFixed(2) + '%' : '—' },
     { label: 'Total Bets', value: run.total_bets ?? '—' },
     { label: 'Features', value: run.num_features ?? '—' },
-    { label: 'Folds', value: run.num_folds ?? '—' },
+    { label: 'Log Loss', value: run.overall_log_loss != null ? run.overall_log_loss.toFixed(4) : '—' },
     { label: 'Train Rows', value: run.training_rows ? run.training_rows.toLocaleString() : '—' },
     { label: 'Duration', value: run.duration_seconds ? run.duration_seconds.toFixed(0) + 's' : '—' },
   ];
@@ -1517,7 +1520,7 @@ async function loadAccuracyByMonth() {
   if (!_accMonthInit) {
     _accMonthInit = true;
     yrSel.addEventListener('change', loadAccuracyByMonth);
-    ['acc-month-show-model','acc-month-show-market','acc-month-show-brier'].forEach(id => {
+    ['acc-month-show-model','acc-month-show-market','acc-month-show-brier','acc-month-show-logloss'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', loadAccuracyByMonth);
     });
@@ -1561,11 +1564,13 @@ function renderAccuracyByMonth(months) {
   const accuracy = months.map(m => m.accuracy != null ? +(m.accuracy * 100).toFixed(2) : null);
   const marketAcc = months.map(m => m.market_accuracy != null ? +(m.market_accuracy * 100).toFixed(2) : null);
   const brier = months.map(m => m.brier != null ? +m.brier.toFixed(4) : null);
+  const logLoss = months.map(m => m.log_loss != null ? +m.log_loss.toFixed(4) : null);
   const counts = months.map(m => m.count);
 
   const showModel = document.getElementById('acc-month-show-model')?.checked ?? true;
   const showMarket = document.getElementById('acc-month-show-market')?.checked ?? true;
   const showBrier = document.getElementById('acc-month-show-brier')?.checked ?? true;
+  const showLogLoss = document.getElementById('acc-month-show-logloss')?.checked ?? false;
 
   const datasets = [];
   if (showModel) datasets.push({
@@ -1591,6 +1596,15 @@ function renderAccuracyByMonth(months) {
     borderColor: '#587a5f',
     backgroundColor: '#587a5f',
     tension: 0.3, pointRadius: 3, borderWidth: 2,
+    yAxisID: 'y1', fill: false,
+  });
+  if (showLogLoss) datasets.push({
+    label: 'Log Loss',
+    data: logLoss,
+    borderColor: '#8a6b4a',
+    backgroundColor: '#8a6b4a',
+    tension: 0.3, pointRadius: 3, borderWidth: 2,
+    borderDash: [6, 3],
     yAxisID: 'y1', fill: false,
   });
 

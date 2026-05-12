@@ -25,6 +25,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.impute import SimpleImputer
+from sklearn.metrics import log_loss
 from sklearn.pipeline import Pipeline
 import lightgbm as lgb
 import xgboost as xgb
@@ -1342,6 +1343,10 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
             mk_valid = ~np.isnan(mk)
             brier = float(np.mean((p - y) ** 2))
             accuracy = float(np.mean((p > 0.5) == (y > 0.5)))
+            try:
+                ll = float(log_loss(y, np.clip(p, 1e-6, 1 - 1e-6)))
+            except Exception:
+                ll = None
             if mk_valid.any():
                 market_brier = float(np.mean((mk[mk_valid] - y[mk_valid]) ** 2))
                 market_accuracy = float(np.mean((mk[mk_valid] > 0.5) == (y[mk_valid] > 0.5)))
@@ -1354,6 +1359,7 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
                 "year_month": f"{yr:04d}-{mo:02d}",
                 "count": n,
                 "brier": round(brier, 6),
+                "log_loss": round(ll, 6) if ll is not None else None,
                 "accuracy": round(accuracy, 6),
                 "market_brier": round(market_brier, 6) if market_brier is not None else None,
                 "market_accuracy": round(market_accuracy, 6) if market_accuracy is not None else None,

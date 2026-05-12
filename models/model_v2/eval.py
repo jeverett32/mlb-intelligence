@@ -287,6 +287,10 @@ def run_eval(cutoff: str | None = None) -> dict:
         mk_valid = ~np.isnan(mk_m)
         accuracy = float(((p_m > 0.5) == (y_m > 0.5)).mean())
         brier_m = float(np.mean((p_m - y_m) ** 2))
+        try:
+            ll_m = float(log_loss(y_m, np.clip(p_m, 1e-6, 1 - 1e-6)))
+        except Exception:
+            ll_m = None
         if mk_valid.any():
             market_brier = float(np.mean((mk_m[mk_valid] - y_m[mk_valid]) ** 2))
             market_accuracy = float(((mk_m[mk_valid] > 0.5) == (y_m[mk_valid] > 0.5)).mean())
@@ -299,6 +303,7 @@ def run_eval(cutoff: str | None = None) -> dict:
             "year_month": f"{yr:04d}-{mo:02d}",
             "count": int(mask.sum()),
             "brier": round(brier_m, 6),
+            "log_loss": round(ll_m, 6) if ll_m is not None else None,
             "accuracy": round(accuracy, 6),
             "market_brier": round(market_brier, 6) if market_brier is not None else None,
             "market_accuracy": round(market_accuracy, 6) if market_accuracy is not None else None,
