@@ -512,6 +512,16 @@
           </div>
           <div class="settings-feedback" id="global-live-feedback"></div>
         </section>
+
+        <section class="settings-section" id="live-model-admin-section" style="display:none">
+          <div class="settings-section-title">Live betting model</div>
+          <p id="live-model-admin-copy">Which pipeline’s saved bet rows drive Kalshi previews and live orders when toggles allow it. Add new versions in code when a pipeline is ready.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="live-model-select">Active pipeline</label>
+            <select class="settings-input" id="live-model-select" onchange="saveLiveModelVersion()"></select>
+          </div>
+          <div class="settings-feedback" id="live-model-feedback"></div>
+        </section>
       </div>
 
       <!-- Kalshi -->
@@ -768,6 +778,24 @@
     } catch { feedback('global-live-feedback', 'Update failed.', false); }
   }
 
+  function liveModelLabel(id) {
+    if (id === 'v1') return 'V1';
+    if (id === 'v2') return 'V2';
+    return String(id || '').toUpperCase();
+  }
+
+  async function saveLiveModelVersion() {
+    const sel = document.getElementById('live-model-select');
+    if (!sel) return;
+    const v = sel.value;
+    try {
+      await api('POST', '/api/admin/settings/active_live_model_version', { value: v });
+      feedback('live-model-feedback', 'Saved.', true);
+    } catch (e) {
+      feedback('live-model-feedback', e?.detail || 'Save failed.', false);
+    }
+  }
+
   async function toggleApiExecution() {
     const on = document.getElementById('api-execution-toggle').checked;
     const mode = on ? 'self_custody' : 'server_managed';
@@ -998,6 +1026,21 @@
 
       if (me.is_admin) {
         document.getElementById('admin-tab-btn').style.display = '';
+      }
+
+      const liveModelSection = document.getElementById('live-model-admin-section');
+      const liveSel = document.getElementById('live-model-select');
+      const versions = settings.live_model_versions;
+      if (me.is_admin && liveModelSection && liveSel && Array.isArray(versions) && versions.length) {
+        liveModelSection.style.display = '';
+        const current = settings.active_live_model_version || versions[0];
+        liveSel.innerHTML = versions.map((vid) => {
+          const sel = vid === current ? ' selected' : '';
+          return `<option value="${vid}"${sel}>${liveModelLabel(vid)}</option>`;
+        }).join('');
+        liveSel.value = versions.includes(current) ? current : versions[0];
+      } else if (liveModelSection) {
+        liveModelSection.style.display = 'none';
       }
 
       // Kalshi account

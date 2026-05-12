@@ -517,10 +517,33 @@ def _execute_bet_row(
     }
 
 
-def _upsert_paper_result(email: str, game_pk: str, row: dict, result: dict, paper_bankroll: float) -> None:
+def _upsert_paper_result(
+    email: str,
+    game_pk: str,
+    row: dict,
+    result: dict,
+    paper_bankroll: float,
+    *,
+    pipeline_version: str = "v1",
+) -> None:
     # Paper mode is universal. Per-user dry-run rows are legacy noise now;
     # dashboard paper state comes from DB.PAPER_UNIVERSAL_EMAIL only.
     _ = email
+    pv = (pipeline_version or "v1").lower().strip()
+    if pv == "v2":
+        st = result.get("status", "")
+        if st in {"dry_run", "skipped_no_live_edge"}:
+            DB.upsert_paper_order_v2(
+                int(game_pk),
+                str(row.get("bet_side") or "none"),
+                float(row.get("bet_frac") or 0.0),
+                row.get("predicted_prob"),
+                row.get("market_implied_prob"),
+                row.get("edge"),
+                str(row.get("model_version") or "v2"),
+            )
+        return
+
     paper_after = None
     if result.get("status") in {"dry_run", "skipped_no_live_edge"}:
         paper_after = paper_bankroll
@@ -565,9 +588,12 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     account = DB.get_kalshi_account(email)
     if not account or not account.get("is_active"):
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_no_account"}
-    row = DB.get_bet(game_pk)
+    active_pipeline = DB.get_active_live_model_version()
+    row = DB.get_bet_for_live_pipeline(game_pk, active_pipeline)
     if row is None:
-        raise PlaceBetError(f"game_pk={game_pk} not found in bets table.")
+        raise PlaceBetError(
+            f"game_pk={game_pk} not found in bets table for active pipeline {active_pipeline!r}."
+        )
 
     existing_order = DB.get_user_order(email, game_pk)
     if existing_order is not None:
@@ -580,7 +606,8 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     if original_bet_frac <= 0 or bet_side == "none":
         return {"game_pk": str(game_pk), "email": email, "status": "skipped_no_bet"}
 
-    paper_bankroll = DB.get_paper_bankroll_dollars(email)
+    paper_version = "v2" if active_pipeline == "v2" else "v1"
+    paper_bankroll = DB.get_paper_bankroll_dollars(email, version=paper_version)
     try:
         paper_result = _execute_bet_row(
             row,
@@ -596,18 +623,14 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             "status": _place_bet_error_status(exc),
             "error": str(exc),
         }
-    _upsert_paper_result(email, game_pk, row, paper_result, paper_bankroll)
+    _upsert_paper_result(
+        email, game_pk, row, paper_result, paper_bankroll, pipeline_version=active_pipeline
+    )
 
     if execution_mode == "paper_only":
         return {**paper_result, "email": email, "mode": "paper"}
 
-    # v1 places live bets only when admin has selected v1 as the active live model.
-    active_live_model = DB.get_active_live_model_version()
-    live_enabled = (
-        active_live_model == "v1"
-        and DB.is_global_live_betting()
-        and DB.is_user_live_betting(email)
-    )
+    live_enabled = DB.is_global_live_betting() and DB.is_user_live_betting(email)
     if not live_enabled or paper_result.get("status", "").startswith("skipped_no_"):
         return {**paper_result, "email": email, "mode": "paper"}
 
@@ -659,25 +682,32 @@ def place_user_bet(email: str, game_pk: str) -> dict:
 def preview_user_bet(email: str, row: dict) -> dict:
     """Run live market lookup and sizing without writing orders or placing bets."""
     email = email.strip().lower()
+    game_pk = str(row.get("game_pk") or "")
     user = DB.get_user(email)
     if not user or user["approval_status"] != DB.USER_STATUS_APPROVED:
-        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_unapproved"}
+        return {"game_pk": game_pk, "email": email, "status": "skipped_unapproved"}
     execution_mode = _execution_mode_for_email(email)
     if execution_mode == "self_custody":
-        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_self_custody", "mode": "self_custody"}
+        return {"game_pk": game_pk, "email": email, "status": "skipped_self_custody", "mode": "self_custody"}
     account = DB.get_kalshi_account(email)
     if not account or not account.get("is_active"):
-        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_no_account"}
+        return {"game_pk": game_pk, "email": email, "status": "skipped_no_account"}
 
-    original_bet_frac = float(row.get("bet_frac") or 0)
-    bet_side = str(row.get("bet_side") or "none").strip().lower()
+    active_pipeline = DB.get_active_live_model_version()
+    db_row = DB.get_bet_for_live_pipeline(game_pk, active_pipeline)
+    if db_row is None:
+        return {"game_pk": game_pk, "email": email, "status": "skipped_no_bet"}
+
+    original_bet_frac = float(db_row.get("bet_frac") or 0)
+    bet_side = str(db_row.get("bet_side") or "none").strip().lower()
     if original_bet_frac <= 0 or bet_side == "none":
-        return {"game_pk": str(row.get("game_pk")), "email": email, "status": "skipped_no_bet"}
+        return {"game_pk": game_pk, "email": email, "status": "skipped_no_bet"}
 
-    paper_bankroll = DB.get_paper_bankroll_dollars(email)
+    paper_version = "v2" if active_pipeline == "v2" else "v1"
+    paper_bankroll = DB.get_paper_bankroll_dollars(email, version=paper_version)
     try:
         result = _execute_bet_row(
-            row,
+            db_row,
             key_id=account["key_id"],
             key_path=account["key_path"],
             kalshi_env=account["kalshi_env"],
@@ -686,7 +716,7 @@ def preview_user_bet(email: str, row: dict) -> dict:
         )
     except PlaceBetError as exc:
         result = {
-            "game_pk": str(row.get("game_pk")),
+            "game_pk": game_pk,
             "status": _place_bet_error_status(exc),
             "error": str(exc),
         }

@@ -630,7 +630,7 @@ def require_client_writer(request: Request):
 def get_settings(user: dict = Depends(require_approved_user)):
     last_seen = DB.get_user_setting(user["email"], "self_custody_last_seen_at", "")
     last_error = DB.get_user_setting(user["email"], "self_custody_last_error", "")
-    return {
+    out = {
         "live_betting": DB.is_user_live_betting(user["email"]),
         "dashboard_timezone": DB.get_user_setting(
             user["email"], "dashboard_timezone", _get_dashboard_timezone()
@@ -646,6 +646,10 @@ def get_settings(user: dict = Depends(require_approved_user)):
             "last_error": last_error or None,
         },
     }
+    if user["is_admin"]:
+        out["active_live_model_version"] = DB.get_active_live_model_version()
+        out["live_model_versions"] = DB.list_live_model_versions()
+    return out
 
 
 @app.post("/api/settings/{key}")
@@ -670,9 +674,15 @@ def update_setting(
 def update_admin_setting(
     key: str, payload: SettingPayload, user: dict = Depends(require_admin)
 ):
-    allowed = {"global_live_betting"}
+    allowed = {"global_live_betting", "active_live_model_version"}
     if key not in allowed:
         raise HTTPException(status_code=400, detail=f"Unknown admin setting: {key}")
+    if key == "active_live_model_version":
+        try:
+            DB.set_active_live_model_version(payload.value)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return {"key": key, "value": DB.get_active_live_model_version()}
     DB.set_setting(key, payload.value)
     return {"key": key, "value": payload.value}
 

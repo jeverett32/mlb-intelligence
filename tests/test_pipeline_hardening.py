@@ -308,9 +308,10 @@ def test_place_user_bet_persists_no_market_status(monkeypatch):
 
     monkeypatch.setattr(place_bet.DB, "get_user", lambda email: {"approval_status": place_bet.DB.USER_STATUS_APPROVED})
     monkeypatch.setattr(place_bet.DB, "get_kalshi_account", lambda email: {"is_active": True, "key_id": "kid", "key_path": "k.pem", "kalshi_env": "demo"})
-    monkeypatch.setattr(place_bet.DB, "get_bet", lambda game_pk: row)
+    monkeypatch.setattr(place_bet.DB, "get_active_live_model_version", lambda: "v1")
+    monkeypatch.setattr(place_bet.DB, "get_bet_for_live_pipeline", lambda game_pk, pv: row if str(game_pk) == "123" and pv == "v1" else None)
     monkeypatch.setattr(place_bet.DB, "get_user_order", lambda email, game_pk: None)
-    monkeypatch.setattr(place_bet.DB, "get_paper_bankroll_dollars", lambda email: 10000.0)
+    monkeypatch.setattr(place_bet.DB, "get_paper_bankroll_dollars", lambda email, version="v1": 10000.0)
     monkeypatch.setattr(place_bet, "fetch_balance_for_account", lambda **kwargs: 10000)
     monkeypatch.setattr(place_bet, "_execute_bet_row", lambda *args, **kwargs: (_ for _ in ()).throw(place_bet.PlaceBetError("No open Kalshi market found")))
     monkeypatch.setattr(place_bet.DB, "upsert_paper_order", lambda email, game_pk, **kwargs: recorded_paper.update(kwargs))

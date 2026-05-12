@@ -931,6 +931,29 @@ def get_bet(game_pk) -> dict | None:
         conn.close()
 
 
+def get_bet_for_live_pipeline(game_pk: str | int, pipeline_version: str) -> dict | None:
+    """Bet row used for Kalshi sizing/placement for the given pipeline (v1 → `bets`, v2 → `bets_v2`)."""
+    v = (pipeline_version or "v1").lower().strip()
+    if v not in LIVE_MODEL_VERSIONS:
+        v = "v1"
+    if v == "v1":
+        return get_bet(game_pk)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT b.*, g.game_time_utc
+                   FROM bets_v2 b
+                   LEFT JOIN games g ON b.game_pk = g.game_pk
+                   WHERE b.game_pk = %s""",
+                (int(game_pk),),
+            )
+            row = cur.fetchone()
+            return _money_alias_record(dict(row)) if row else None
+    finally:
+        conn.close()
+
+
 def get_upcoming_bet_signals(limit: int = 50) -> list[dict]:
     conn = get_connection()
     try:
@@ -2252,6 +2275,11 @@ def set_active_live_model_version(version: str) -> None:
     if v not in LIVE_MODEL_VERSIONS:
         raise ValueError(f"Unsupported live model version: {version!r}")
     set_setting("active_live_model_version", v)
+
+
+def list_live_model_versions() -> list[str]:
+    """Ordered pipeline ids allowed for live Kalshi routing (`LIVE_MODEL_VERSIONS`)."""
+    return list(LIVE_MODEL_VERSIONS)
 
 
 def upsert_kalshi_account(
