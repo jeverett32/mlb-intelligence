@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from dotenv import load_dotenv
+from psycopg2.extras import RealDictCursor
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _REPO_ROOT)
@@ -55,7 +56,10 @@ def fetch_skipped_rows(season: int, limit: int | None, horizon_days: int) -> pd.
         lim_sql += " LIMIT %s"
         params.append(int(limit))
     with DB.pooled_connection() as conn:
-        return pd.read_sql_query(lim_sql, conn, params=params)
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(lim_sql, params)
+            rows = cur.fetchall()
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["game_pk", "game_date"])
 
 
 def main() -> int:
