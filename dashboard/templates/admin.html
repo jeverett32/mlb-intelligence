@@ -447,7 +447,7 @@
     }
     .training-history-row {
       display: grid;
-      grid-template-columns: 80px 80px 1fr 80px 80px 80px 80px 100px;
+      grid-template-columns: 80px 80px 1fr 72px 72px 80px 72px 72px 88px;
       gap: 8px;
       padding: 10px 16px;
       font-size: 0.78rem;
@@ -644,11 +644,11 @@
       .panel-row { grid-template-columns: 1fr; }
       .notes-layout { grid-template-columns: 1fr; }
       .training-history-row {
-        grid-template-columns: 70px 70px 1fr 70px 70px;
+        grid-template-columns: 70px 70px 1fr 64px 64px 64px;
       }
-      .training-history-row > :nth-child(6),
       .training-history-row > :nth-child(7),
-      .training-history-row > :nth-child(8) { display: none; }
+      .training-history-row > :nth-child(8),
+      .training-history-row > :nth-child(9) { display: none; }
     }
     @media (max-width: 768px) {
       .admin-header { padding: 0 16px; }
@@ -873,6 +873,7 @@
         <div>Model</div>
         <div>Commit</div>
         <div>Brier</div>
+        <div>Log Loss</div>
         <div>ROI</div>
         <div>Bets</div>
         <div>Features</div>
@@ -1915,6 +1916,7 @@ function renderTrainingHistory(runs) {
       <div>${((r.model_type || '—').split('_')[0] || '—').toUpperCase()}</div>
       <div style="font-family:monospace;font-size:0.72rem">${r.git_commit || '—'}</div>
       <div>${r.mean_brier != null ? r.mean_brier.toFixed(4) : '—'}</div>
+      <div>${r.overall_log_loss != null ? r.overall_log_loss.toFixed(4) : '—'}</div>
       <div style="color:${r.mean_roi >= 0 ? 'var(--success)' : 'var(--danger)'}">${r.mean_roi != null ? (r.mean_roi * 100).toFixed(2) + '%' : '—'}</div>
       <div>${r.total_bets ?? '—'}</div>
       <div>${r.num_features ?? '—'}</div>
