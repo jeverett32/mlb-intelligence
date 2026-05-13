@@ -1089,6 +1089,8 @@ def build_metric_folds(df):
 def run_walk_forward(df, active_feats, early_feats, folds=None):
     folds = folds or WALK_FORWARD_FOLDS
     fold_results = []
+    wf_val_probs: list[np.ndarray] = []
+    wf_val_y: list[np.ndarray] = []
     last_fi = None
     last_edges = None
     last_train_rows = None
@@ -1270,6 +1272,9 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
         brier, roi, n_bets = evaluate(probs_val, y_val, mkt_val, is_warmup=wu_val)
         print(f"  brier={brier:.4f}  roi={roi:.4f}  n_bets={n_bets}")
 
+        wf_val_probs.append(np.asarray(probs_val, dtype=np.float64).copy())
+        wf_val_y.append(np.asarray(y_val, dtype=np.float64).copy())
+
         if clf is not None and fold_idx == len(folds) - 1:
             fi_feats = survived_feats if MODEL in ("lr", "mlp") else active_feats
             print_feature_importance(clf, fi_feats)
@@ -1366,6 +1371,14 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
             })
         extras["monthly_accuracy"] = monthly
 
+    if wf_val_probs:
+        try:
+            p_all = np.clip(np.concatenate(wf_val_probs), 1e-6, 1.0 - 1e-6)
+            y_all = np.concatenate(wf_val_y)
+            extras["overall_log_loss"] = float(log_loss(y_all, p_all))
+        except Exception:
+            extras["overall_log_loss"] = None
+
     return fold_results, extras
 
 # ---------------------------------------------------------------------------
@@ -1451,6 +1464,7 @@ if __name__ == "__main__":
             "num_folds": n_folds,
             "mean_brier": mean_brier if not math.isnan(mean_brier) else None,
             "mean_roi": mean_roi if not math.isnan(mean_roi) else None,
+            "overall_log_loss": extras.get("overall_log_loss"),
             "total_bets": total_bets,
             "duration_seconds": round(duration, 1),
             "feature_importances": extras.get("feature_importances", []),

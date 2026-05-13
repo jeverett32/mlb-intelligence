@@ -2513,6 +2513,7 @@ def get_admin_model_accuracy_by_month(
                 "count": total_n,
                 "accuracy": wavg("accuracy"),
                 "brier": wavg("brier"),
+                "log_loss": wavg("log_loss"),
                 "market_accuracy": wavg("market_accuracy"),
                 "market_brier": wavg("market_brier"),
             })

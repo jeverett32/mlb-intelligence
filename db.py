@@ -4062,6 +4062,10 @@ def init_model_metrics_table():
                 ADD COLUMN IF NOT EXISTS monthly_accuracy JSONB
             """)
             cur.execute(f"""
+                ALTER TABLE {MODEL_METRIC_SNAPSHOTS_TABLE}
+                ADD COLUMN IF NOT EXISTS overall_log_loss DOUBLE PRECISION
+            """)
+            cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_mms_trained_at
                 ON {MODEL_METRIC_SNAPSHOTS_TABLE} (trained_at DESC)
             """)
@@ -4071,16 +4075,17 @@ def init_model_metrics_table():
 
 
 def save_model_metric_snapshot(data: dict) -> int:
+    init_model_metrics_table()
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(f"""
                 INSERT INTO {MODEL_METRIC_SNAPSHOTS_TABLE}
                     (model_type, git_commit, num_features, training_rows, val_rows,
-                     num_folds, mean_brier, mean_roi, total_bets, duration_seconds,
+                     num_folds, mean_brier, mean_roi, overall_log_loss, total_bets, duration_seconds,
                      feature_importances, fold_results, edge_distribution, config,
                      feature_accuracy, monthly_accuracy)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             """, (
                 data.get("model_type"),
@@ -4091,6 +4096,7 @@ def save_model_metric_snapshot(data: dict) -> int:
                 data.get("num_folds"),
                 data.get("mean_brier"),
                 data.get("mean_roi"),
+                data.get("overall_log_loss"),
                 data.get("total_bets"),
                 data.get("duration_seconds"),
                 json.dumps(data.get("feature_importances", {})),
