@@ -7,11 +7,12 @@ Type=notify
 User=mlb
 Group=mlb
 WorkingDirectory=/opt/mlb/pipeline
-ExecStart=/opt/mlb/pipeline/.venv/bin/python run_pipeline_v2.py
+ExecStart=/opt/mlb/pipeline/.venv/bin/python -u run_pipeline_v2.py
 Restart=on-failure
 RestartSec=10
 WatchdogSec=300
 Environment=PYTHONPATH=.
+Environment=PYTHONUNBUFFERED=1
 # V2 is hardcoded to DRY_RUN_KALSHI=True in code, so no ENV needed for safety.
 
 [Install]

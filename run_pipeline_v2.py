@@ -220,6 +220,12 @@ def get_game_start_utc(game: dict) -> datetime:
             hour=18, tzinfo=timezone.utc
         )
 
+
+def _start_bucket_utc(game: dict) -> datetime:
+    """Truncate to the minute so batch grouping matches across repeated parses."""
+    return get_game_start_utc(game).astimezone(timezone.utc).replace(second=0, microsecond=0)
+
+
 def get_all_upcoming_unprocessed() -> list[dict]:
     try:
         df = DB.get_upcoming_needing_prediction_v2(season=ACTIVE_SEASON)
@@ -254,9 +260,12 @@ def get_next_batch() -> tuple[list[dict], datetime | None]:
     if first_game is None:
         return [], None
 
-    first_start = get_game_start_utc(first_game)
-    run_at_utc = first_start - timedelta(minutes=LEAD_MINUTES)
-    batch = [g for g in all_games if get_game_start_utc(g) == first_start]
+    bucket = _start_bucket_utc(first_game)
+    batch = [g for g in all_games if _start_bucket_utc(g) == bucket]
+    if not batch:
+        return [], None
+    canonical_start = get_game_start_utc(batch[0])
+    run_at_utc = canonical_start - timedelta(minutes=LEAD_MINUTES)
     return batch, run_at_utc
 
 def _predict_v2(game_pk: str, shared: dict) -> None:
@@ -403,13 +412,30 @@ def main():
 
         first_start = get_game_start_utc(batch[0])
         labels = ", ".join(f"{g.get('away_team')}@{g.get('home_team')}" for g in batch)
-        print(f"\n[v2] Next batch ({len(batch)} game(s)): {labels}")
-        print(f"  First start: {first_start.strftime('%Y-%m-%d %H:%M UTC')} | Run at: {run_at_utc.strftime('%H:%M UTC')}")
+        print(f"\n[v2] Next batch ({len(batch)} game(s)): {labels}", flush=True)
+        print(
+            f"  First start: {first_start.strftime('%Y-%m-%d %H:%M:%S UTC')} | "
+            f"Run at: {run_at_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            flush=True,
+        )
 
-        if not (args.now or args.once) and run_at_utc > now_utc:
-            sleep_secs = (run_at_utc - now_utc).total_seconds()
-            print(f"[v2] Sleeping {sleep_secs / 60:.1f} minutes...")
+        sleep_secs = (run_at_utc - now_utc).total_seconds()
+        print(
+            f"  [v2] schedule: now_utc={now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')} "
+            f"delta_sec={sleep_secs:.0f}",
+            flush=True,
+        )
+        if sleep_secs > 6 * 3600 and not (args.now or args.once):
+            print(
+                f"  [v2] WARNING: sleep > 6h ({sleep_secs / 3600:.1f}h); "
+                "verify game_time_utc / game_date in DB vs LEAD_MINUTES.",
+                flush=True,
+            )
+        if not (args.now or args.once) and sleep_secs > 1:
+            print(f"[v2] Sleeping {sleep_secs / 60:.1f} minutes...", flush=True)
             _watchdog_sleep(sleep_secs)
+        elif sleep_secs <= 1 and not (args.now or args.once):
+            print("[v2] Run window open (deadline reached); proceeding without sleep.", flush=True)
 
         batch_pks = {str(g["game_pk"]) for g in batch}
         run_batch(batch, no_ingest=args.no_ingest)
