@@ -1,8 +1,10 @@
 """
 V2 walk-forward evaluation — Phase 2.5 style deterministic LGBM.
 
-4 folds (2022–2025), one median-imputer + LGBM fit per fold (recency-weighted),
-same Kelly ROI as config (edge band, ML cap, half-Kelly).
+Static calendar folds (2022–2025) plus an optional YTD window when the frame
+extends past the last static validation end — same pattern as
+``build_metric_folds`` in ``models/model_v1/train.py``. One median-imputer +
+LGBM fit per fold (recency-weighted), same Kelly ROI as config.
 
 Run:
     uv run python -m models.model_v2.eval
@@ -36,6 +38,31 @@ from models.model_v2.sandbox.model_lab.feature_engineer import (
 )
 from models.model_v2.sandbox.model_lab.roi_eval import ml_to_dec
 from models.model_v2.sandbox.model_lab.training.models import make_lgbm
+
+
+def build_eval_folds(df: pd.DataFrame) -> list[tuple[str, str]]:
+    """Return ``(train_end, val_end)`` pairs: static ``FOLDS`` plus YTD when needed.
+
+    Training rows for each fold are ``game_date < train_end``; validation is
+    ``train_end <= game_date < val_end``. When ``max(game_date)`` reaches past
+    the last static ``val_end``, append one fold from ``{year}-01-01`` through
+    ``max_date + 1 day`` (mirrors v1 ``build_metric_folds``).
+    """
+    folds: list[tuple[str, str]] = [tuple(f) for f in FOLDS]
+    if df.empty or "game_date" not in df.columns:
+        return folds
+    gd = pd.to_datetime(df["game_date"], errors="coerce")
+    max_date = gd.max()
+    if pd.isna(max_date):
+        return folds
+    last_static_val_end = pd.Timestamp(folds[-1][1])
+    current_end = max_date.normalize() + pd.Timedelta(days=1)
+    if current_end <= last_static_val_end:
+        return folds
+    current_year = int(max_date.year)
+    current_start = f"{current_year}-01-01"
+    folds.append((current_start, current_end.strftime("%Y-%m-%d")))
+    return folds
 
 
 def _make_pipe() -> Pipeline:
@@ -193,13 +220,19 @@ def run_eval(cutoff: str | None = None) -> dict:
     settled["game_date"] = pd.to_datetime(settled["game_date"], errors="coerce")
     settled = settled.dropna(subset=["game_date"]).sort_values("game_date").reset_index(drop=True)
 
+    eval_folds = build_eval_folds(settled)
+    print(
+        f"[v2-eval] walk-forward folds={len(eval_folds)} "
+        f"(static={len(FOLDS)}, ytd_extra={len(eval_folds) - len(FOLDS)})"
+    )
+
     fold_results: list[dict] = []
     all_val_frames: list[pd.DataFrame] = []
     all_means: list[np.ndarray] = []
     all_y: list[np.ndarray] = []
     all_imps: list[np.ndarray] = []
 
-    for train_end, val_end in FOLDS:
+    for train_end, val_end in eval_folds:
         train_ts = pd.Timestamp(train_end)
         val_ts = pd.Timestamp(val_end)
         tr = settled[settled["game_date"] < train_ts]
@@ -356,7 +389,7 @@ def run_eval(cutoff: str | None = None) -> dict:
             "corr_threshold": C.CORR_THRESHOLD,
             "selected_by": C.SELECTED_BY,
             "recency_half_life": C.RECENCY_HALF_LIFE,
-            "folds": [list(f) for f in FOLDS],
+            "folds": [list(f) for f in eval_folds],
         },
     }
 
