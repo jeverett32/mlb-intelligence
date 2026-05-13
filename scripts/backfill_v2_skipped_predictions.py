@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -33,6 +34,7 @@ from models.model_v2.predict import PredictV2Error, prepare_shared, predict_one
 
 
 def fetch_skipped_rows(season: int, limit: int | None, horizon_days: int) -> pd.DataFrame:
+    end_d = datetime.now(timezone.utc).date() + timedelta(days=int(horizon_days))
     sql = """
         SELECT g.game_pk, g.game_date::text AS game_date
         FROM games g
@@ -42,10 +44,10 @@ def fetch_skipped_rows(season: int, limit: int | None, horizon_days: int) -> pd.
           AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
           AND (b.game_pk IS NULL OR b.predicted_prob IS NULL)
           AND EXISTS (SELECT 1 FROM games_v2 v WHERE v.game_pk = g.game_pk)
-          AND g.game_date::date <= (CURRENT_DATE + (%s * INTERVAL '1 day'))
+          AND g.game_date::date <= %s
         ORDER BY g.game_date NULLS LAST, g.game_pk
     """
-    params: list = [season, int(horizon_days)]
+    params: list = [season, end_d.isoformat()]
     lim_sql = sql
     if limit is not None:
         lim_sql += " LIMIT %s"
