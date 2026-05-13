@@ -38,11 +38,13 @@ def fetch_skipped_rows(season: int, limit: int | None, horizon_days: int) -> pd.
     sql = """
         SELECT g.game_pk, g.game_date::text AS game_date
         FROM games g
-        LEFT JOIN bets_v2 b ON b.game_pk = g.game_pk
         WHERE g.season = %s
           AND g.home_win IS NULL
           AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
-          AND (b.game_pk IS NULL OR b.predicted_prob IS NULL)
+          AND NOT EXISTS (
+              SELECT 1 FROM bets_v2 b
+              WHERE b.game_pk = g.game_pk AND b.predicted_prob IS NOT NULL
+          )
           AND EXISTS (SELECT 1 FROM games_v2 v WHERE v.game_pk = g.game_pk)
           AND g.game_date::date <= %s
         ORDER BY g.game_date NULLS LAST, g.game_pk
