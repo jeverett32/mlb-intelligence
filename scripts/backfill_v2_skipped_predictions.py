@@ -8,7 +8,7 @@ Typical skips: predict failed (e.g. odds present on prod `games` but absent on t
 Examples:
   uv run python scripts/backfill_v2_skipped_predictions.py
   uv run python scripts/backfill_v2_skipped_predictions.py --dry-run
-  uv run python scripts/backfill_v2_skipped_predictions.py --refresh-odds --limit 20
+  uv run python scripts/backfill_v2_skipped_predictions.py --horizon-days 14
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from models.model_v2.ingest_features import ingest_features
 from models.model_v2.predict import PredictV2Error, prepare_shared, predict_one
 
 
-def fetch_skipped_rows(season: int, limit: int | None) -> pd.DataFrame:
+def fetch_skipped_rows(season: int, limit: int | None, horizon_days: int) -> pd.DataFrame:
     sql = """
         SELECT g.game_pk, g.game_date::text AS game_date
         FROM games g
@@ -41,9 +41,11 @@ def fetch_skipped_rows(season: int, limit: int | None) -> pd.DataFrame:
           AND g.home_win IS NULL
           AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
           AND (b.game_pk IS NULL OR b.predicted_prob IS NULL)
+          AND EXISTS (SELECT 1 FROM games_v2 v WHERE v.game_pk = g.game_pk)
+          AND g.game_date::date <= (CURRENT_DATE + (%s * INTERVAL '1 day'))
         ORDER BY g.game_date NULLS LAST, g.game_pk
     """
-    params: list = [season]
+    params: list = [season, int(horizon_days)]
     lim_sql = sql
     if limit is not None:
         lim_sql += " LIMIT %s"
@@ -55,6 +57,12 @@ def fetch_skipped_rows(season: int, limit: int | None) -> pd.DataFrame:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--season", type=int, default=ACTIVE_SEASON)
+    p.add_argument(
+        "--horizon-days",
+        type=int,
+        default=10,
+        help="Only games with game_date <= today+this many days (avoids far-future schedule without games_v2).",
+    )
     p.add_argument("--limit", type=int, default=None, help="Max games to process.")
     p.add_argument("--dry-run", action="store_true", help="Predict only; no DB writes.")
     p.add_argument(
@@ -70,7 +78,7 @@ def main() -> int:
     args = p.parse_args()
 
     DB.init_v2_tables()
-    df = fetch_skipped_rows(args.season, args.limit)
+    df = fetch_skipped_rows(args.season, args.limit, args.horizon_days)
     if df.empty:
         print(f"No skipped upcoming games for season {args.season}.")
         return 0
