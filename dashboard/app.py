@@ -207,6 +207,10 @@ try:
 except Exception as _e:
     print(f"Explainability column init failed: {_e}")
 try:
+    DB.init_bets_execution_tracking()
+except Exception as _e:
+    print(f"Execution-tracking column init failed: {_e}")
+try:
     _purged = DB.purge_expired_sessions()
     if _purged:
         print(f"Purged {_purged} expired session(s) on startup.")

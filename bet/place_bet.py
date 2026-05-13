@@ -229,7 +229,31 @@ def _place_bet_error_status(exc: Exception) -> str:
         return "skipped_no_market"
     if "no live" in msg and "price" in msg:
         return "skipped_no_live_price"
+    if "network error" in msg or "name resolution" in msg or "max retries exceeded" in msg:
+        return "error_network"
     return "error"
+
+
+def _is_successful_status(status: str) -> bool:
+    """Return True for statuses that indicate the live-execution path completed
+    without a transient error — paper dry-run sized, live filled, or a real
+    market signal said skip (no edge, market closed, too small)."""
+    if not status:
+        return False
+    if status in {"dry_run", "filled"}:
+        return True
+    if status in {"skipped_no_live_edge", "skipped_too_small", "unfilled"}:
+        return True
+    # Explicit no-bet signals (preconditions failed without ever calling Kalshi):
+    if status in {
+        "skipped_unapproved",
+        "skipped_no_account",
+        "skipped_self_custody",
+        "skipped_no_bet",
+        "skipped_already_bet",
+    }:
+        return True
+    return False
 
 
 def _kelly_stake(prob: float, decimal_odds: float) -> float:
@@ -623,6 +647,12 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             "status": _place_bet_error_status(exc),
             "error": str(exc),
         }
+    except requests.RequestException as exc:
+        paper_result = {
+            "game_pk": str(game_pk),
+            "status": "error_network",
+            "error": f"network error talking to Kalshi: {exc}",
+        }
     _upsert_paper_result(
         email, game_pk, row, paper_result, paper_bankroll, pipeline_version=active_pipeline
     )
@@ -633,13 +663,26 @@ def place_user_bet(email: str, game_pk: str) -> dict:
     live_enabled = DB.is_global_live_betting() and DB.is_user_live_betting(email)
     if not live_enabled or paper_result.get("status", "").startswith("skipped_no_"):
         return {**paper_result, "email": email, "mode": "paper"}
+    if paper_result.get("status") == "error_network":
+        # Paper-path Kalshi lookup failed transiently; skip live and let the
+        # orchestrator retry the game before first pitch.
+        return {**paper_result, "email": email, "mode": "paper"}
 
-    balance_cents = fetch_balance_for_account(
-        key_id=account["key_id"],
-        key_path=account["key_path"],
-        kalshi_env=account["kalshi_env"],
-        email=email,
-    )
+    try:
+        balance_cents = fetch_balance_for_account(
+            key_id=account["key_id"],
+            key_path=account["key_path"],
+            kalshi_env=account["kalshi_env"],
+            email=email,
+        )
+    except (RuntimeError, requests.RequestException) as exc:
+        return {
+            "game_pk": str(game_pk),
+            "email": email,
+            "status": "error_balance_unavailable",
+            "error": str(exc),
+            "mode": "paper",
+        }
     try:
         result = _execute_bet_row(
             row,
@@ -654,6 +697,12 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             "game_pk": str(game_pk),
             "status": _place_bet_error_status(exc),
             "error": str(exc),
+        }
+    except requests.RequestException as exc:
+        result = {
+            "game_pk": str(game_pk),
+            "status": "error_network",
+            "error": f"network error talking to Kalshi: {exc}",
         }
     DB.upsert_user_order(
         email,
@@ -741,14 +790,53 @@ def preview_for_all_users(row: dict) -> list[dict]:
 
 
 def execute_for_all_users(game_pk: str) -> list[dict]:
-    results = []
-    for user in DB.list_approved_users_with_accounts():
+    import traceback
+
+    results: list[dict] = []
+    users = DB.list_approved_users_with_accounts()
+    for user in users:
         try:
             results.append(place_user_bet(user["email"], game_pk))
         except Exception as exc:
-            results.append(
-                {"game_pk": str(game_pk), "email": user["email"], "status": "error", "error": str(exc)}
+            traceback.print_exc()
+            print(
+                f"  PLACE_BET unexpected exception for {user['email']} game_pk={game_pk}: {exc}"
             )
+            results.append(
+                {
+                    "game_pk": str(game_pk),
+                    "email": user["email"],
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+
+    statuses = [str(r.get("status") or "") for r in results]
+    if users and any(_is_successful_status(s) for s in statuses):
+        succeeded = True
+        err_msg = None
+    elif not users:
+        succeeded = True
+        err_msg = "no approved users with kalshi accounts"
+    else:
+        succeeded = False
+        err_msg = "; ".join(
+            f"{r.get('email')}: {r.get('status')} ({r.get('error', '')})"
+            for r in results
+        )
+
+    try:
+        DB.mark_bet_execution_attempt(game_pk, succeeded=succeeded, error=err_msg)
+    except Exception as mark_exc:
+        print(f"  warn: could not mark execution attempt for game_pk={game_pk}: {mark_exc}")
+
+    if not succeeded:
+        # Re-raise as PlaceBetError so the orchestrator's _predict_and_bet
+        # notifier fires and the run is recorded as a real failure.
+        raise PlaceBetError(
+            f"all live-execution attempts failed for game_pk={game_pk}: {err_msg}"
+        )
+
     return results
 
 

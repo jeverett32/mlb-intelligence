@@ -406,6 +406,8 @@ def get_games_df(season: int = None, upcoming_only: bool = False) -> pd.DataFram
 
 RETRYABLE_ORDER_STATUSES = (
     "error",
+    "error_network",
+    "error_balance_unavailable",
     "unfilled",
     "skipped_no_market",
     "skipped_no_live_price",
@@ -467,7 +469,8 @@ def get_upcoming_needing_prediction(season: int = ACTIVE_SEASON) -> pd.DataFrame
     """
     Single-query version of the old run_pipeline filter:
     games that haven't started (home_win IS NULL), not postponed/cancelled,
-    and either not in bets or have no predicted_prob yet.
+    and either not in bets, lack a prediction, have a retryable user_order,
+    or have a buy-side prediction that never produced a successful execution attempt.
     """
     sql = """
         SELECT g.*
@@ -485,12 +488,47 @@ def get_upcoming_needing_prediction(season: int = ACTIVE_SEASON) -> pd.DataFrame
                   WHERE uo.game_pk = g.game_pk
                     AND uo.status = ANY(%s)
               )
+              OR (
+                  b.bet_side IN ('home', 'away')
+                  AND COALESCE(b.bet_frac, 0) > 0
+                  AND g.game_time_utc > NOW() + INTERVAL '60 seconds'
+                  AND COALESCE(b.last_execution_succeeded, FALSE) = FALSE
+                  AND (
+                      b.last_execution_attempt_at IS NULL
+                      OR b.last_execution_attempt_at < NOW() - INTERVAL '90 seconds'
+                  )
+              )
           )
         ORDER BY g.game_date, g.game_pk
     """
     with pooled_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql, (season, list(RETRYABLE_ORDER_STATUSES)))
+            try:
+                cur.execute(sql, (season, list(RETRYABLE_ORDER_STATUSES)))
+            except psycopg2.errors.UndefinedColumn:
+                conn.rollback()
+                cur.execute(
+                    """
+                    SELECT g.*
+                    FROM games g
+                    LEFT JOIN bets b ON b.game_pk = g.game_pk
+                    WHERE g.season = %s
+                      AND g.home_win IS NULL
+                      AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+                      AND (
+                          b.game_pk IS NULL
+                          OR b.predicted_prob IS NULL
+                          OR EXISTS (
+                              SELECT 1
+                              FROM user_orders uo
+                              WHERE uo.game_pk = g.game_pk
+                                AND uo.status = ANY(%s)
+                          )
+                      )
+                    ORDER BY g.game_date, g.game_pk
+                    """,
+                    (season, list(RETRYABLE_ORDER_STATUSES)),
+                )
             rows = cur.fetchall()
     if not rows:
         return pd.DataFrame()
@@ -786,6 +824,78 @@ def init_bets_explainability() -> None:
             if cur.fetchone():
                 return
             cur.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS explanation JSONB")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_bets_execution_tracking() -> None:
+    """Ensure the bets table has columns tracking per-game live execution attempts."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'bets'
+                  AND column_name IN (
+                      'last_execution_attempt_at',
+                      'last_execution_succeeded',
+                      'last_execution_error'
+                  )
+                """
+            )
+            present = {row[0] for row in cur.fetchall()}
+            if len(present) == 3:
+                return
+            if "last_execution_attempt_at" not in present:
+                cur.execute(
+                    "ALTER TABLE bets ADD COLUMN IF NOT EXISTS last_execution_attempt_at TIMESTAMPTZ"
+                )
+            if "last_execution_succeeded" not in present:
+                cur.execute(
+                    "ALTER TABLE bets ADD COLUMN IF NOT EXISTS last_execution_succeeded BOOLEAN"
+                )
+            if "last_execution_error" not in present:
+                cur.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS last_execution_error TEXT")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_bet_execution_attempt(
+    game_pk: int | str,
+    *,
+    succeeded: bool,
+    error: str | None = None,
+) -> None:
+    """Record a live-execution attempt outcome for a bets row.
+
+    Used by the live-bet path so the orchestrator can retry games whose
+    execution silently failed (e.g. transient Kalshi DNS errors) before
+    first pitch.
+    """
+    err_text = (error or "")[:500] if error else None
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    UPDATE bets
+                    SET last_execution_attempt_at = NOW(),
+                        last_execution_succeeded = %s,
+                        last_execution_error = %s,
+                        updated_at = NOW()
+                    WHERE game_pk = %s
+                    """,
+                    (bool(succeeded), err_text, int(game_pk)),
+                )
+            except psycopg2.errors.UndefinedColumn:
+                conn.rollback()
+                return
         conn.commit()
     finally:
         conn.close()

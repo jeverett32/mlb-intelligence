@@ -574,6 +574,11 @@ def main():
     except Exception as e:
         print(f"  warn: could not init pipeline_runs table: {e}")
 
+    try:
+        DB.init_bets_execution_tracking()
+    except Exception as e:
+        print(f"  warn: could not init bets execution-tracking columns: {e}")
+
     parser = argparse.ArgumentParser(description="MLB betting pipeline orchestrator.")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(

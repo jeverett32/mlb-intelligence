@@ -455,6 +455,7 @@ def explain_one(
     explanation["plain_text"] = _build_plaintext_explanation(explanation)
     if write_db:
         DB.init_bets_explainability()
+        DB.init_bets_execution_tracking()
         DB.update_bet_explanation(game_pk, explanation)
     return explanation
 
@@ -988,6 +989,7 @@ def predict_one(game_pk: str, shared: dict, dry_run: bool = False) -> dict:
     try:
         if bet_side in {"home", "away"} and float(bet_frac or 0.0) > 0:
             DB.init_bets_explainability()
+            DB.init_bets_execution_tracking()
             if is_early and early_clf is not None:
                 pipe = _extract_lr_pipeline_for_explainability(early_clf)
                 feats = early_feats
