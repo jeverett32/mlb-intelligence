@@ -4113,6 +4113,33 @@ def save_model_metric_snapshot(data: dict) -> int:
         conn.close()
 
 
+def _coalesce_overall_log_loss_from_monthly(row: dict) -> None:
+    """Fill ``overall_log_loss`` from per-month log loss when the column is NULL."""
+    if row.get("overall_log_loss") is not None:
+        return
+    monthly = row.get("monthly_accuracy")
+    if isinstance(monthly, str):
+        try:
+            monthly = json.loads(monthly)
+        except (TypeError, ValueError):
+            return
+    if not isinstance(monthly, list) or not monthly:
+        return
+    num = 0.0
+    den = 0
+    for m in monthly:
+        if not isinstance(m, dict):
+            continue
+        ll = m.get("log_loss")
+        n = int(m.get("count") or 0)
+        if ll is None or n <= 0:
+            continue
+        num += float(ll) * n
+        den += n
+    if den > 0:
+        row["overall_log_loss"] = round(num / den, 6)
+
+
 def get_model_metric_snapshots(limit: int = 50, version: str = "v1") -> list[dict]:
     conn = get_connection()
     try:
@@ -4160,7 +4187,12 @@ def get_model_metric_snapshots(limit: int = 50, version: str = "v1") -> list[dic
                     SELECT * FROM {MODEL_METRIC_SNAPSHOTS_TABLE}
                     ORDER BY trained_at DESC LIMIT %s
                 """, (limit,))
-                return [dict(r) for r in cur.fetchall()]
+                out_v1: list[dict] = []
+                for r in cur.fetchall():
+                    d = dict(r)
+                    _coalesce_overall_log_loss_from_monthly(d)
+                    out_v1.append(d)
+                return out_v1
     finally:
         conn.close()
 
