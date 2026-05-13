@@ -975,11 +975,17 @@ def predict_one(game_pk: str, shared: dict, dry_run: bool = False) -> dict:
         thresh = T.CONFIDENCE_THRESHOLD + (0.02 * abs(mp - 0.5) if T.DYNAMIC_THRESHOLD else 0.0)
         edge_home = pp - mp
         edge_away = mp - pp
-        if edge_home >= thresh and mp > 1e-6:
-            bet_frac = T.kelly_stake(pp, 1.0 / mp, is_warmup=is_early)
+        h_ml_raw = pd.to_numeric(target_df.get("close_home_ml"), errors="coerce")
+        a_ml_raw = pd.to_numeric(target_df.get("close_away_ml"), errors="coerce")
+        h_ml = float(h_ml_raw.iloc[0]) if h_ml_raw is not None and len(h_ml_raw) and pd.notna(h_ml_raw.iloc[0]) else float("nan")
+        a_ml = float(a_ml_raw.iloc[0]) if a_ml_raw is not None and len(a_ml_raw) and pd.notna(a_ml_raw.iloc[0]) else float("nan")
+        h_dec = T._ml_to_dec(h_ml) if np.isfinite(h_ml) else (1.0 / mp if mp > 1e-6 else float("nan"))
+        a_dec = T._ml_to_dec(a_ml) if np.isfinite(a_ml) else (1.0 / (1.0 - mp) if (1.0 - mp) > 1e-6 else float("nan"))
+        if edge_home >= thresh and np.isfinite(h_dec) and h_dec > 1.0:
+            bet_frac = T.kelly_stake(pp, h_dec, is_warmup=is_early)
             bet_side, edge = "home", edge_home
-        elif edge_away >= thresh and (1.0 - mp) > 1e-6:
-            bet_frac = T.kelly_stake(1.0 - pp, 1.0 / (1.0 - mp), is_warmup=is_early)
+        elif edge_away >= thresh and np.isfinite(a_dec) and a_dec > 1.0:
+            bet_frac = T.kelly_stake(1.0 - pp, a_dec, is_warmup=is_early)
             bet_side, edge = "away", edge_away
         else:
             bet_frac, bet_side, edge = 0.0, "none", max(edge_home, edge_away)

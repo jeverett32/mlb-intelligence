@@ -1015,16 +1015,25 @@ def kelly_stake(prob, decimal_odds, fraction=KELLY_FRACTION,
     return float(max(0.0, min(stake, max_frac)))
 
 
-def evaluate(probs, y, mkt_probs, is_warmup=None):
+def _ml_to_dec(ml):
+    """American moneyline -> decimal odds. NaN-safe."""
+    try:
+        a = float(ml)
+    except (TypeError, ValueError):
+        return float("nan")
+    if not np.isfinite(a) or a == 0:
+        return float("nan")
+    return 1.0 + (100.0 / abs(a) if a < 0 else a / 100.0)
+
+
+def evaluate(probs, y, mkt_probs, home_ml=None, away_ml=None, is_warmup=None):
     """
     Returns (brier_score, roi, n_bets).
 
-    Kalshi ROI: contracts priced 0–1.
-      Buy Home (Yes): decimal odds = 1 / mkt_prob
-      Buy Away (No):  decimal odds = 1 / (1 - mkt_prob)
-
-    Model probs are clipped to PROB_CAP before edge calculation to prevent
-    overconfident sizing on extreme predictions.
+    Edge is computed against the de-vigged ``market_implied_prob``, but
+    stake sizing and PnL use the real closing decimal odds derived from
+    ``close_home_ml`` / ``close_away_ml`` so that ROI reflects what a book
+    would actually pay out (no-vig odds overstate ROI by the vig).
     """
     brier        = float(np.mean((probs - y) ** 2))
     total_staked = 0.0
@@ -1033,8 +1042,13 @@ def evaluate(probs, y, mkt_probs, is_warmup=None):
 
     if is_warmup is None:
         is_warmup = np.zeros(len(probs), dtype=bool)
+    n = len(probs)
+    if home_ml is None:
+        home_ml = np.full(n, np.nan, dtype=float)
+    if away_ml is None:
+        away_ml = np.full(n, np.nan, dtype=float)
 
-    for i in range(len(probs)):
+    for i in range(n):
         if np.isnan(mkt_probs[i]):
             continue
         mp        = float(mkt_probs[i])
@@ -1044,22 +1058,23 @@ def evaluate(probs, y, mkt_probs, is_warmup=None):
         edge_away = mp - pp
         thresh_i  = CONFIDENCE_THRESHOLD + (0.02 * abs(mp - 0.5) if DYNAMIC_THRESHOLD else 0.0)
 
-        if edge_home >= thresh_i and mp > 1e-6:
-            dec_odds = 1.0 / mp
-            stake    = kelly_stake(pp, dec_odds, is_warmup=warmup_i)
-            if stake > 0:
-                n_bets       += 1
-                total_staked += stake
-                total_profit += stake * (dec_odds - 1.0) if y[i] == 1.0 else -stake
+        h_dec = _ml_to_dec(home_ml[i]) if not np.isnan(home_ml[i]) else (1.0 / mp if mp > 1e-6 else float("nan"))
+        a_dec = _ml_to_dec(away_ml[i]) if not np.isnan(away_ml[i]) else (1.0 / (1.0 - mp) if (1.0 - mp) > 1e-6 else float("nan"))
 
-        elif edge_away >= thresh_i and (1.0 - mp) > 1e-6:
-            prob_away = 1.0 - pp
-            dec_odds  = 1.0 / (1.0 - mp)
-            stake     = kelly_stake(prob_away, dec_odds, is_warmup=warmup_i)
+        if edge_home >= thresh_i and np.isfinite(h_dec) and h_dec > 1.0:
+            stake = kelly_stake(pp, h_dec, is_warmup=warmup_i)
             if stake > 0:
                 n_bets       += 1
                 total_staked += stake
-                total_profit += stake * (dec_odds - 1.0) if y[i] == 0.0 else -stake
+                total_profit += stake * (h_dec - 1.0) if y[i] == 1.0 else -stake
+
+        elif edge_away >= thresh_i and np.isfinite(a_dec) and a_dec > 1.0:
+            prob_away = 1.0 - pp
+            stake     = kelly_stake(prob_away, a_dec, is_warmup=warmup_i)
+            if stake > 0:
+                n_bets       += 1
+                total_staked += stake
+                total_profit += stake * (a_dec - 1.0) if y[i] == 0.0 else -stake
 
     roi = total_profit / total_staked if total_staked > 0 else float('nan')
     return brier, roi, n_bets
@@ -1138,6 +1153,8 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
         X_val    = val_df[active_feats].values.astype(np.float32)
         y_val    = val_df["home_win"].values.astype(np.float32)
         mkt_val  = val_df["market_implied_prob"].values.astype(np.float32)
+        hml_val  = pd.to_numeric(val_df.get("close_home_ml"), errors="coerce").to_numpy(dtype=np.float64)
+        aml_val  = pd.to_numeric(val_df.get("close_away_ml"), errors="coerce").to_numpy(dtype=np.float64)
         wu_val   = early_vl.values.astype(bool)
 
         # Scale (fit on train only — after imputation for non-tree models)
@@ -1267,7 +1284,10 @@ def run_walk_forward(df, active_feats, early_feats, folds=None):
         monthly_y.append(y_val.copy())
         monthly_mkt.append(mkt_val.copy())
 
-        brier, roi, n_bets = evaluate(probs_val, y_val, mkt_val, is_warmup=wu_val)
+        brier, roi, n_bets = evaluate(
+            probs_val, y_val, mkt_val,
+            home_ml=hml_val, away_ml=aml_val, is_warmup=wu_val,
+        )
         print(f"  brier={brier:.4f}  roi={roi:.4f}  n_bets={n_bets}")
 
         if clf is not None and fold_idx == len(folds) - 1:
