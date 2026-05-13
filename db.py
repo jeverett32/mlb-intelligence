@@ -5208,6 +5208,99 @@ def get_game_market_odds_for_v2_fallback(game_pk: int) -> dict[str, float | None
     }
 
 
+def clear_v2_prediction_rows_for_not_started_games(season: int | None = None) -> tuple[int, int]:
+    """
+    Undo premature V2 outputs for games that have not started yet (game_time_utc > NOW).
+
+    Clears bets_v2 prediction fields and deletes paper_orders_v2 rows so the normal
+    T-10 orchestrator can run predict_one at the right time.
+
+    Returns (paper_orders_deleted, bets_v2_rows_updated).
+    """
+    paper_deleted = bets_updated = 0
+    with pooled_connection() as conn:
+        with conn.cursor() as cur:
+            if season is None:
+                cur.execute(
+                    """
+                    DELETE FROM paper_orders_v2 o
+                    USING games g
+                    WHERE o.game_pk = g.game_pk
+                      AND g.home_win IS NULL
+                      AND g.game_time_utc IS NOT NULL
+                      AND g.game_time_utc > NOW()
+                    """
+                )
+            else:
+                cur.execute(
+                    """
+                    DELETE FROM paper_orders_v2 o
+                    USING games g
+                    WHERE o.game_pk = g.game_pk
+                      AND g.season = %s
+                      AND g.home_win IS NULL
+                      AND g.game_time_utc IS NOT NULL
+                      AND g.game_time_utc > NOW()
+                    """,
+                    (int(season),),
+                )
+            paper_deleted = cur.rowcount or 0
+
+            if season is None:
+                cur.execute(
+                    """
+                    UPDATE bets_v2 b
+                    SET predicted_prob = NULL,
+                        market_implied_prob = NULL,
+                        edge = NULL,
+                        bet_side = 'none',
+                        bet_frac = 0,
+                        model_artifact_id = NULL,
+                        updated_at = NOW()
+                    FROM games g
+                    WHERE b.game_pk = g.game_pk
+                      AND g.home_win IS NULL
+                      AND g.game_time_utc IS NOT NULL
+                      AND g.game_time_utc > NOW()
+                      AND (
+                          b.predicted_prob IS NOT NULL
+                          OR b.market_implied_prob IS NOT NULL
+                          OR COALESCE(b.bet_frac, 0) <> 0
+                          OR COALESCE(b.bet_side, '') NOT IN ('', 'none')
+                      )
+                    """
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE bets_v2 b
+                    SET predicted_prob = NULL,
+                        market_implied_prob = NULL,
+                        edge = NULL,
+                        bet_side = 'none',
+                        bet_frac = 0,
+                        model_artifact_id = NULL,
+                        updated_at = NOW()
+                    FROM games g
+                    WHERE b.game_pk = g.game_pk
+                      AND g.season = %s
+                      AND g.home_win IS NULL
+                      AND g.game_time_utc IS NOT NULL
+                      AND g.game_time_utc > NOW()
+                      AND (
+                          b.predicted_prob IS NOT NULL
+                          OR b.market_implied_prob IS NOT NULL
+                          OR COALESCE(b.bet_frac, 0) <> 0
+                          OR COALESCE(b.bet_side, '') NOT IN ('', 'none')
+                      )
+                    """,
+                    (int(season),),
+                )
+            bets_updated = cur.rowcount or 0
+        conn.commit()
+    return paper_deleted, bets_updated
+
+
 def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
     V2 version of get_upcoming_needing_prediction, checking bets_v2.
