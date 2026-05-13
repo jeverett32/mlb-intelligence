@@ -313,7 +313,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     fetch = sub.add_parser("fetch")
     fetch.add_argument("--start-season", type=int, default=2014)
-    fetch.add_argument("--end-season", type=int, default=2025)
+    fetch.add_argument("--end-season", type=int, default=2026)
     fetch.add_argument("--force", action="store_true")
     build = sub.add_parser("build")
     build.add_argument("--master", type=Path, default=MASTER_PATH)
