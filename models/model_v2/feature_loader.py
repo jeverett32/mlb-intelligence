@@ -14,6 +14,12 @@ import db as DB
 _FRAME_CACHE: dict = {"df": None, "key": None}
 
 
+def invalidate_games_v2_frame_cache() -> None:
+    """Clear in-process / on-disk frame cache after games_v2 bulk updates."""
+    _FRAME_CACHE["df"] = None
+    _FRAME_CACHE["key"] = None
+
+
 def _frame_cache_key() -> str:
     with DB.pooled_connection() as conn:
         with conn.cursor() as cur:

@@ -5170,6 +5170,44 @@ def backfill_paper_order_v2_results():
             return len(updates)
 
 
+def get_game_market_odds_for_v2_fallback(game_pk: int) -> dict[str, float | None]:
+    """
+    Read moneylines / implied from prod `games` when the V2 engineered row
+    (`games_v2` / exploded frame) is missing odds. V1 fetch writes `games`;
+    V2 feature ingest can lag or omit lines while model features exist.
+    """
+    with pooled_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT close_home_ml, close_away_ml, home_implied_prob
+                FROM games
+                WHERE game_pk = %s
+                """,
+                (int(game_pk),),
+            )
+            row = cur.fetchone()
+    if not row:
+        return {"close_home_ml": None, "close_away_ml": None, "home_implied_prob": None}
+
+    def _as_float(v: object) -> float | None:
+        if v is None:
+            return None
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return None
+        if x != x:  # NaN
+            return None
+        return x
+
+    return {
+        "close_home_ml": _as_float(row.get("close_home_ml")),
+        "close_away_ml": _as_float(row.get("close_away_ml")),
+        "home_implied_prob": _as_float(row.get("home_implied_prob")),
+    }
+
+
 def get_upcoming_needing_prediction_v2(season: int = ACTIVE_SEASON) -> pd.DataFrame:
     """
     V2 version of get_upcoming_needing_prediction, checking bets_v2.

@@ -30,6 +30,66 @@ class PredictV2Error(RuntimeError):
 _SHARED_MODEL_CACHE: dict[str, tuple[Pipeline, int | None]] = {}
 
 
+def _first_row_float(row: pd.DataFrame, col: str) -> float | None:
+    if col not in row.columns:
+        return None
+    try:
+        v = row[col].iloc[0]
+    except Exception:
+        return None
+    if v is None or (isinstance(v, (float, np.floating)) and np.isnan(v)) or pd.isna(v):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _decs_and_implied_from_close_ml(close_home: float, close_away: float) -> tuple[float, float, float]:
+    h_dec = float(ml_to_dec(pd.Series([close_home]))[0])
+    a_dec = float(ml_to_dec(pd.Series([close_away]))[0])
+    total_imp = (1.0 / h_dec) + (1.0 / a_dec)
+    market_implied_prob = (1.0 / h_dec) / total_imp
+    return h_dec, a_dec, market_implied_prob
+
+
+def _decs_and_implied_from_home_prob(home_implied: float) -> tuple[float, float, float]:
+    if not (0.0 < home_implied < 1.0):
+        raise PredictV2Error(f"Invalid home_implied_prob={home_implied!r} (expected in (0,1))")
+    market_implied_prob = float(home_implied)
+    h_dec = 1.0 / market_implied_prob if market_implied_prob > 0 else 100.0
+    a_dec = 1.0 / (1.0 - market_implied_prob) if market_implied_prob < 1 else 100.0
+    return h_dec, a_dec, market_implied_prob
+
+
+def _resolve_market_inputs_v2(game_pk: str, target_row: pd.DataFrame) -> tuple[float, float, float]:
+    """
+    Return (h_dec, a_dec, market_implied_prob_home).
+    Prefer `games_v2` / frame columns; fall back to prod `games` (same source as V1 fetch).
+    """
+    ch = _first_row_float(target_row, "close_home_ml")
+    ca = _first_row_float(target_row, "close_away_ml")
+    if ch is not None and ca is not None:
+        return _decs_and_implied_from_close_ml(ch, ca)
+
+    mimp = _first_row_float(target_row, "market_implied_prob")
+    if mimp is not None and 0.0 < mimp < 1.0:
+        return _decs_and_implied_from_home_prob(mimp)
+
+    fb = DB.get_game_market_odds_for_v2_fallback(int(game_pk))
+    ch2, ca2 = fb.get("close_home_ml"), fb.get("close_away_ml")
+    if ch2 is not None and ca2 is not None:
+        return _decs_and_implied_from_close_ml(float(ch2), float(ca2))
+
+    hip = fb.get("home_implied_prob")
+    if hip is not None:
+        hf = float(hip)
+        if 0.0 < hf < 1.0:
+            return _decs_and_implied_from_home_prob(hf)
+
+    raise PredictV2Error(f"Market odds missing for game {game_pk}")
+
+
 def _artifact_feature_config(game_date: str) -> dict:
     return {
         "game_date": str(game_date)[:10],
@@ -223,27 +283,9 @@ def predict_one(game_pk: str, shared: dict, dry_run: bool = False) -> dict:
     X_va = target_row[feature_cols].apply(pd.to_numeric, errors="coerce")
     prob = float(clf.predict_proba(X_va)[0, 1])
     
-    # 2. Market/Edge
-    h_ml = target_row.get("close_home_ml")
-    a_ml = target_row.get("close_away_ml")
-    
-    if h_ml is None or a_ml is None or pd.isna(h_ml.iloc[0]) or pd.isna(a_ml.iloc[0]):
-        h_imp = target_row.get("market_implied_prob")
-        if h_imp is not None and not pd.isna(h_imp.iloc[0]):
-            market_implied_prob = float(h_imp.iloc[0])
-            h_dec = 1.0 / market_implied_prob if market_implied_prob > 0 else 100.0
-            a_dec = 1.0 / (1.0 - market_implied_prob) if market_implied_prob < 1 else 100.0
-        else:
-             raise PredictV2Error(f"Market odds missing for game {game_pk}")
-    else:
-        h_ml_val = float(h_ml.iloc[0])
-        a_ml_val = float(a_ml.iloc[0])
-        h_dec = float(ml_to_dec(pd.Series([h_ml_val]))[0])
-        a_dec = float(ml_to_dec(pd.Series([a_ml_val]))[0])
-        
-        total_imp = (1.0 / h_dec) + (1.0 / a_dec)
-        market_implied_prob = (1.0 / h_dec) / total_imp
-        
+    # 2. Market/Edge (games_v2 frame first, then prod `games` like V1)
+    h_dec, a_dec, market_implied_prob = _resolve_market_inputs_v2(game_pk, target_row)
+
     edge = prob - market_implied_prob
     
     # 3. Phase 2.5 Filter & Sizing
