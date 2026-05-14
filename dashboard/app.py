@@ -507,7 +507,7 @@ class SettingPayload(BaseModel):
 class KalshiAccountPayload(BaseModel):
     label: str = "Primary account"
     key_id: str
-    private_key_pem: str
+    private_key_pem: str = ""
     kalshi_env: str = "prod"
 
 
@@ -834,7 +834,16 @@ def connect_kalshi_account(
 ):
     if payload.kalshi_env not in {"prod", "demo"}:
         raise HTTPException(status_code=400, detail="Invalid Kalshi environment")
-    private_key_pem = payload.private_key_pem.strip()
+    uploaded_private_key_pem = payload.private_key_pem.strip()
+    private_key_pem = uploaded_private_key_pem
+    if not private_key_pem:
+        account = DB.get_kalshi_account(user["email"])
+        private_key_pem = (account or {}).get("private_key_pem", "").strip()
+    if not private_key_pem:
+        raise HTTPException(
+            status_code=400,
+            detail="Private key PEM required. Upload one or connect with an existing stored PEM.",
+        )
     key_ref = _db_secret_ref_for_email(user["email"])
     try:
         balance_cents = fetch_balance_for_account(
@@ -853,7 +862,7 @@ def connect_kalshi_account(
         label=payload.label,
         key_id=payload.key_id,
         key_path=key_ref,
-        private_key_pem=private_key_pem,
+        private_key_pem=uploaded_private_key_pem or None,
         kalshi_env=payload.kalshi_env,
         last_verified=True,
         last_error="",

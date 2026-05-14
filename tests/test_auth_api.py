@@ -533,6 +533,79 @@ def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_mo
     assert started["bet_side"] == "none"
 
 
+def test_kalshi_connect_reuses_stored_pem_when_payload_omits_it(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_kalshi_account",
+        lambda email: {
+            "private_key_pem": "stored-pem",
+            "is_active": True,
+        },
+    )
+
+    seen = {}
+
+    def fake_fetch_balance_for_account(**kwargs):
+        seen["fetch"] = kwargs
+        return 12345
+
+    def fake_upsert_kalshi_account(email, **kwargs):
+        seen["upsert"] = {"email": email, **kwargs}
+
+    monkeypatch.setattr(app_module, "fetch_balance_for_account", fake_fetch_balance_for_account)
+    monkeypatch.setattr(app_module.DB, "upsert_kalshi_account", fake_upsert_kalshi_account)
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.post(
+        "/api/account/kalshi",
+        json={
+            "label": "Primary account",
+            "key_id": "kid",
+            "kalshi_env": "demo",
+        },
+    )
+
+    assert r.status_code == 200
+    assert r.json()["balance_cents"] == 12345
+    assert seen["fetch"]["private_key_pem"] == "stored-pem"
+    assert seen["upsert"]["private_key_pem"] is None
+
+
+def test_kalshi_connect_requires_pem_when_none_is_stored(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(app_module.DB, "get_kalshi_account", lambda email: None)
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.post(
+        "/api/account/kalshi",
+        json={
+            "label": "Primary account",
+            "key_id": "kid",
+            "kalshi_env": "demo",
+        },
+    )
+
+    assert r.status_code == 400
+    assert "Private key PEM required" in r.json()["detail"]
+
+
 @pytest.mark.parametrize(
     "approval_status",
     ["pending", "rejected", "disabled"],

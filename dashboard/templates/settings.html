@@ -575,7 +575,7 @@
                 <span style="background:var(--accent);color:#fff;border-radius:50%;min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem">3</span>
                 <strong>Add private key PEM</strong>
               </div>
-              <p style="margin:8px 0 10px;color:var(--muted)">Drag the <code>.pem</code> file here, click to choose, or paste the contents below.</p>
+              <p style="margin:8px 0 10px;color:var(--muted)">Drag the <code>.pem</code> file here, click to choose, paste the contents below, or leave blank to reuse the stored key.</p>
               <div id="kalshi-pem-drop" style="border:2px dashed var(--border);border-radius:8px;padding:18px;text-align:center;cursor:pointer;background:var(--panel);transition:background 0.15s,border-color 0.15s">
                 <div id="kalshi-pem-drop-copy" style="color:var(--muted);font-size:0.92rem">Drop <code>kalshi-key.pem</code> here or click to browse</div>
                 <input id="kalshi-pem-file" type="file" accept=".pem,.key,.txt,application/x-pem-file" style="display:none">
@@ -847,7 +847,6 @@
       private_key_pem: document.getElementById('kalshi-private-key').value.trim(),
     };
     if (!body.key_id) { feedback('kalshi-feedback', 'Key ID required.', false); return; }
-    if (!body.private_key_pem) { feedback('kalshi-feedback', 'Private key PEM required.', false); return; }
     try {
       const r = await api('POST', '/api/account/kalshi', body);
       setKalshiStatus(r.connected, r.label, r.kalshi_env, r.balance_cents);
