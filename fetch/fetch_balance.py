@@ -18,9 +18,14 @@ def fetch_balance_for_account(
     key_path: str,
     kalshi_env: str,
     email: str,
+    private_key_pem: str | None = None,
 ) -> int:
     try:
-        key_id, private_key = load_credentials(key_id=key_id, key_path=key_path)
+        key_id, private_key = load_credentials(
+            key_id=key_id,
+            key_path=key_path,
+            private_key_pem=private_key_pem,
+        )
         base_url = get_base_url(kalshi_env)
 
         path    = api_path("portfolio/balance")

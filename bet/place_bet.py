@@ -382,6 +382,7 @@ def _execute_bet_row(
     *,
     key_id: str,
     key_path: str,
+    private_key_pem: str | None = None,
     kalshi_env: str,
     balance_cents: int,
     dry_run: bool,
@@ -401,7 +402,11 @@ def _execute_bet_row(
     market_prob = float(market_prob)
     predicted_prob = float(predicted_prob)
 
-    key_id, private_key = load_credentials(key_id=key_id, key_path=key_path)
+    key_id, private_key = load_credentials(
+        key_id=key_id,
+        key_path=key_path,
+        private_key_pem=private_key_pem,
+    )
     base_url = get_base_url(kalshi_env)
     session = _retry_session()
 
@@ -637,6 +642,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             row,
             key_id=account["key_id"],
             key_path=account["key_path"],
+            private_key_pem=account.get("private_key_pem") or None,
             kalshi_env=account["kalshi_env"],
             balance_cents=int(round(paper_bankroll * 100)),
             dry_run=True,
@@ -674,6 +680,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             key_path=account["key_path"],
             kalshi_env=account["kalshi_env"],
             email=email,
+            private_key_pem=account.get("private_key_pem") or None,
         )
     except (RuntimeError, requests.RequestException) as exc:
         return {
@@ -688,6 +695,7 @@ def place_user_bet(email: str, game_pk: str) -> dict:
             row,
             key_id=account["key_id"],
             key_path=account["key_path"],
+            private_key_pem=account.get("private_key_pem") or None,
             kalshi_env=account["kalshi_env"],
             balance_cents=balance_cents,
             dry_run=False,
@@ -759,6 +767,7 @@ def preview_user_bet(email: str, row: dict) -> dict:
             db_row,
             key_id=account["key_id"],
             key_path=account["key_path"],
+            private_key_pem=account.get("private_key_pem") or None,
             kalshi_env=account["kalshi_env"],
             balance_cents=int(round(paper_bankroll * 100)),
             dry_run=True,

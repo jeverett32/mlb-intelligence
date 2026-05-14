@@ -558,6 +558,7 @@ def settle_completed_games():
                     key_path=account["key_path"],
                     kalshi_env=account["kalshi_env"],
                     email=user["email"],
+                    private_key_pem=account.get("private_key_pem") or None,
                 )
         except Exception as e:
             print(f"  Balance refresh failed for {user['email']}: {e}")

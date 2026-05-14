@@ -1616,6 +1616,7 @@ def init_auth_tables():
                     label TEXT NOT NULL DEFAULT 'Primary account',
                     key_id TEXT NOT NULL,
                     key_path TEXT NOT NULL,
+                    private_key_pem TEXT,
                     kalshi_env TEXT NOT NULL DEFAULT 'prod',
                     is_active BOOLEAN NOT NULL DEFAULT TRUE,
                     last_verified_at TIMESTAMPTZ,
@@ -1624,6 +1625,23 @@ def init_auth_tables():
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute("ALTER TABLE kalshi_accounts ADD COLUMN IF NOT EXISTS private_key_pem TEXT")
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'kalshi_accounts_private_key_pem_encrypted_check'
+                    ) THEN
+                        ALTER TABLE kalshi_accounts
+                        ADD CONSTRAINT kalshi_accounts_private_key_pem_encrypted_check
+                        CHECK (private_key_pem IS NULL OR private_key_pem LIKE 'enc:%');
+                    END IF;
+                END $$;
+                """
+            )
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS user_balance (
                     id BIGSERIAL PRIMARY KEY,
@@ -2398,6 +2416,7 @@ def upsert_kalshi_account(
     key_id: str,
     key_path: str,
     kalshi_env: str,
+    private_key_pem: str | None = None,
     label: str = "Primary account",
     is_active: bool = True,
     last_verified: bool = False,
@@ -2410,11 +2429,11 @@ def upsert_kalshi_account(
             cur.execute(
                 """
                 INSERT INTO kalshi_accounts (
-                    email, label, key_id, key_path, kalshi_env, is_active,
+                    email, label, key_id, key_path, private_key_pem, kalshi_env, is_active,
                     last_verified_at, last_error, updated_at
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s,
                     CASE WHEN %s THEN NOW() ELSE NULL END,
                     NULLIF(%s, ''),
                     NOW()
@@ -2423,6 +2442,7 @@ def upsert_kalshi_account(
                     label = EXCLUDED.label,
                     key_id = EXCLUDED.key_id,
                     key_path = EXCLUDED.key_path,
+                    private_key_pem = COALESCE(EXCLUDED.private_key_pem, kalshi_accounts.private_key_pem),
                     kalshi_env = EXCLUDED.kalshi_env,
                     is_active = EXCLUDED.is_active,
                     last_verified_at = CASE
@@ -2436,6 +2456,7 @@ def upsert_kalshi_account(
                     label,
                     encrypt_field(key_id.strip()),
                     encrypt_field(key_path.strip()),
+                    encrypt_field(private_key_pem.strip()) if private_key_pem else None,
                     kalshi_env.strip().lower() or "prod",
                     bool(is_active),
                     bool(last_verified),
@@ -2456,7 +2477,7 @@ def get_kalshi_account(email: str) -> dict | None:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT email, label, key_id, key_path, kalshi_env, is_active,
+                SELECT email, label, key_id, key_path, private_key_pem, kalshi_env, is_active,
                        last_verified_at, last_error, created_at, updated_at
                 FROM kalshi_accounts
                 WHERE email = %s
@@ -2469,6 +2490,7 @@ def get_kalshi_account(email: str) -> dict | None:
             d = dict(row)
             d["key_id"] = decrypt_field(d["key_id"])
             d["key_path"] = decrypt_field(d["key_path"])
+            d["private_key_pem"] = decrypt_field(d.get("private_key_pem") or "")
             return d
     finally:
         conn.close()
@@ -2492,7 +2514,7 @@ def list_approved_users_with_accounts() -> list[dict]:
             cur.execute(
                 """
                 SELECT u.email, u.is_admin, u.approval_status,
-                       a.key_id, a.key_path, a.kalshi_env, a.is_active
+                       a.key_id, a.key_path, a.private_key_pem, a.kalshi_env, a.is_active
                 FROM app_users u
                 JOIN kalshi_accounts a ON a.email = u.email
                 WHERE u.approval_status = 'approved'
@@ -2504,6 +2526,7 @@ def list_approved_users_with_accounts() -> list[dict]:
             for r in rows:
                 r["key_id"] = decrypt_field(r["key_id"])
                 r["key_path"] = decrypt_field(r["key_path"])
+                r["private_key_pem"] = decrypt_field(r.get("private_key_pem") or "")
             return rows
     finally:
         conn.close()
@@ -3469,7 +3492,7 @@ def get_open_live_user_orders_for_refresh(
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT uo.*, ka.key_id, ka.key_path, ka.kalshi_env
+                SELECT uo.*, ka.key_id, ka.key_path, ka.private_key_pem, ka.kalshi_env
                 FROM user_orders uo
                 JOIN kalshi_accounts ka ON ka.email = uo.email
                 WHERE ka.is_active = TRUE
@@ -3490,6 +3513,7 @@ def get_open_live_user_orders_for_refresh(
             for row in rows:
                 row["key_id"] = decrypt_field(row.get("key_id") or "")
                 row["key_path"] = decrypt_field(row.get("key_path") or "")
+                row["private_key_pem"] = decrypt_field(row.get("private_key_pem") or "")
             return rows
     finally:
         conn.close()

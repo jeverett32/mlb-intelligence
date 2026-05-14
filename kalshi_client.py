@@ -32,7 +32,11 @@ def get_base_url(env: str | None = None) -> str:
     return _BASES.get(env, _BASES["prod"])
 
 
-def load_credentials(key_id: str | None = None, key_path: str | Path | None = None):
+def load_credentials(
+    key_id: str | None = None,
+    key_path: str | Path | None = None,
+    private_key_pem: str | bytes | None = None,
+):
     """
     Load the Key ID and RSA private key from environment / .env.
     Returns (key_id: str, private_key: RSAPrivateKey).
@@ -42,6 +46,17 @@ def load_credentials(key_id: str | None = None, key_path: str | Path | None = No
         raise RuntimeError(
             "KALSHI_KEY_ID is not set. Copy .env.example to .env and fill in your Key ID."
         )
+
+    if private_key_pem:
+        pem_bytes = (
+            private_key_pem
+            if isinstance(private_key_pem, bytes)
+            else private_key_pem.encode("utf-8")
+        )
+        private_key = serialization.load_pem_private_key(
+            pem_bytes, password=None, backend=default_backend()
+        )
+        return key_id, private_key
 
     key_path = Path(key_path or os.environ.get("KALSHI_KEY_PATH", "kalshi-key.pem"))
     if not key_path.exists():

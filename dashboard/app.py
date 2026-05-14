@@ -187,6 +187,11 @@ def _secret_path_for_email(email: str) -> Path:
     return _secret_dir() / f"{safe}.pem"
 
 
+def _db_secret_ref_for_email(email: str) -> str:
+    safe = "".join(c if c.isalnum() else "-" for c in email.lower())
+    return f"db://kalshi_accounts/{safe}/private_key_pem"
+
+
 def _write_secret_file(path: Path, pem_text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(pem_text.strip() + "\n", encoding="utf-8")
@@ -743,6 +748,7 @@ def run_pipeline_action(
                 key_path=account["key_path"],
                 kalshi_env=account["kalshi_env"],
                 email=user["email"],
+                private_key_pem=account.get("private_key_pem") or None,
             )
             return {"ok": True, "message": f"Balance: ${balance / 100:.2f}"}
         except Exception as e:
@@ -828,14 +834,15 @@ def connect_kalshi_account(
 ):
     if payload.kalshi_env not in {"prod", "demo"}:
         raise HTTPException(status_code=400, detail="Invalid Kalshi environment")
-    path = _secret_path_for_email(user["email"])
-    _write_secret_file(path, payload.private_key_pem)
+    private_key_pem = payload.private_key_pem.strip()
+    key_ref = _db_secret_ref_for_email(user["email"])
     try:
         balance_cents = fetch_balance_for_account(
             key_id=payload.key_id,
-            key_path=str(path),
+            key_path=key_ref,
             kalshi_env=payload.kalshi_env,
             email=user["email"],
+            private_key_pem=private_key_pem,
         )
     except SystemExit as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -845,7 +852,8 @@ def connect_kalshi_account(
         user["email"],
         label=payload.label,
         key_id=payload.key_id,
-        key_path=str(path),
+        key_path=key_ref,
+        private_key_pem=private_key_pem,
         kalshi_env=payload.kalshi_env,
         last_verified=True,
         last_error="",
@@ -862,7 +870,7 @@ def connect_kalshi_account(
 @app.delete("/api/account/kalshi")
 def disconnect_kalshi_account(user: dict = Depends(require_approved_user)):
     account = DB.get_kalshi_account(user["email"])
-    if account and account.get("key_path"):
+    if account and account.get("key_path") and not str(account["key_path"]).startswith("db://"):
         try:
             Path(account["key_path"]).unlink(missing_ok=True)
         except Exception:
@@ -1309,6 +1317,7 @@ def get_balance(user: dict = Depends(require_approved_user)):
                     key_path=account["key_path"],
                     kalshi_env=account["kalshi_env"],
                     email=user["email"],
+                    private_key_pem=account.get("private_key_pem") or None,
                 )
                 df = DB.get_user_balance_history(user["email"])
             except Exception:

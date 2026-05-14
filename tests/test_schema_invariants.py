@@ -59,6 +59,7 @@ def test_core_schema_types_and_constraints(live_conn):
         "kalshi_market_snapshots_market_status_check",
         "kalshi_accounts_key_id_encrypted_check",
         "kalshi_accounts_key_path_encrypted_check",
+        "kalshi_accounts_private_key_pem_encrypted_check",
         "bets_bet_cents_check",
         "user_orders_bet_cents_check",
         "paper_orders_bet_cents_check",
@@ -97,6 +98,7 @@ def test_kalshi_credentials_are_encrypted(live_conn):
             FROM kalshi_accounts
             WHERE key_id NOT LIKE 'enc:%'
                OR key_path NOT LIKE 'enc:%'
+               OR (private_key_pem IS NOT NULL AND private_key_pem NOT LIKE 'enc:%')
             """
         )
         assert cur.fetchone() == (0,)

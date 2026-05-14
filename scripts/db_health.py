@@ -226,6 +226,7 @@ def _schema_summary() -> dict[str, Any]:
         FROM kalshi_accounts
         WHERE key_id NOT LIKE 'enc:%'
            OR key_path NOT LIKE 'enc:%'
+           OR (private_key_pem IS NOT NULL AND private_key_pem NOT LIKE 'enc:%')
         """
     )
     game_time_type = _query_one(
