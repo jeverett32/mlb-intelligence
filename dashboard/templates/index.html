@@ -1526,13 +1526,6 @@
   <button data-page="bets" onclick="showPage('bets', this)">Bets</button>
   <button data-page="performance" onclick="showPage('performance', this)">Performance</button>
   <div class="mode-bar">
-    <span class="mode-label">Model</span>
-    <div class="mode-toggle model-toggle" role="group" aria-label="Model version">
-      <button id="model-v1" type="button" onclick="setModelVersion('v1')">V1</button>
-      <button id="model-v2" type="button" onclick="setModelVersion('v2')">V2</button>
-    </div>
-  </div>
-  <div class="mode-bar">
     <span class="mode-label">Bet View</span>
     <div class="mode-toggle" role="group" aria-label="Bet view mode">
       <button id="mode-paper" type="button" onclick="setBetMode('paper')">Paper</button>
@@ -1545,9 +1538,6 @@
   var serverLive = {{EFFECTIVE_LIVE_BETTING}};
   var mode = serverLive ? 'live' : 'paper';
   document.getElementById('mode-' + mode).classList.add('active');
-  
-  var model = localStorage.getItem('mlb_model_version') || 'v1';
-  document.getElementById('model-' + model).classList.add('active');
 })();
 </script>
 

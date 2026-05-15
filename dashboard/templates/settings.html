@@ -415,6 +415,7 @@
     <nav class="settings-sidenav" aria-label="Settings sections">
       <a class="back-link" href="/">←<span class="back-link-text"> Back</span></a>
       <button class="active" onclick="showTab('general', this)">General</button>
+      <button onclick="showTab('models', this)">Models</button>
       <button onclick="showTab('betting', this)">Betting</button>
       <button onclick="showTab('kalshi', this)">Kalshi</button>
       <button onclick="showTab('api', this)">API</button>
@@ -466,6 +467,19 @@
           <form method="post" action="/logout">
             <button class="settings-action" type="submit">Logout</button>
           </form>
+        </section>
+      </div>
+
+      <!-- Models -->
+      <div class="settings-tab-pane" id="tab-models">
+        <section class="settings-section">
+          <div class="settings-section-title">Models</div>
+          <p>Select which model version to view in the dashboard.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="model-select">Model version</label>
+            <select class="settings-input" id="model-select" onchange="saveModelVersion()"></select>
+          </div>
+          <div class="settings-feedback" id="model-feedback"></div>
         </section>
       </div>
 
@@ -796,6 +810,19 @@
     }
   }
 
+  function saveModelVersion() {
+    const sel = document.getElementById('model-select');
+    if (!sel) return;
+    const v = sel.value;
+    try {
+      localStorage.setItem('mlb_model_version', v);
+      feedback('model-feedback', 'Saved. Refreshing dashboard...', true);
+      setTimeout(() => { location.reload(); }, 150);
+    } catch (e) {
+      feedback('model-feedback', 'Save failed.', false);
+    }
+  }
+
   async function toggleApiExecution() {
     const on = document.getElementById('api-execution-toggle').checked;
     const mode = on ? 'self_custody' : 'server_managed';
@@ -1040,6 +1067,17 @@
         liveSel.value = versions.includes(current) ? current : versions[0];
       } else if (liveModelSection) {
         liveModelSection.style.display = 'none';
+      }
+
+      // Populate user model select in Models tab (client-side preference)
+      const userModelSel = document.getElementById('model-select');
+      const userVersions = Array.isArray(versions) && versions.length ? versions : ['v1','v2'];
+      if (userModelSel) {
+        const currentUserModel = localStorage.getItem('mlb_model_version') || userVersions[0];
+        userModelSel.innerHTML = userVersions.map((vid) => {
+          const sel = vid === currentUserModel ? ' selected' : '';
+          return `<option value="${vid}"${sel}>${liveModelLabel(vid)}</option>`;
+        }).join('');
       }
 
       // Kalshi account
