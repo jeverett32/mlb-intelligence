@@ -882,6 +882,11 @@
       <div id="training-history-body">
         <div class="empty">Loading...</div>
       </div>
+      <div class="pagination" id="training-history-pagination" style="display:none">
+        <button id="history-prev" onclick="historyPage(-1)">&#8592; Prev</button>
+        <span id="history-page-info">Page 1</span>
+        <button id="history-next" onclick="historyPage(1)">Next &#8594;</button>
+      </div>
     </div>
   </div>
 
@@ -952,6 +957,9 @@
 
 let dbOffset = 0;
 const DB_LIMIT = 50;
+let trainingHistoryRuns = [];
+let trainingHistoryOffset = 0;
+const TRAINING_HISTORY_LIMIT = 5;
 let adminModelVersion = 'v1';
 
 function setAdminModelVersion(v) {
@@ -1294,6 +1302,8 @@ async function loadModelInsights() {
     if (!latestResp.ok || !allResp.ok) return;
     const { run: latest } = await latestResp.json();
     const { runs } = await allResp.json();
+    trainingHistoryRuns = runs || [];
+    trainingHistoryOffset = 0;
     loadProductionFi();
     loadAccuracyByMonth();
     if (pipelineResp.ok) {
@@ -1906,11 +1916,14 @@ function renderFeatureAccuracy(run) {
 
 function renderTrainingHistory(runs) {
   const el = document.getElementById('training-history-body');
-  if (!runs.length) {
+  const paginationEl = document.getElementById('training-history-pagination');
+  if (!runs || !runs.length) {
     el.innerHTML = '<div class="empty">No model metric snapshots yet.</div>';
+    if (paginationEl) paginationEl.style.display = 'none';
     return;
   }
-  el.innerHTML = runs.map(r => `
+  const pageRuns = runs.slice(trainingHistoryOffset, trainingHistoryOffset + TRAINING_HISTORY_LIMIT);
+  el.innerHTML = pageRuns.map(r => `
     <div class="training-history-row">
       <div>${r.trained_at ? r.trained_at.slice(0, 10) : '—'}</div>
       <div>${((r.model_type || '—').split('_')[0] || '—').toUpperCase()}</div>
@@ -1923,6 +1936,25 @@ function renderTrainingHistory(runs) {
       <div>${r.duration_seconds ? r.duration_seconds.toFixed(0) + 's' : '—'}</div>
     </div>
   `).join('');
+
+  const total = runs.length;
+  if (paginationEl) {
+    if (total > TRAINING_HISTORY_LIMIT) {
+      paginationEl.style.display = 'flex';
+      const page = Math.floor(trainingHistoryOffset / TRAINING_HISTORY_LIMIT) + 1;
+      const totalPages = Math.ceil(total / TRAINING_HISTORY_LIMIT);
+      document.getElementById('history-page-info').textContent = `Page ${page} of ${totalPages}`;
+      document.getElementById('history-prev').disabled = trainingHistoryOffset === 0;
+      document.getElementById('history-next').disabled = trainingHistoryOffset + TRAINING_HISTORY_LIMIT >= total;
+    } else {
+      paginationEl.style.display = 'none';
+    }
+  }
+}
+
+function historyPage(dir) {
+  trainingHistoryOffset = Math.max(0, trainingHistoryOffset + dir * TRAINING_HISTORY_LIMIT);
+  renderTrainingHistory(trainingHistoryRuns);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
