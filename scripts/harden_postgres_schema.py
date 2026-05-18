@@ -144,8 +144,8 @@ def main() -> int:
                 _add_constraint(
                     cur,
                     table,
-                    f"{table}_bet_dollars_check",
-                    "CHECK (bet_dollars IS NULL OR bet_dollars >= 0)",
+                    f"{table}_bet_cents_check",
+                    "CHECK (bet_cents IS NULL OR bet_cents >= 0)",
                 )
 
             for table in ("user_orders", "paper_orders"):

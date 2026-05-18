@@ -120,22 +120,32 @@ def test_money_cents_columns_are_present_and_in_sync(live_conn):
         ("paper_orders", "paper_bankroll_after_cents"),
         ("user_order_snapshots", "current_value_cents"),
         ("user_order_snapshots", "unrealized_pnl_cents"),
+        ("paper_orders_v2", "bet_cents"),
+        ("paper_orders_v2", "pnl_cents"),
+        ("paper_orders_v2", "paper_bankroll_before_cents"),
+        ("paper_orders_v2", "paper_bankroll_after_cents"),
+        ("user_balance", "balance_cents"),
     }
     parity_checks = {
-        "bets.bet_cents": "SELECT COUNT(*) FROM bets WHERE bet_dollars IS NOT NULL AND bet_cents IS DISTINCT FROM ROUND(bet_dollars * 100)::bigint",
-        "bets.profit_loss_cents": "SELECT COUNT(*) FROM bets WHERE profit_loss IS NOT NULL AND profit_loss_cents IS DISTINCT FROM ROUND(profit_loss * 100)::bigint",
-        "user_orders.bet_cents": "SELECT COUNT(*) FROM user_orders WHERE bet_dollars IS NOT NULL AND bet_cents IS DISTINCT FROM ROUND(bet_dollars * 100)::bigint",
-        "user_orders.profit_loss_cents": "SELECT COUNT(*) FROM user_orders WHERE profit_loss IS NOT NULL AND profit_loss_cents IS DISTINCT FROM ROUND(profit_loss * 100)::bigint",
-        "user_orders.current_value_cents": "SELECT COUNT(*) FROM user_orders WHERE current_value IS NOT NULL AND current_value_cents IS DISTINCT FROM ROUND(current_value * 100)::bigint",
-        "user_orders.unrealized_pnl_cents": "SELECT COUNT(*) FROM user_orders WHERE unrealized_pnl IS NOT NULL AND unrealized_pnl_cents IS DISTINCT FROM ROUND(unrealized_pnl * 100)::bigint",
-        "paper_orders.bet_cents": "SELECT COUNT(*) FROM paper_orders WHERE bet_dollars IS NOT NULL AND bet_cents IS DISTINCT FROM ROUND(bet_dollars * 100)::bigint",
-        "paper_orders.profit_loss_cents": "SELECT COUNT(*) FROM paper_orders WHERE profit_loss IS NOT NULL AND profit_loss_cents IS DISTINCT FROM ROUND(profit_loss * 100)::bigint",
-        "paper_orders.current_value_cents": "SELECT COUNT(*) FROM paper_orders WHERE current_value IS NOT NULL AND current_value_cents IS DISTINCT FROM ROUND(current_value * 100)::bigint",
-        "paper_orders.unrealized_pnl_cents": "SELECT COUNT(*) FROM paper_orders WHERE unrealized_pnl IS NOT NULL AND unrealized_pnl_cents IS DISTINCT FROM ROUND(unrealized_pnl * 100)::bigint",
-        "paper_orders.paper_bankroll_before_cents": "SELECT COUNT(*) FROM paper_orders WHERE paper_bankroll_before IS NOT NULL AND paper_bankroll_before_cents IS DISTINCT FROM ROUND(paper_bankroll_before * 100)::bigint",
-        "paper_orders.paper_bankroll_after_cents": "SELECT COUNT(*) FROM paper_orders WHERE paper_bankroll_after IS NOT NULL AND paper_bankroll_after_cents IS DISTINCT FROM ROUND(paper_bankroll_after * 100)::bigint",
-        "user_order_snapshots.current_value_cents": "SELECT COUNT(*) FROM user_order_snapshots WHERE current_value IS NOT NULL AND current_value_cents IS DISTINCT FROM ROUND(current_value * 100)::bigint",
-        "user_order_snapshots.unrealized_pnl_cents": "SELECT COUNT(*) FROM user_order_snapshots WHERE unrealized_pnl IS NOT NULL AND unrealized_pnl_cents IS DISTINCT FROM ROUND(unrealized_pnl * 100)::bigint",
+        ("bets", "bet_dollars", "bet_cents"),
+        ("bets", "profit_loss", "profit_loss_cents"),
+        ("user_orders", "bet_dollars", "bet_cents"),
+        ("user_orders", "profit_loss", "profit_loss_cents"),
+        ("user_orders", "current_value", "current_value_cents"),
+        ("user_orders", "unrealized_pnl", "unrealized_pnl_cents"),
+        ("paper_orders", "bet_dollars", "bet_cents"),
+        ("paper_orders", "profit_loss", "profit_loss_cents"),
+        ("paper_orders", "current_value", "current_value_cents"),
+        ("paper_orders", "unrealized_pnl", "unrealized_pnl_cents"),
+        ("paper_orders", "paper_bankroll_before", "paper_bankroll_before_cents"),
+        ("paper_orders", "paper_bankroll_after", "paper_bankroll_after_cents"),
+        ("user_order_snapshots", "current_value", "current_value_cents"),
+        ("user_order_snapshots", "unrealized_pnl", "unrealized_pnl_cents"),
+        ("paper_orders_v2", "bet_dollars", "bet_cents"),
+        ("paper_orders_v2", "pnl", "pnl_cents"),
+        ("paper_orders_v2", "paper_bankroll_before", "paper_bankroll_before_cents"),
+        ("paper_orders_v2", "paper_bankroll_after", "paper_bankroll_after_cents"),
+        ("user_balance", "balance_dollars", "balance_cents"),
     }
     with live_conn.cursor() as cur:
         cur.execute(
@@ -151,8 +161,18 @@ def test_money_cents_columns_are_present_and_in_sync(live_conn):
         assert expected_columns <= found
 
         mismatches = {}
-        for name, sql in parity_checks.items():
-            cur.execute(sql)
+        for table, legacy_col, cents_col in parity_checks:
+            if (table, legacy_col) not in found:
+                continue
+            name = f"{table}.{cents_col}"
+            cur.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM {table}
+                WHERE {legacy_col} IS NOT NULL
+                  AND {cents_col} IS DISTINCT FROM ROUND({legacy_col} * 100)::bigint
+                """
+            )
             count = cur.fetchone()[0]
             if count:
                 mismatches[name] = count

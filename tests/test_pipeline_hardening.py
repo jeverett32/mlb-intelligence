@@ -247,12 +247,12 @@ def test_backfill_paper_orders_uses_rolling_bankroll(monkeypatch):
     count = db.backfill_paper_orders_from_bets("user@example.com")
 
     assert count == 2
-    assert inserted[0][10] == 500.0
-    assert inserted[0][16] == 409.09
-    assert inserted[0][17] == 10000.0
-    assert inserted[0][18] == 10409.09
-    assert inserted[1][10] == 520.45
-    assert inserted[1][17] == 10409.09
+    assert inserted[0][15] == 50000
+    assert inserted[0][16] == 40909
+    assert inserted[0][17] == 1000000
+    assert inserted[0][18] == 1040909
+    assert inserted[1][15] == 52045
+    assert inserted[1][17] == 1040909
 
 
 def test_kalshi_market_matching_uses_exact_team_suffix(monkeypatch):

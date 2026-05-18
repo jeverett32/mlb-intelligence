@@ -186,19 +186,44 @@ def _dead_tuples(warn_ratio: float) -> list[dict[str, Any]]:
 
 
 def _money_parity() -> dict[str, int]:
-    checks = {
-        "bets.bet_cents": "SELECT COUNT(*) FROM bets WHERE bet_dollars IS NOT NULL AND bet_cents IS DISTINCT FROM ROUND(bet_dollars * 100)::bigint",
-        "bets.profit_loss_cents": "SELECT COUNT(*) FROM bets WHERE profit_loss IS NOT NULL AND profit_loss_cents IS DISTINCT FROM ROUND(profit_loss * 100)::bigint",
-        "user_orders.bet_cents": "SELECT COUNT(*) FROM user_orders WHERE bet_dollars IS NOT NULL AND bet_cents IS DISTINCT FROM ROUND(bet_dollars * 100)::bigint",
-        "user_orders.profit_loss_cents": "SELECT COUNT(*) FROM user_orders WHERE profit_loss IS NOT NULL AND profit_loss_cents IS DISTINCT FROM ROUND(profit_loss * 100)::bigint",
-        "paper_orders.bet_cents": "SELECT COUNT(*) FROM paper_orders WHERE bet_dollars IS NOT NULL AND bet_cents IS DISTINCT FROM ROUND(bet_dollars * 100)::bigint",
-        "paper_orders.profit_loss_cents": "SELECT COUNT(*) FROM paper_orders WHERE profit_loss IS NOT NULL AND profit_loss_cents IS DISTINCT FROM ROUND(profit_loss * 100)::bigint",
-        "paper_orders.paper_bankroll_before_cents": "SELECT COUNT(*) FROM paper_orders WHERE paper_bankroll_before IS NOT NULL AND paper_bankroll_before_cents IS DISTINCT FROM ROUND(paper_bankroll_before * 100)::bigint",
-        "paper_orders.paper_bankroll_after_cents": "SELECT COUNT(*) FROM paper_orders WHERE paper_bankroll_after IS NOT NULL AND paper_bankroll_after_cents IS DISTINCT FROM ROUND(paper_bankroll_after * 100)::bigint",
-    }
+    checks = [
+        ("bets", "bet_dollars", "bet_cents"),
+        ("bets", "profit_loss", "profit_loss_cents"),
+        ("user_orders", "bet_dollars", "bet_cents"),
+        ("user_orders", "profit_loss", "profit_loss_cents"),
+        ("paper_orders", "bet_dollars", "bet_cents"),
+        ("paper_orders", "profit_loss", "profit_loss_cents"),
+        ("paper_orders", "paper_bankroll_before", "paper_bankroll_before_cents"),
+        ("paper_orders", "paper_bankroll_after", "paper_bankroll_after_cents"),
+        ("paper_orders_v2", "bet_dollars", "bet_cents"),
+        ("paper_orders_v2", "pnl", "pnl_cents"),
+        ("paper_orders_v2", "paper_bankroll_before", "paper_bankroll_before_cents"),
+        ("paper_orders_v2", "paper_bankroll_after", "paper_bankroll_after_cents"),
+        ("user_balance", "balance_dollars", "balance_cents"),
+    ]
     out: dict[str, int] = {}
-    for name, sql in checks.items():
-        row = _query_one(sql)
+    columns = set(
+        _query_all(
+            """
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+            """
+        )
+    )
+    for table, legacy_col, cents_col in checks:
+        name = f"{table}.{cents_col}"
+        if (table, legacy_col) not in columns:
+            out[name] = 0
+            continue
+        row = _query_one(
+            f"""
+            SELECT COUNT(*)
+            FROM {table}
+            WHERE {legacy_col} IS NOT NULL
+              AND {cents_col} IS DISTINCT FROM ROUND({legacy_col} * 100)::bigint
+            """
+        )
         out[name] = int(row[0] if row else 0)
     return out
 
