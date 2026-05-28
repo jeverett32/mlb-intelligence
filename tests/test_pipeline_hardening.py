@@ -103,6 +103,28 @@ class _FakeConnection:
         self.closed = True
 
 
+class _SingleCursor:
+    def __init__(self, *, rows=None, one=None):
+        self.calls = []
+        self.rows = rows or []
+        self.one = one
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        self.calls.append((sql, params))
+
+    def fetchall(self):
+        return self.rows
+
+    def fetchone(self):
+        return self.one
+
+
 class _FrozenDatetime(datetime):
     @classmethod
     def now(cls, tz=None):
@@ -191,6 +213,147 @@ def test_next_batch_runs_late_game_before_first_pitch(monkeypatch):
 
     assert [game["game_pk"] for game in batch] == [1]
     assert run_at == datetime(2026, 4, 27, 19, 50, tzinfo=timezone.utc)
+
+
+def test_enqueue_kalshi_balance_refresh_job_dedupes_with_upsert(monkeypatch):
+    cursor = _SingleCursor(one=[123])
+    conn = _FakeConnection(cursor)
+    monkeypatch.setattr(db, "get_connection", lambda: conn)
+
+    job_id = db.enqueue_kalshi_balance_refresh_job(
+        "User@Example.com",
+        99,
+        delay_minutes=10,
+    )
+
+    sql, params = cursor.calls[0]
+    assert job_id == 123
+    assert "ON CONFLICT (email, game_pk) DO UPDATE" in sql
+    assert "WHERE kalshi_balance_refresh_jobs.status <> 'completed'" in sql
+    assert params[0] == "user@example.com"
+    assert params[1] == 99
+    assert conn.committed
+
+
+def test_backfill_user_order_results_queues_only_winning_live_orders(monkeypatch):
+    rows = [
+        {
+            "email": "winner@example.com",
+            "game_pk": 1,
+            "status": "filled",
+            "dry_run": False,
+            "profit_loss_cents": 750,
+        },
+        {
+            "email": "loser@example.com",
+            "game_pk": 2,
+            "status": "filled",
+            "dry_run": False,
+            "profit_loss_cents": -500,
+        },
+        {
+            "email": "paper@example.com",
+            "game_pk": 3,
+            "status": "filled",
+            "dry_run": True,
+            "profit_loss_cents": 900,
+        },
+    ]
+    cursor = _SingleCursor(rows=rows)
+    conn = _FakeConnection(cursor)
+    queued = []
+    monkeypatch.setattr(db, "get_connection", lambda: conn)
+    monkeypatch.setattr(
+        db,
+        "enqueue_kalshi_balance_refresh_job",
+        lambda email, game_pk: queued.append((email, game_pk)),
+    )
+
+    count = db.backfill_user_order_results()
+
+    sql, _ = cursor.calls[0]
+    assert count == 3
+    assert "RETURNING uo.email, uo.game_pk, uo.status, uo.dry_run, uo.profit_loss_cents" in sql
+    assert queued == [("winner@example.com", 1)]
+
+
+def test_process_due_kalshi_balance_refresh_jobs_marks_success(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "claim_due_kalshi_balance_refresh_jobs",
+        lambda limit: [{"id": 7, "email": "user@example.com", "game_pk": 42}],
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_kalshi_account",
+        lambda email: {
+            "is_active": True,
+            "key_id": "kid",
+            "key_path": "key.pem",
+            "kalshi_env": "demo",
+            "private_key_pem": "pem",
+        },
+    )
+    monkeypatch.setattr(
+        run_pipeline,
+        "fetch_balance_for_account",
+        lambda **kwargs: calls.append(("fetch", kwargs)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_succeeded",
+        lambda job_id: calls.append(("success", job_id)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_failed",
+        lambda job_id, error: calls.append(("failed", job_id, error)),
+    )
+
+    run_pipeline.process_due_kalshi_balance_refresh_jobs()
+
+    assert calls[0][0] == "fetch"
+    assert calls[0][1]["email"] == "user@example.com"
+    assert calls[1] == ("success", 7)
+
+
+def test_process_due_kalshi_balance_refresh_jobs_marks_failure(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "claim_due_kalshi_balance_refresh_jobs",
+        lambda limit: [{"id": 8, "email": "user@example.com", "game_pk": 43}],
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_kalshi_account",
+        lambda email: {
+            "is_active": True,
+            "key_id": "kid",
+            "key_path": "key.pem",
+            "kalshi_env": "demo",
+        },
+    )
+
+    def fail_fetch(**kwargs):
+        raise RuntimeError("temporary Kalshi outage")
+
+    monkeypatch.setattr(run_pipeline, "fetch_balance_for_account", fail_fetch)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_succeeded",
+        lambda job_id: calls.append(("success", job_id)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_failed",
+        lambda job_id, error: calls.append(("failed", job_id, error)),
+    )
+
+    run_pipeline.process_due_kalshi_balance_refresh_jobs()
+
+    assert calls == [("failed", 8, "temporary Kalshi outage")]
 
 
 def test_model_training_fingerprint_tracks_feature_inputs(monkeypatch):

@@ -10,7 +10,7 @@ import json
 import os
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import threading
@@ -36,6 +36,8 @@ load_dotenv()
 _ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
 _fernet = Fernet(_ENCRYPTION_KEY.encode()) if _ENCRYPTION_KEY else None
 _ENCRYPTED_PREFIX = "enc:"
+KALSHI_BALANCE_REFRESH_DELAY_MINUTES = 10
+KALSHI_BALANCE_REFRESH_MAX_ATTEMPTS = 3
 
 
 def encrypt_field(plaintext: str) -> str:
@@ -1639,6 +1641,23 @@ def init_auth_tables():
                 )
             """)
             cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS kalshi_balance_refresh_jobs (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    game_pk BIGINT NOT NULL,
+                    run_after TIMESTAMPTZ NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    completed_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (email, game_pk),
+                    CONSTRAINT kalshi_balance_refresh_jobs_status_check
+                    CHECK (status IN ('pending', 'running', 'completed', 'failed'))
+                )
+            """)
+            cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS user_orders (
                     id BIGSERIAL PRIMARY KEY,
                     email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
@@ -1761,6 +1780,7 @@ def init_auth_tables():
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_SESSIONS_TABLE}_email ON {APP_SESSIONS_TABLE} (email)")
             cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{APP_API_TOKENS_TABLE}_email ON {APP_API_TOKENS_TABLE} (email)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_balance_email_recorded ON user_balance (email, recorded_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_kbrj_due ON kalshi_balance_refresh_jobs (status, run_after, attempts)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_email_status ON user_orders (email, status, game_date)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_ticker ON user_orders (kalshi_ticker)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_orders_live_refresh ON user_orders (status, result, last_checked_at)")
@@ -2542,6 +2562,166 @@ def insert_user_balance(email: str, balance_cents: int, source: str = "kalshi"):
                     """,
                     (email, datetime.now(timezone.utc), int(balance_cents), source),
                 )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_kalshi_balance_refresh_jobs_table() -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS kalshi_balance_refresh_jobs (
+                    id BIGSERIAL PRIMARY KEY,
+                    email TEXT NOT NULL REFERENCES {APP_USERS_TABLE}(email) ON DELETE CASCADE,
+                    game_pk BIGINT NOT NULL,
+                    run_after TIMESTAMPTZ NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    completed_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (email, game_pk),
+                    CONSTRAINT kalshi_balance_refresh_jobs_status_check
+                    CHECK (status IN ('pending', 'running', 'completed', 'failed'))
+                )
+            """)
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_kbrj_due
+                ON kalshi_balance_refresh_jobs (status, run_after, attempts)
+                """
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def enqueue_kalshi_balance_refresh_job(
+    email: str,
+    game_pk: str | int,
+    *,
+    delay_minutes: int = KALSHI_BALANCE_REFRESH_DELAY_MINUTES,
+) -> int | None:
+    email = _norm_email(email)
+    run_after = datetime.now(timezone.utc) + timedelta(minutes=int(delay_minutes))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO kalshi_balance_refresh_jobs (
+                    email, game_pk, run_after, status, attempts, last_error,
+                    completed_at, updated_at
+                )
+                VALUES (%s, %s, %s, 'pending', 0, NULL, NULL, NOW())
+                ON CONFLICT (email, game_pk) DO UPDATE SET
+                    run_after = EXCLUDED.run_after,
+                    status = 'pending',
+                    attempts = 0,
+                    last_error = NULL,
+                    completed_at = NULL,
+                    updated_at = NOW()
+                WHERE kalshi_balance_refresh_jobs.status <> 'completed'
+                RETURNING id
+                """,
+                (email, int(game_pk), run_after),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return int(row[0]) if row else None
+    finally:
+        conn.close()
+
+
+def claim_due_kalshi_balance_refresh_jobs(limit: int = 25) -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                WITH due AS (
+                    SELECT id
+                    FROM kalshi_balance_refresh_jobs
+                    WHERE status IN ('pending', 'failed')
+                      AND attempts < %s
+                      AND run_after <= NOW()
+                    ORDER BY run_after, id
+                    LIMIT %s
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE kalshi_balance_refresh_jobs j
+                SET status = 'running',
+                    attempts = j.attempts + 1,
+                    updated_at = NOW()
+                FROM due
+                WHERE j.id = due.id
+                RETURNING j.*
+                """,
+                (KALSHI_BALANCE_REFRESH_MAX_ATTEMPTS, int(limit)),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+        conn.commit()
+        return rows
+    finally:
+        conn.close()
+
+
+def mark_kalshi_balance_refresh_job_succeeded(job_id: str | int) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE kalshi_balance_refresh_jobs
+                SET status = 'completed',
+                    last_error = NULL,
+                    completed_at = NOW(),
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (int(job_id),),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_kalshi_balance_refresh_job_failed(
+    job_id: str | int,
+    error: str,
+    *,
+    retry_delay_seconds: int = 60,
+) -> None:
+    err_text = (error or "")[:500]
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE kalshi_balance_refresh_jobs
+                SET status = CASE
+                        WHEN attempts >= %s THEN 'failed'
+                        ELSE 'pending'
+                    END,
+                    run_after = CASE
+                        WHEN attempts >= %s THEN run_after
+                        ELSE NOW() + (%s * INTERVAL '1 second')
+                    END,
+                    last_error = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    KALSHI_BALANCE_REFRESH_MAX_ATTEMPTS,
+                    KALSHI_BALANCE_REFRESH_MAX_ATTEMPTS,
+                    int(retry_delay_seconds),
+                    err_text,
+                    int(job_id),
+                ),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -3807,8 +3987,9 @@ def update_user_order_live_snapshot(
 
 def backfill_user_order_results():
     conn = get_connection()
+    updated_orders: list[dict] = []
     try:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 UPDATE user_orders uo
@@ -3834,13 +4015,23 @@ def backfill_user_order_results():
                       uo.result IS DISTINCT FROM g.home_win
                       OR uo.profit_loss_cents IS NULL
                   )
+                RETURNING uo.email, uo.game_pk, uo.status, uo.dry_run, uo.profit_loss_cents
                 """
             )
-            count = cur.rowcount
+            updated_orders = [dict(r) for r in cur.fetchall()]
         conn.commit()
-        return count
     finally:
         conn.close()
+
+    for order in updated_orders:
+        if (
+            order.get("status") == "filled"
+            and order.get("dry_run") is False
+            and order.get("profit_loss_cents") is not None
+            and int(order["profit_loss_cents"]) > 0
+        ):
+            enqueue_kalshi_balance_refresh_job(order["email"], order["game_pk"])
+    return len(updated_orders)
 
 
 def backfill_paper_order_results():

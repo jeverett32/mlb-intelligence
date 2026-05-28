@@ -25,6 +25,7 @@ def settle_completed_games(cutoff_hours: float = 2.0) -> dict:
     Settle all unsettled games that started more than `cutoff_hours` ago.
     Returns the number of games successfully settled.
     """
+    DB.init_kalshi_balance_refresh_jobs_table()
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(hours=cutoff_hours)
 

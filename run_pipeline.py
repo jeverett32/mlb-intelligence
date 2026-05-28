@@ -59,6 +59,7 @@ MIN_GAME_TIME_MINUTES = 0
 FETCH_STALE_SECONDS = 300
 LIVE_POSITION_REFRESH_SECONDS = 300
 LIVE_SCORE_REFRESH_SECONDS = 300
+BALANCE_REFRESH_JOB_LIMIT = 25
 
 _LAST_FETCH_TS: float = 0.0
 _LAST_LIVE_POSITION_REFRESH_TS: float = 0.0
@@ -110,6 +111,39 @@ def refresh_live_scores_if_due(force: bool = False) -> None:
         print(f"  Live score refresh failed: {e}")
 
 
+def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIMIT) -> None:
+    try:
+        jobs = DB.claim_due_kalshi_balance_refresh_jobs(limit=limit)
+    except Exception as e:
+        print(f"  Balance refresh job claim failed: {e}")
+        return
+
+    for job in jobs:
+        email = job["email"]
+        try:
+            account = DB.get_kalshi_account(email)
+            if not account or not account.get("is_active"):
+                raise RuntimeError("Kalshi account inactive or missing.")
+            fetch_balance_for_account(
+                key_id=account["key_id"],
+                key_path=account["key_path"],
+                kalshi_env=account["kalshi_env"],
+                email=email,
+                private_key_pem=account.get("private_key_pem") or None,
+            )
+            DB.mark_kalshi_balance_refresh_job_succeeded(job["id"])
+            print(
+                "Delayed Kalshi balance refresh complete: "
+                f"{email} game_pk={job['game_pk']}"
+            )
+        except Exception as e:
+            DB.mark_kalshi_balance_refresh_job_failed(job["id"], str(e))
+            print(
+                "  Delayed Kalshi balance refresh failed: "
+                f"{email} game_pk={job['game_pk']}: {e}"
+            )
+
+
 def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
     """Sleep in chunks, pinging the systemd watchdog between chunks."""
     remaining = max(0.0, total_secs)
@@ -120,6 +154,7 @@ def _watchdog_sleep(total_secs: float, ping_interval: float = 30.0) -> None:
         _sd_notify("WATCHDOG=1")
         refresh_live_positions_if_due()
         refresh_live_scores_if_due()
+        process_due_kalshi_balance_refresh_jobs()
 
 
 def _mark_fetched() -> None:
@@ -576,6 +611,11 @@ def main():
         print(f"  warn: could not init pipeline_runs table: {e}")
 
     try:
+        DB.init_kalshi_balance_refresh_jobs_table()
+    except Exception as e:
+        print(f"  warn: could not init Kalshi balance refresh jobs table: {e}")
+
+    try:
         DB.init_bets_execution_tracking()
     except Exception as e:
         print(f"  warn: could not init bets execution-tracking columns: {e}")
@@ -619,6 +659,7 @@ def main():
             settle_completed_games()
             refresh_live_positions_if_due(force=True)
             refresh_live_scores_if_due(force=True)
+            process_due_kalshi_balance_refresh_jobs()
 
         if _fetch_is_fresh():
             print(
