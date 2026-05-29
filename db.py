@@ -2654,7 +2654,6 @@ def claim_due_kalshi_balance_refresh_jobs(limit: int = 25) -> list[dict]:
                 )
                 UPDATE kalshi_balance_refresh_jobs j
                 SET status = 'running',
-                    attempts = j.attempts + 1,
                     updated_at = NOW()
                 FROM due
                 WHERE j.id = due.id
@@ -2702,12 +2701,13 @@ def mark_kalshi_balance_refresh_job_failed(
             cur.execute(
                 """
                 UPDATE kalshi_balance_refresh_jobs
-                SET status = CASE
-                        WHEN attempts >= %s THEN 'failed'
+                SET attempts = attempts + 1,
+                    status = CASE
+                        WHEN attempts + 1 >= %s THEN 'failed'
                         ELSE 'pending'
                     END,
                     run_after = CASE
-                        WHEN attempts >= %s THEN run_after
+                        WHEN attempts + 1 >= %s THEN run_after
                         ELSE NOW() + (%s * INTERVAL '1 second')
                     END,
                     last_error = %s,
@@ -2723,6 +2723,64 @@ def mark_kalshi_balance_refresh_job_failed(
                 ),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def reschedule_kalshi_balance_refresh_job(
+    job_id: str | int,
+    run_after: datetime | None = None,
+    *,
+    reason: str = "",
+) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE kalshi_balance_refresh_jobs
+                SET status = 'pending',
+                    run_after = COALESCE(%s, NOW()),
+                    last_error = %s,
+                    completed_at = NULL,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (run_after, (reason or "")[:500] or None, int(job_id)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_recent_completed_kalshi_balance_refresh_jobs_for_winners(
+    *,
+    lookback_hours: int = 24,
+    limit: int = 100,
+) -> list[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT j.id, j.email, j.game_pk, j.completed_at,
+                       uo.kalshi_ticker, uo.status AS order_status,
+                       uo.dry_run, uo.profit_loss_cents
+                FROM kalshi_balance_refresh_jobs j
+                JOIN user_orders uo
+                  ON uo.email = j.email
+                 AND uo.game_pk = j.game_pk
+                WHERE j.status = 'completed'
+                  AND j.completed_at >= NOW() - (%s * INTERVAL '1 hour')
+                  AND uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND uo.profit_loss_cents > 0
+                ORDER BY j.completed_at DESC, j.id DESC
+                LIMIT %s
+                """,
+                (int(lookback_hours), int(limit)),
+            )
+            return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 

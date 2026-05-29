@@ -279,6 +279,7 @@ def test_backfill_user_order_results_queues_only_winning_live_orders(monkeypatch
 
 def test_process_due_kalshi_balance_refresh_jobs_marks_success(monkeypatch):
     calls = []
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
     monkeypatch.setattr(
         run_pipeline.DB,
         "claim_due_kalshi_balance_refresh_jobs",
@@ -294,6 +295,145 @@ def test_process_due_kalshi_balance_refresh_jobs_marks_success(monkeypatch):
             "kalshi_env": "demo",
             "private_key_pem": "pem",
         },
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_user_order",
+        lambda email, game_pk: {"kalshi_ticker": "KTEST-YES"},
+    )
+    monkeypatch.setattr(run_pipeline, "_retry_session", lambda: object())
+    monkeypatch.setattr(
+        run_pipeline,
+        "_fetch_market",
+        lambda session, base_url, ticker: {
+            "ticker": ticker,
+            "status": "finalized",
+            "close_time": "2026-04-27T19:50:00Z",
+            "settlement_timer_seconds": 60,
+        },
+    )
+    monkeypatch.setattr(
+        run_pipeline,
+        "fetch_balance_for_account",
+        lambda **kwargs: calls.append(("fetch", kwargs)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_succeeded",
+        lambda job_id: calls.append(("success", job_id)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_failed",
+        lambda job_id, error: calls.append(("failed", job_id, error)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "reschedule_kalshi_balance_refresh_job",
+        lambda job_id, run_after, reason="": calls.append(("reschedule", job_id)),
+    )
+
+    run_pipeline.process_due_kalshi_balance_refresh_jobs()
+
+    assert calls[0][0] == "fetch"
+    assert calls[0][1]["email"] == "user@example.com"
+    assert calls[0][1]["allow_stale_fallback"] is False
+    assert calls[1] == ("success", 7)
+
+
+def test_process_due_kalshi_balance_refresh_jobs_marks_failure(monkeypatch):
+    calls = []
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "claim_due_kalshi_balance_refresh_jobs",
+        lambda limit: [{"id": 8, "email": "user@example.com", "game_pk": 43}],
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_kalshi_account",
+        lambda email: {
+            "is_active": True,
+            "key_id": "kid",
+            "key_path": "key.pem",
+            "kalshi_env": "demo",
+        },
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_user_order",
+        lambda email, game_pk: {"kalshi_ticker": "KTEST-YES"},
+    )
+    monkeypatch.setattr(run_pipeline, "_retry_session", lambda: object())
+    monkeypatch.setattr(
+        run_pipeline,
+        "_fetch_market",
+        lambda session, base_url, ticker: {
+            "ticker": ticker,
+            "status": "finalized",
+            "close_time": "2026-04-27T19:50:00Z",
+            "settlement_timer_seconds": 60,
+        },
+    )
+
+    def fail_fetch(**kwargs):
+        raise RuntimeError("temporary Kalshi outage")
+
+    monkeypatch.setattr(run_pipeline, "fetch_balance_for_account", fail_fetch)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_succeeded",
+        lambda job_id: calls.append(("success", job_id)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "mark_kalshi_balance_refresh_job_failed",
+        lambda job_id, error: calls.append(("failed", job_id, error)),
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "reschedule_kalshi_balance_refresh_job",
+        lambda job_id, run_after, reason="": calls.append(("reschedule", job_id)),
+    )
+
+    run_pipeline.process_due_kalshi_balance_refresh_jobs()
+
+    assert calls == [("failed", 8, "temporary Kalshi outage")]
+
+
+def test_balance_refresh_job_reschedules_when_market_active(monkeypatch):
+    calls = []
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "claim_due_kalshi_balance_refresh_jobs",
+        lambda limit: [{"id": 9, "email": "user@example.com", "game_pk": 44}],
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_kalshi_account",
+        lambda email: {"is_active": True, "kalshi_env": "prod"},
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_user_order",
+        lambda email, game_pk: {"kalshi_ticker": "KTEST-YES"},
+    )
+    monkeypatch.setattr(run_pipeline, "_retry_session", lambda: object())
+    monkeypatch.setattr(
+        run_pipeline,
+        "_fetch_market",
+        lambda session, base_url, ticker: {
+            "ticker": ticker,
+            "status": "active",
+            "close_time": "2026-04-27T19:54:00Z",
+            "settlement_timer_seconds": 180,
+        },
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "reschedule_kalshi_balance_refresh_job",
+        lambda job_id, run_after, reason="": calls.append(("reschedule", job_id, run_after, reason)),
     )
     monkeypatch.setattr(
         run_pipeline,
@@ -313,47 +453,102 @@ def test_process_due_kalshi_balance_refresh_jobs_marks_success(monkeypatch):
 
     run_pipeline.process_due_kalshi_balance_refresh_jobs()
 
-    assert calls[0][0] == "fetch"
-    assert calls[0][1]["email"] == "user@example.com"
-    assert calls[1] == ("success", 7)
+    assert calls[0][0] == "reschedule"
+    assert calls[0][1] == 9
+    assert calls[0][2] == datetime(2026, 4, 27, 19, 58, tzinfo=timezone.utc)
+    assert not any(call[0] in {"fetch", "success", "failed"} for call in calls)
 
 
-def test_process_due_kalshi_balance_refresh_jobs_marks_failure(monkeypatch):
+def test_balance_refresh_job_reschedules_until_settlement_timer_elapsed(monkeypatch):
     calls = []
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
     monkeypatch.setattr(
         run_pipeline.DB,
         "claim_due_kalshi_balance_refresh_jobs",
-        lambda limit: [{"id": 8, "email": "user@example.com", "game_pk": 43}],
+        lambda limit: [{"id": 10, "email": "user@example.com", "game_pk": 45}],
     )
     monkeypatch.setattr(
         run_pipeline.DB,
         "get_kalshi_account",
-        lambda email: {
-            "is_active": True,
-            "key_id": "kid",
-            "key_path": "key.pem",
-            "kalshi_env": "demo",
+        lambda email: {"is_active": True, "kalshi_env": "prod"},
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_user_order",
+        lambda email, game_pk: {"kalshi_ticker": "KTEST-YES"},
+    )
+    monkeypatch.setattr(run_pipeline, "_retry_session", lambda: object())
+    monkeypatch.setattr(
+        run_pipeline,
+        "_fetch_market",
+        lambda session, base_url, ticker: {
+            "ticker": ticker,
+            "status": "finalized",
+            "close_time": "2026-04-27T19:54:00Z",
+            "settlement_timer_seconds": 180,
         },
     )
-
-    def fail_fetch(**kwargs):
-        raise RuntimeError("temporary Kalshi outage")
-
-    monkeypatch.setattr(run_pipeline, "fetch_balance_for_account", fail_fetch)
     monkeypatch.setattr(
         run_pipeline.DB,
-        "mark_kalshi_balance_refresh_job_succeeded",
-        lambda job_id: calls.append(("success", job_id)),
+        "reschedule_kalshi_balance_refresh_job",
+        lambda job_id, run_after, reason="": calls.append(("reschedule", job_id, run_after)),
     )
-    monkeypatch.setattr(
-        run_pipeline.DB,
-        "mark_kalshi_balance_refresh_job_failed",
-        lambda job_id, error: calls.append(("failed", job_id, error)),
-    )
+    monkeypatch.setattr(run_pipeline, "fetch_balance_for_account", lambda **kwargs: calls.append(("fetch", kwargs)))
+    monkeypatch.setattr(run_pipeline.DB, "mark_kalshi_balance_refresh_job_succeeded", lambda job_id: calls.append(("success", job_id)))
+    monkeypatch.setattr(run_pipeline.DB, "mark_kalshi_balance_refresh_job_failed", lambda job_id, error: calls.append(("failed", job_id, error)))
 
     run_pipeline.process_due_kalshi_balance_refresh_jobs()
 
-    assert calls == [("failed", 8, "temporary Kalshi outage")]
+    assert calls == [("reschedule", 10, datetime(2026, 4, 27, 19, 58, tzinfo=timezone.utc))]
+
+
+def test_repair_requeues_completed_job_before_kalshi_payout_cutoff(monkeypatch):
+    calls = []
+    monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_recent_completed_kalshi_balance_refresh_jobs_for_winners",
+        lambda lookback_hours: [
+            {
+                "id": 11,
+                "email": "user@example.com",
+                "game_pk": 46,
+                "kalshi_ticker": "KTEST-YES",
+                "completed_at": datetime(2026, 4, 27, 19, 55, tzinfo=timezone.utc),
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "get_kalshi_account",
+        lambda email: {"is_active": True, "kalshi_env": "prod"},
+    )
+    monkeypatch.setattr(run_pipeline, "_retry_session", lambda: object())
+    monkeypatch.setattr(
+        run_pipeline,
+        "_fetch_market",
+        lambda session, base_url, ticker: {
+            "ticker": ticker,
+            "status": "finalized",
+            "close_time": "2026-04-27T19:54:00Z",
+            "settlement_timer_seconds": 180,
+        },
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "reschedule_kalshi_balance_refresh_job",
+        lambda job_id, run_after, reason="": calls.append((job_id, run_after, reason)),
+    )
+
+    run_pipeline.repair_completed_kalshi_balance_refresh_jobs()
+
+    assert calls == [
+        (
+            11,
+            datetime(2026, 4, 27, 19, 55, tzinfo=timezone.utc),
+            "Repair: completed before Kalshi payout window for KTEST-YES",
+        )
+    ]
 
 
 def test_model_training_fingerprint_tracks_feature_inputs(monkeypatch):

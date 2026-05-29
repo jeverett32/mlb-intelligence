@@ -42,8 +42,9 @@ from models.model_v1 import predict as PREDICT  # noqa: E402
 from bet import place_bet as PLACE_BET  # noqa: E402
 from fetch.fetch_balance import fetch_balance_for_account  # noqa: E402
 from fetch.fetch_data import main as fetch_data_main, refresh_odds_only  # noqa: E402
-from fetch.fetch_live_positions import refresh_due_orders  # noqa: E402
+from fetch.fetch_live_positions import _fetch_market, _retry_session, refresh_due_orders  # noqa: E402
 from fetch.fetch_live_scores import refresh_scores_for_date  # noqa: E402
+from kalshi_client import get_base_url  # noqa: E402
 
 EASTERN = ZoneInfo("America/New_York")
 MLB_CSV = Path(CURRENT_CSV)  # local CSV fallback
@@ -60,6 +61,9 @@ FETCH_STALE_SECONDS = 300
 LIVE_POSITION_REFRESH_SECONDS = 300
 LIVE_SCORE_REFRESH_SECONDS = 300
 BALANCE_REFRESH_JOB_LIMIT = 25
+BALANCE_REFRESH_SETTLEMENT_BUFFER_SECONDS = 60
+BALANCE_REFRESH_NOT_READY_SECONDS = 120
+BALANCE_REFRESH_REPAIR_LOOKBACK_HOURS = 24
 
 _LAST_FETCH_TS: float = 0.0
 _LAST_LIVE_POSITION_REFRESH_TS: float = 0.0
@@ -111,6 +115,47 @@ def refresh_live_scores_if_due(force: bool = False) -> None:
         print(f"  Live score refresh failed: {e}")
 
 
+def _parse_market_time(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        text = str(value)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _market_settlement_ready_at(market: dict) -> datetime | None:
+    close_time = _parse_market_time(market.get("close_time"))
+    if close_time is None:
+        return None
+    try:
+        timer_seconds = int(float(market.get("settlement_timer_seconds") or 0))
+    except (TypeError, ValueError):
+        return None
+    return close_time + timedelta(
+        seconds=timer_seconds + BALANCE_REFRESH_SETTLEMENT_BUFFER_SECONDS
+    )
+
+
+def _balance_job_wait_until(market: dict, now_utc: datetime | None = None) -> datetime | None:
+    now_utc = now_utc or datetime.now(timezone.utc)
+    ready_at = _market_settlement_ready_at(market)
+    if ready_at is None:
+        return now_utc + timedelta(seconds=BALANCE_REFRESH_NOT_READY_SECONDS)
+    if ready_at > now_utc:
+        return ready_at
+    status = str(market.get("status") or "").lower()
+    if status in {"active", "open", "inactive"}:
+        return now_utc + timedelta(seconds=BALANCE_REFRESH_NOT_READY_SECONDS)
+    return None
+
+
 def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIMIT) -> None:
     try:
         jobs = DB.claim_due_kalshi_balance_refresh_jobs(limit=limit)
@@ -118,18 +163,44 @@ def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIM
         print(f"  Balance refresh job claim failed: {e}")
         return
 
+    session = _retry_session()
     for job in jobs:
         email = job["email"]
         try:
             account = DB.get_kalshi_account(email)
             if not account or not account.get("is_active"):
                 raise RuntimeError("Kalshi account inactive or missing.")
+            order = DB.get_user_order(email, job["game_pk"])
+            ticker = str((order or {}).get("kalshi_ticker") or "").strip()
+            if not ticker:
+                raise RuntimeError("Kalshi ticker missing for settled order.")
+            market = _fetch_market(
+                session,
+                get_base_url(account.get("kalshi_env")),
+                ticker,
+            )
+            wait_until = _balance_job_wait_until(market)
+            if wait_until is not None:
+                DB.reschedule_kalshi_balance_refresh_job(
+                    job["id"],
+                    wait_until,
+                    reason=(
+                        "Kalshi market settlement not ready: "
+                        f"ticker={ticker} status={market.get('status')}"
+                    ),
+                )
+                print(
+                    "Delayed Kalshi balance refresh rescheduled: "
+                    f"{email} game_pk={job['game_pk']} run_after={wait_until.isoformat()}"
+                )
+                continue
             fetch_balance_for_account(
                 key_id=account["key_id"],
                 key_path=account["key_path"],
                 kalshi_env=account["kalshi_env"],
                 email=email,
                 private_key_pem=account.get("private_key_pem") or None,
+                allow_stale_fallback=False,
             )
             DB.mark_kalshi_balance_refresh_job_succeeded(job["id"])
             print(
@@ -141,6 +212,59 @@ def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIM
             print(
                 "  Delayed Kalshi balance refresh failed: "
                 f"{email} game_pk={job['game_pk']}: {e}"
+            )
+
+
+def repair_completed_kalshi_balance_refresh_jobs() -> None:
+    try:
+        jobs = DB.get_recent_completed_kalshi_balance_refresh_jobs_for_winners(
+            lookback_hours=BALANCE_REFRESH_REPAIR_LOOKBACK_HOURS
+        )
+    except Exception as e:
+        print(f"  Balance refresh job repair scan failed: {e}")
+        return
+    if not jobs:
+        return
+
+    session = _retry_session()
+    for job in jobs:
+        ticker = str(job.get("kalshi_ticker") or "").strip()
+        if not ticker:
+            continue
+        try:
+            account = DB.get_kalshi_account(job["email"])
+            if not account or not account.get("is_active"):
+                continue
+            market = _fetch_market(
+                session,
+                get_base_url(account.get("kalshi_env")),
+                ticker,
+            )
+            ready_at = _market_settlement_ready_at(market)
+            completed_at = job.get("completed_at")
+            if completed_at and completed_at.tzinfo is None:
+                completed_at = completed_at.replace(tzinfo=timezone.utc)
+            if ready_at is None:
+                wait_until = _balance_job_wait_until(market)
+                DB.reschedule_kalshi_balance_refresh_job(
+                    job["id"],
+                    wait_until,
+                    reason=f"Repair: Kalshi settlement metadata unavailable for {ticker}",
+                )
+            elif completed_at is not None and completed_at < ready_at:
+                DB.reschedule_kalshi_balance_refresh_job(
+                    job["id"],
+                    datetime.now(timezone.utc),
+                    reason=f"Repair: completed before Kalshi payout window for {ticker}",
+                )
+                print(
+                    "Requeued early Kalshi balance refresh: "
+                    f"{job['email']} game_pk={job['game_pk']}"
+                )
+        except Exception as e:
+            print(
+                "  Balance refresh job repair failed: "
+                f"{job.get('email')} game_pk={job.get('game_pk')}: {e}"
             )
 
 
@@ -614,6 +738,8 @@ def main():
         DB.init_kalshi_balance_refresh_jobs_table()
     except Exception as e:
         print(f"  warn: could not init Kalshi balance refresh jobs table: {e}")
+    else:
+        repair_completed_kalshi_balance_refresh_jobs()
 
     try:
         DB.init_bets_execution_tracking()
@@ -659,6 +785,7 @@ def main():
             settle_completed_games()
             refresh_live_positions_if_due(force=True)
             refresh_live_scores_if_due(force=True)
+            repair_completed_kalshi_balance_refresh_jobs()
             process_due_kalshi_balance_refresh_jobs()
 
         if _fetch_is_fresh():

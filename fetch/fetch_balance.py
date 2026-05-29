@@ -19,6 +19,7 @@ def fetch_balance_for_account(
     kalshi_env: str,
     email: str,
     private_key_pem: str | None = None,
+    allow_stale_fallback: bool = True,
 ) -> int:
     try:
         key_id, private_key = load_credentials(
@@ -45,6 +46,10 @@ def fetch_balance_for_account(
         raise
     except Exception as e:
         print(f"  WARNING: Kalshi balance fetch failed (transient): {e}")
+        if not allow_stale_fallback:
+            raise RuntimeError(
+                "Kalshi balance fetch failed and stale fallback is disabled."
+            ) from e
         last = DB.get_last_user_balance_cents(email)
         if last is not None:
             print(f"  Using last known balance: {last} cents")
