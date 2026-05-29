@@ -2693,15 +2693,15 @@ function renderSettledBets(data) {
   const bets = data.bets || [];
   renderTable(
     'bets-body',
-    ['Date', 'Matchup', 'Side', 'Stake', 'Model', 'Market', 'Edge', 'Result', 'P&L'],
+    ['Date', 'Matchup', 'Side', 'Stake', 'Model', 'Entry', 'Edge', 'Result', 'P&L'],
     bets.map(b => `
       <tr>
         <td>${String(b.game_date || '').slice(0, 10) || '—'}</td>
         <td><strong>${b.away_team || '—'}</strong> @ <strong>${b.home_team || '—'}</strong></td>
         <td>${sideBadge(b.bet_side)}</td>
         <td>${fmt$(b.bet_dollars)}</td>
-        <td>${fmtPct(b.predicted_prob)}</td>
-        <td>${fmtPct(b.market_implied_prob)}</td>
+        <td>${fmtPct(b.model_side_prob ?? b.predicted_prob)}</td>
+        <td>${fmtPct(b.entry_price ?? b.market_side_prob ?? b.market_implied_prob)}</td>
         <td>${edgeText(b.edge)}</td>
         <td>${resultBadge(b.result, b.bet_side)}</td>
         <td>${pnlBadge(b.profit_loss)}</td>

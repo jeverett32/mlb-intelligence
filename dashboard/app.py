@@ -1190,6 +1190,24 @@ def get_bets(
 
         df["profit_loss"] = df.apply(calc_pnl, axis=1)
 
+    if "bet_side" in df.columns:
+        side = df["bet_side"].astype("string")
+        if "market_implied_prob" in df.columns:
+            mp = pd.to_numeric(df["market_implied_prob"], errors="coerce")
+            df["market_side_prob"] = mp.where(side != "away", 1.0 - mp)
+        if "predicted_prob" in df.columns:
+            pred = pd.to_numeric(df["predicted_prob"], errors="coerce")
+            df["model_side_prob"] = pred.where(side != "away", 1.0 - pred)
+        nan_series = pd.Series(np.nan, index=df.index)
+        stake = pd.to_numeric(df.get("bet_dollars", nan_series), errors="coerce")
+        contracts = pd.to_numeric(df.get("n_contracts", nan_series), errors="coerce")
+        live_price = pd.to_numeric(df.get("live_price", nan_series), errors="coerce")
+        effective_entry = stake / contracts
+        df["entry_price"] = effective_entry.where(
+            (stake > 0) & (contracts > 0),
+            live_price.where((live_price > 0) & (live_price < 1), df.get("market_side_prob")),
+        )
+
     total = len(df)
     return {"bets": _safe_records(df.iloc[offset : offset + limit]), "total": total}
 

@@ -444,6 +444,92 @@ def test_api_bets_computes_pnl_from_live_price_when_missing(monkeypatch, app_mod
     assert body["bets"][0]["profit_loss"] == 100.0
 
 
+def test_api_bets_returns_side_probabilities_for_away_paper_bets(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(app_module.DB, "backfill_paper_orders_from_bets", lambda email: 0)
+    monkeypatch.setattr(app_module.DB, "recompute_paper_order_financials", lambda email: 0)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_paper_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "1",
+                    "game_date": "2026-04-01",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "bet_side": "away",
+                    "bet_dollars": 100.0,
+                    "result": False,
+                    "n_contracts": None,
+                    "predicted_prob": 0.45,
+                    "market_implied_prob": 0.60,
+                    "live_price": None,
+                }
+            ]
+        ),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/bets?mode=paper&status=settled&limit=10")
+    assert r.status_code == 200
+    bet = r.json()["bets"][0]
+    assert bet["model_side_prob"] == 0.55
+    assert round(bet["market_side_prob"], 2) == 0.40
+    assert round(bet["entry_price"], 2) == 0.40
+    assert bet["profit_loss"] == 150.0
+
+
+def test_api_bets_entry_price_uses_effective_contract_cost(monkeypatch, app_module, client):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+    monkeypatch.setattr(app_module.DB, "backfill_paper_orders_from_bets", lambda email: 0)
+    monkeypatch.setattr(app_module.DB, "recompute_paper_order_financials", lambda email: 0)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_paper_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "824104",
+                    "game_date": "2026-05-27",
+                    "home_team": "KCR",
+                    "away_team": "NYY",
+                    "bet_side": "away",
+                    "bet_dollars": 2857.05,
+                    "result": False,
+                    "n_contracts": 4535,
+                    "predicted_prob": 0.212387,
+                    "market_implied_prob": 0.417455,
+                    "live_price": 0.60,
+                }
+            ]
+        ),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/bets?mode=paper&status=settled&limit=10")
+    assert r.status_code == 200
+    bet = r.json()["bets"][0]
+    assert round(bet["entry_price"], 2) == 0.63
+    assert bet["profit_loss"] == 1677.95
+
+
 def test_upcoming_keeps_started_same_day_games_until_settled(monkeypatch, app_module, client):
     now_utc = pd.Timestamp.now(tz="UTC")
     since_midnight = now_utc - now_utc.normalize()
