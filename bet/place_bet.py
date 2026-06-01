@@ -188,6 +188,10 @@ def _post_events_order(
 ) -> tuple[dict, str]:
     order_path = api_path("portfolio/events/orders")
     headers = auth_headers(key_id, private_key, "POST", order_path)
+    
+    # In Events API: 
+    # 'bid' = buy YES / sell NO
+    # 'ask' = sell YES / buy NO
     order_body = {
         "ticker": ticker,
         "side": side,
@@ -210,9 +214,10 @@ def _post_events_order(
             "  Events order endpoint rejected request before execution; "
             "falling back to legacy /portfolio/orders."
         )
+        # Note: side mapping for legacy differs. _post_kalshi_order handles the top-level mapping.
         return _post_legacy_order(
             session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents,
-            action="buy", side="yes"
+            action="buy" if side == "bid" else "sell", side="yes"
         )
     raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
 
@@ -234,12 +239,11 @@ def _post_kalshi_order(
             action=action, side=side
         )
     
-    # Map (action, side) to events API side
+    # Events API side mapping:
     # buy yes -> bid
     # sell yes -> ask
-    events_side = "bid"
-    if action == "sell":
-        events_side = "ask"
+    # (assuming we only trade YES side for now as per system design)
+    events_side = "bid" if action == "buy" else "ask"
     
     return _post_events_order(
         session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents,

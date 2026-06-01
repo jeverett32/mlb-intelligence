@@ -104,13 +104,16 @@ def _try_exit_order(order: dict, dry_run: bool) -> tuple[bool, bool]:
         pnl = revenue - cost
         
         # Update DB with terminal status 'sold_stop_loss'
-        DB.update_user_order_status(
+        success = DB.update_user_order_status(
             order["email"],
             order["game_pk"],
             status="sold_stop_loss",
             profit_loss=pnl,
         )
-        print(f"  [{user_label}] SUCCESS: Sold {fill_count} contracts for ${revenue:.2f} (PnL ${pnl:.2f})")
+        if success:
+            print(f"  [{user_label}] SUCCESS: Sold {fill_count} contracts for ${revenue:.2f} (PnL ${pnl:.2f})")
+        else:
+            print(f"  [{user_label}] WARNING: Exit executed but DB persistence failed for game_pk={order['game_pk']}")
         return True, True
     except Exception as exc:
         print(f"  [{user_label}] ERROR exiting position for {order['kalshi_ticker']}: {exc}")

@@ -3701,8 +3701,8 @@ def get_open_orders_with_live_data() -> list[dict]:
         conn.close()
 
 
-def update_user_order_status(email: str, game_pk: int | str, status: str, profit_loss: float | None = None) -> None:
-    """Update order status and realized PnL."""
+def update_user_order_status(email: str, game_pk: int | str, status: str, profit_loss: float | None = None) -> bool:
+    """Update order status and realized PnL. Returns True if a row was updated."""
     email = _norm_email(email)
     pnl_cents = _dollars_to_cents(profit_loss)
     conn = get_connection()
@@ -3714,11 +3714,13 @@ def update_user_order_status(email: str, game_pk: int | str, status: str, profit
                 SET status = %s,
                     profit_loss_cents = COALESCE(%s, profit_loss_cents),
                     updated_at = NOW()
-                WHERE email = %s AND game_pk = %s
+                WHERE email = %s AND game_pk = %s::bigint
                 """,
-                (status, pnl_cents, email, int(game_pk)),
+                (status, pnl_cents, email, game_pk),
             )
+            count = cur.rowcount
         conn.commit()
+        return count > 0
     finally:
         conn.close()
 
