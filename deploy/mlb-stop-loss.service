@@ -1,0 +1,19 @@
+[Unit]
+Description=MLB Pipeline Stop-Loss Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mlb
+Group=mlb
+WorkingDirectory=/opt/mlb/pipeline
+ExecStart=/opt/mlb/pipeline/.venv/bin/python scripts/monitor_stop_loss.py
+Environment=HOME=/opt/mlb
+Environment=PYTHONUNBUFFERED=1
+RuntimeMaxSec=90
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

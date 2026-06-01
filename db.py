@@ -3670,6 +3670,59 @@ def get_user_order(email: str, game_pk: str | int) -> dict | None:
         conn.close()
 
 
+def get_open_orders_with_live_data() -> list[dict]:
+    """Return open Kalshi orders joined with live game state for stop-loss evaluation."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT 
+                    uo.email, uo.game_pk, uo.game_date, uo.kalshi_ticker, uo.n_contracts, uo.bet_side, uo.status, uo.bet_cents,
+                    g.home_team, g.away_team, g.home_score, g.away_score, g.over_under,
+                    g.extra->>'inning' AS inning,
+                    g.extra->>'is_top_inning' AS is_top_inning,
+                    g.extra->>'inning_state' AS inning_state,
+                    ka.kalshi_env
+                FROM user_orders uo
+                JOIN games g ON uo.game_pk = g.game_pk
+                JOIN kalshi_accounts ka ON ka.email = uo.email
+                WHERE uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND uo.result IS NULL
+                  AND COALESCE(uo.n_contracts, 0) > 0
+                  AND ka.is_active = TRUE
+                  AND g.home_win IS NULL
+                  AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled', 'final')
+                """
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_user_order_status(email: str, game_pk: int | str, status: str, profit_loss: float | None = None) -> None:
+    """Update order status and realized PnL."""
+    email = _norm_email(email)
+    pnl_cents = _dollars_to_cents(profit_loss)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE user_orders
+                SET status = %s,
+                    profit_loss_cents = COALESCE(%s, profit_loss_cents),
+                    updated_at = NOW()
+                WHERE email = %s AND game_pk = %s
+                """,
+                (status, pnl_cents, email, int(game_pk)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_open_live_user_orders_for_refresh(
     stale_seconds: int = 300,
     limit: int = 200,

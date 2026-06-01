@@ -1,0 +1,22 @@
+[Unit]
+Description=MLB Betting Pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+WatchdogSec=120
+User=mlb
+Group=mlb
+WorkingDirectory=/opt/mlb/pipeline
+ExecStart=/opt/mlb/pipeline/.venv/bin/python3 run_pipeline.py
+Restart=on-failure
+RestartSec=60
+StandardOutput=journal
+StandardError=journal
+Environment=HOME=/opt/mlb
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

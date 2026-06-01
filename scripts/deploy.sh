@@ -128,6 +128,26 @@ run_systemctl() {
     sudo "$SYSTEMCTL_BIN" "$@"
 }
 
+install_stop_loss_units() {
+    local svc_src="${REPO_DIR}/deploy/mlb-stop-loss.service"
+    local timer_src="${REPO_DIR}/deploy/mlb-stop-loss.timer"
+    local svc_dst="/etc/systemd/system/mlb-stop-loss.service"
+    local timer_dst="/etc/systemd/system/mlb-stop-loss.timer"
+
+    if [[ ! -f "$svc_src" || ! -f "$timer_src" ]]; then
+        log INFO "Stop-loss unit files not present in repo; skipping timer install"
+        return 0
+    fi
+
+    log INFO "Installing stop-loss systemd units"
+    sudo install -o root -g root -m 0644 "$svc_src" "$svc_dst" || return 1
+    sudo install -o root -g root -m 0644 "$timer_src" "$timer_dst" || return 1
+
+    run_systemctl daemon-reload || return 1
+    run_systemctl enable mlb-stop-loss.timer || return 1
+    run_systemctl restart mlb-stop-loss.timer || return 1
+}
+
 repair_git_permissions() {
     local git_dir="${REPO_DIR}/.git"
     local objects_dir="${git_dir}/objects"
@@ -226,6 +246,10 @@ deploy_from_archive() {
 
     log INFO "Syncing dependencies with uv"
     uv sync --quiet || error_exit "Dependency sync failed"
+
+    if ! install_stop_loss_units; then
+        error_exit "Failed to install stop-loss systemd units"
+    fi
 
     log INFO "Stopping services for restart"
     run_systemctl stop mlb-dashboard || log WARN "Failed to stop mlb-dashboard"
@@ -422,6 +446,12 @@ deploy() {
         rollback
         error_exit "Dependency sync failed and rollback completed"
     }
+
+    if ! install_stop_loss_units; then
+        log ERROR "Failed to install stop-loss systemd units"
+        rollback
+        error_exit "Stop-loss unit install failed and rollback completed"
+    fi
 
     # Stop services before restart
     log INFO "Stopping services for restart"

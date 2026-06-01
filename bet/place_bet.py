@@ -90,6 +90,14 @@ def _market_yes_price(market: dict) -> float | None:
     ))
 
 
+def _market_yes_bid(market: dict) -> float | None:
+    return _price_to_dollars(_first_float(
+        market.get("yes_bid_dollars"),
+        market.get("yes_bid"),
+        market.get("yes_bid_cents"),
+    ))
+
+
 def _order_fill_count(order: dict) -> float:
     return _first_float(
         order.get("fill_count"),
@@ -143,17 +151,19 @@ def _post_legacy_order(
     ticker: str,
     n_contracts: int,
     limit_price_cents: int,
+    action: str = "buy",
+    side: str = "yes",
 ) -> tuple[dict, str]:
     order_path = api_path("portfolio/orders")
     headers = auth_headers(key_id, private_key, "POST", order_path)
     order_body = {
         "ticker": ticker,
-        "side": "yes",
-        "action": "buy",
+        "side": side,
+        "action": action,
         "time_in_force": "immediate_or_cancel",
         "count": n_contracts,
         "client_order_id": str(uuid.uuid4()),
-        "yes_price": limit_price_cents,
+        "yes_price" if side == "yes" else "no_price": limit_price_cents,
     }
     resp = session.post(
         base_url + "/portfolio/orders",
@@ -174,12 +184,13 @@ def _post_events_order(
     ticker: str,
     n_contracts: int,
     limit_price_cents: int,
+    side: str = "bid",
 ) -> tuple[dict, str]:
     order_path = api_path("portfolio/events/orders")
     headers = auth_headers(key_id, private_key, "POST", order_path)
     order_body = {
         "ticker": ticker,
-        "side": "bid",
+        "side": side,
         "count": f"{float(n_contracts):.2f}",
         "price": f"{limit_price_cents / 100.0:.4f}",
         "time_in_force": "immediate_or_cancel",
@@ -200,7 +211,8 @@ def _post_events_order(
             "falling back to legacy /portfolio/orders."
         )
         return _post_legacy_order(
-            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents
+            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents,
+            action="buy", side="yes"
         )
     raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
 
@@ -213,14 +225,85 @@ def _post_kalshi_order(
     ticker: str,
     n_contracts: int,
     limit_price_cents: int,
+    action: str = "buy",
+    side: str = "yes",
 ) -> tuple[dict, str]:
     if KALSHI_ORDER_ENDPOINT == "legacy":
         return _post_legacy_order(
-            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents
+            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents,
+            action=action, side=side
         )
+    
+    # Map (action, side) to events API side
+    # buy yes -> bid
+    # sell yes -> ask
+    events_side = "bid"
+    if action == "sell":
+        events_side = "ask"
+    
     return _post_events_order(
-        session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents
+        session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents,
+        side=events_side
     )
+
+
+def exit_kalshi_position(ticker: str, n_contracts: int, kalshi_env: str, email: str) -> dict | None:
+    """
+    Exit a Kalshi position by placing a SELL order for YES contracts.
+    Fetches the current yes_bid and places an 'immediate_or_cancel' limit order.
+    Returns the fill details or None if no bids exist.
+    """
+    account = DB.get_kalshi_account(email)
+    if not account or not account.get("is_active"):
+        raise PlaceBetError(f"No active Kalshi account for {email}")
+
+    key_id, private_key = load_credentials(
+        key_id=account["key_id"],
+        key_path=account["key_path"],
+        private_key_pem=account.get("private_key_pem") or None,
+    )
+    base_url = get_base_url(kalshi_env)
+    session = _retry_session()
+
+    # Fetch current bid
+    resp = session.get(base_url + f"/markets/{ticker}", timeout=15)
+    resp.raise_for_status()
+    market = resp.json().get("market", {})
+
+    bid_price = _market_yes_bid(market)
+    if bid_price is None or bid_price <= 0:
+        print(f"  No bids found for {ticker} — cannot exit via IOC.")
+        return None
+
+    limit_price_cents = int(round(bid_price * 100))
+
+    print(f"  Exiting {ticker}: selling {n_contracts} at {limit_price_cents}c...")
+
+    order, order_api = _post_kalshi_order(
+        session,
+        base_url,
+        key_id,
+        private_key,
+        ticker,
+        n_contracts,
+        limit_price_cents,
+        action="sell",
+        side="yes",
+    )
+
+    fill_count = _order_fill_count(order)
+    actual_revenue = (
+        _events_order_fill_cost(order)
+        if order_api == "events"
+        else _order_fill_cost(order)
+    )
+
+    return {
+        "order_id": order["order_id"],
+        "fill_count": fill_count,
+        "revenue": actual_revenue,
+        "price": bid_price,
+    }
 
 
 def _place_bet_error_status(exc: Exception) -> str:
