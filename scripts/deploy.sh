@@ -140,12 +140,27 @@ install_stop_loss_units() {
     fi
 
     log INFO "Installing stop-loss systemd units"
-    sudo install -o root -g root -m 0644 "$svc_src" "$svc_dst" || return 1
-    sudo install -o root -g root -m 0644 "$timer_src" "$timer_dst" || return 1
+    # Important: GitHub Actions deploy runs non-interactively. Some targets may not have
+    # passwordless sudo, so prefer `sudo -n` and gracefully skip installation when it
+    # would otherwise prompt for a password.
+    if ! sudo -n install -o root -g root -m 0644 "$svc_src" "$svc_dst"; then
+        log WARN "Could not install ${svc_dst} (sudo requires password or lacks privileges); continuing"
+    fi
+    if ! sudo -n install -o root -g root -m 0644 "$timer_src" "$timer_dst"; then
+        log WARN "Could not install ${timer_dst} (sudo requires password or lacks privileges); continuing"
+    fi
 
-    run_systemctl daemon-reload || return 1
-    run_systemctl enable mlb-stop-loss.timer || return 1
-    run_systemctl restart mlb-stop-loss.timer || return 1
+    # If the unit files are already present from a previous deploy/manual install, it's
+    # still worth trying to (re)enable them even when the update step couldn't run.
+    if [[ ! -f "$svc_dst" || ! -f "$timer_dst" ]]; then
+        log WARN "Stop-loss unit files not present on target (${svc_dst}, ${timer_dst}); skipping enable/restart"
+        return 0
+    fi
+
+    run_systemctl daemon-reload || log WARN "Failed to daemon-reload systemd (continuing)"
+    run_systemctl enable mlb-stop-loss.timer || log WARN "Failed to enable mlb-stop-loss.timer (continuing)"
+    run_systemctl restart mlb-stop-loss.timer || log WARN "Failed to restart mlb-stop-loss.timer (continuing)"
+    return 0
 }
 
 repair_git_permissions() {
