@@ -1,9 +1,11 @@
 [Unit]
-Description=Run MLB stop-loss monitor every 2 minutes
+Description=Run MLB stop-loss monitor every 2 minutes (11:00-03:00 ET)
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=2min
+# Active window: 11:00 through 03:59 ET (generous late-game / west-coast coverage).
+Timezone=America/New_York
+OnCalendar=*-*-* 11..23:00/2:00
+OnCalendar=*-*-* 00..03:00/2:00
 RandomizedDelaySec=20s
 AccuracySec=15s
 Persistent=true

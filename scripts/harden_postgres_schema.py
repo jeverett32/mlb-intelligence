@@ -29,6 +29,7 @@ ORDER_STATUSES = (
     "skipped_no_live_edge",
     "skipped_too_small",
     "skipped_below_contract",
+    "sold_stop_loss",
 )
 
 PIPELINE_STATUSES = ("running", "success", "aborted", "error")
@@ -59,6 +60,14 @@ def _constraint_exists(cur, table: str, name: str) -> bool:
 def _add_constraint(cur, table: str, name: str, definition: str) -> None:
     if not _constraint_exists(cur, table, name):
         cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition} NOT VALID")
+    cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+
+
+def _replace_check_constraint(cur, table: str, name: str, definition: str) -> None:
+    """Drop and recreate a CHECK constraint so allowed values can be extended."""
+    if _constraint_exists(cur, table, name):
+        cur.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
+    cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition} NOT VALID")
     cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
 
 
@@ -149,7 +158,7 @@ def main() -> int:
                 )
 
             for table in ("user_orders", "paper_orders"):
-                _add_constraint(
+                _replace_check_constraint(
                     cur,
                     table,
                     f"{table}_status_check",
