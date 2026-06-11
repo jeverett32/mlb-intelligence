@@ -13,6 +13,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import psycopg2.errors
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import db
@@ -57,18 +59,65 @@ def _constraint_exists(cur, table: str, name: str) -> bool:
     return cur.fetchone() is not None
 
 
+def _with_savepoint(cur, label: str, fn) -> None:
+    cur.execute("SAVEPOINT harden_step")
+    try:
+        fn()
+        cur.execute("RELEASE SAVEPOINT harden_step")
+    except psycopg2.errors.InsufficientPrivilege:
+        cur.execute("ROLLBACK TO SAVEPOINT harden_step")
+        print(f"Skipping {label}: insufficient privilege")
+
+
 def _add_constraint(cur, table: str, name: str, definition: str) -> None:
-    if not _constraint_exists(cur, table, name):
-        cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition} NOT VALID")
-    cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+    def _apply() -> None:
+        if not _constraint_exists(cur, table, name):
+            cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition} NOT VALID")
+        cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+
+    _with_savepoint(cur, f"constraint {table}.{name}", _apply)
 
 
 def _replace_check_constraint(cur, table: str, name: str, definition: str) -> None:
     """Drop and recreate a CHECK constraint so allowed values can be extended."""
-    if _constraint_exists(cur, table, name):
-        cur.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
-    cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition} NOT VALID")
-    cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+    def _apply() -> None:
+        if _constraint_exists(cur, table, name):
+            cur.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
+        cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition} NOT VALID")
+        cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+
+    _with_savepoint(cur, f"constraint {table}.{name}", _apply)
+
+
+def _status_check_includes(cur, table: str, name: str, status: str) -> bool:
+    cur.execute(
+        """
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = %s::regclass
+          AND conname = %s
+        """,
+        (table, name),
+    )
+    row = cur.fetchone()
+    return bool(row and status in row[0])
+
+
+def _ensure_status_check(cur, table: str) -> None:
+    """Extend order status CHECK constraints without rewriting them on every run."""
+    name = f"{table}_status_check"
+    definition = f"CHECK (status IN ({_in(ORDER_STATUSES)}))"
+
+    def _apply() -> None:
+        if _constraint_exists(cur, table, name):
+            if _status_check_includes(cur, table, name, "sold_stop_loss"):
+                cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+                return
+            _replace_check_constraint(cur, table, name, definition)
+            return
+        _add_constraint(cur, table, name, definition)
+
+    _with_savepoint(cur, f"status check {table}", _apply)
 
 
 def _set_not_null(cur, table: str, column: str) -> None:
@@ -113,6 +162,9 @@ def main() -> int:
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout TO 0")
 
+            for table in ("user_orders", "paper_orders"):
+                _ensure_status_check(cur, table)
+
             cur.execute("UPDATE bets SET bet_side = 'none' WHERE bet_side IS NULL")
 
             _convert_game_time(cur)
@@ -155,14 +207,6 @@ def main() -> int:
                     table,
                     f"{table}_bet_cents_check",
                     "CHECK (bet_cents IS NULL OR bet_cents >= 0)",
-                )
-
-            for table in ("user_orders", "paper_orders"):
-                _replace_check_constraint(
-                    cur,
-                    table,
-                    f"{table}_status_check",
-                    f"CHECK (status IN ({_in(ORDER_STATUSES)}))",
                 )
 
             _add_constraint(

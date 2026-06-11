@@ -271,10 +271,25 @@ def test_backfill_user_order_results_queues_only_winning_live_orders(monkeypatch
 
     count = db.backfill_user_order_results()
 
-    sql, _ = cursor.calls[0]
+    sql, params = cursor.calls[0]
     assert count == 3
     assert "RETURNING uo.email, uo.game_pk, uo.status, uo.dry_run, uo.profit_loss_cents" in sql
+    assert "uo.status <> %s" in sql
+    assert params == (db.SOLD_STOP_LOSS_STATUS,)
     assert queued == [("winner@example.com", 1)]
+
+
+def test_backfill_user_order_results_skips_stop_loss_orders(monkeypatch):
+    cursor = _SingleCursor(rows=[])
+    conn = _FakeConnection(cursor)
+    monkeypatch.setattr(db, "get_connection", lambda: conn)
+
+    count = db.backfill_user_order_results()
+
+    sql, params = cursor.calls[0]
+    assert count == 0
+    assert "uo.status <> %s" in sql
+    assert params == (db.SOLD_STOP_LOSS_STATUS,)
 
 
 def test_process_due_kalshi_balance_refresh_jobs_marks_success(monkeypatch):

@@ -163,6 +163,23 @@ install_stop_loss_units() {
     return 0
 }
 
+run_schema_hardening() {
+    local harden_script="${REPO_DIR}/scripts/harden_postgres_schema.py"
+    if [[ ! -f "$harden_script" ]]; then
+        log INFO "Schema hardening script not present; skipping"
+        return 0
+    fi
+
+    log INFO "Running Postgres schema hardening"
+    if ! (cd "$REPO_DIR" && uv run python scripts/harden_postgres_schema.py); then
+        log WARN "Schema hardening failed (DB owner privileges may be required); continuing"
+        return 0
+    fi
+
+    log INFO "Schema hardening complete"
+    return 0
+}
+
 repair_git_permissions() {
     local git_dir="${REPO_DIR}/.git"
     local objects_dir="${git_dir}/objects"
@@ -265,6 +282,8 @@ deploy_from_archive() {
     if ! install_stop_loss_units; then
         error_exit "Failed to install stop-loss systemd units"
     fi
+
+    run_schema_hardening
 
     log INFO "Stopping services for restart"
     run_systemctl stop mlb-dashboard || log WARN "Failed to stop mlb-dashboard"
@@ -467,6 +486,8 @@ deploy() {
         rollback
         error_exit "Stop-loss unit install failed and rollback completed"
     fi
+
+    run_schema_hardening
 
     # Stop services before restart
     log INFO "Stopping services for restart"

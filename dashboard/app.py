@@ -1153,7 +1153,8 @@ def get_bets(
         statuses = PAPER_BET_STATUSES if mode == "paper" else LIVE_BET_STATUSES
         df = df[_is_open_position_frame(df, statuses)].copy()
     elif status == "settled" and "result" in df.columns:
-        df = df[df["result"].notna()].copy()
+        status_col = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
+        df = df[df["result"].notna() | (status_col == DB.SOLD_STOP_LOSS_STATUS)].copy()
     elif status != "all":
         raise HTTPException(status_code=400, detail="Invalid bets status filter")
 
@@ -1163,6 +1164,11 @@ def get_bets(
     if "result" in df.columns and "bet_dollars" in df.columns:
 
         def calc_pnl(row):
+            if str(row.get("status") or "") == DB.SOLD_STOP_LOSS_STATUS:
+                pl = row.get("profit_loss")
+                if pl is not None and not pd.isna(pl):
+                    return round(float(pl), 2)
+                return None
             if pd.isna(row.get("result")) or pd.isna(row.get("bet_dollars")):
                 return None
             won = (bool(row["result"]) and row["bet_side"] == "home") or (

@@ -107,7 +107,7 @@ def _try_exit_order(order: dict, dry_run: bool) -> tuple[bool, bool]:
         success = DB.update_user_order_status(
             order["email"],
             order["game_pk"],
-            status="sold_stop_loss",
+            status=DB.SOLD_STOP_LOSS_STATUS,
             profit_loss=pnl,
         )
         if success:

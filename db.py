@@ -415,6 +415,8 @@ RETRYABLE_ORDER_STATUSES = (
     "skipped_no_live_price",
 )
 
+SOLD_STOP_LOSS_STATUS = "sold_stop_loss"
+
 PAPER_STARTING_BANKROLL_DOLLARS = 10_000.0
 PAPER_UNIVERSAL_EMAIL = "__paper_universal__"
 
@@ -4124,12 +4126,14 @@ def backfill_user_order_results():
                 WHERE uo.game_pk = g.game_pk
                   AND g.home_win IS NOT NULL
                   AND COALESCE(g.extra->>'game_status', '') NOT IN ('postponed', 'cancelled')
+                  AND uo.status <> %s
                   AND (
                       uo.result IS DISTINCT FROM g.home_win
                       OR uo.profit_loss_cents IS NULL
                   )
                 RETURNING uo.email, uo.game_pk, uo.status, uo.dry_run, uo.profit_loss_cents
-                """
+                """,
+                (SOLD_STOP_LOSS_STATUS,),
             )
             updated_orders = [dict(r) for r in cur.fetchall()]
         conn.commit()
