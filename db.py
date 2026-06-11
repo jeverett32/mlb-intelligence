@@ -2755,6 +2755,45 @@ def reschedule_kalshi_balance_refresh_job(
         conn.close()
 
 
+def get_pending_payout_user_orders(email: str) -> pd.DataFrame:
+    """Winning live orders awaiting Kalshi balance credit after settlement."""
+    email = _norm_email(email)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT uo.*,
+                       j.id AS balance_refresh_job_id,
+                       j.status AS balance_refresh_status,
+                       j.run_after AS balance_refresh_run_after,
+                       j.attempts AS balance_refresh_attempts,
+                       j.last_error AS balance_refresh_last_error
+                FROM user_orders uo
+                INNER JOIN kalshi_balance_refresh_jobs j
+                  ON j.email = uo.email
+                 AND j.game_pk = uo.game_pk
+                WHERE uo.email = %s
+                  AND uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND uo.result IS NOT NULL
+                  AND uo.profit_loss_cents > 0
+                  AND j.status <> 'completed'
+                ORDER BY uo.game_date DESC NULLS LAST, uo.game_pk DESC
+                """,
+                (email,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df = _money_alias_df(df)
+    df = df.drop(columns=["created_at", "updated_at"], errors="ignore")
+    return df
+
+
 def get_recent_completed_kalshi_balance_refresh_jobs_for_winners(
     *,
     lookback_hours: int = 24,

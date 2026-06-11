@@ -1070,6 +1070,37 @@ LIVE_BET_STATUSES = {"filled"}
 PAPER_BET_STATUSES = {"dry_run"}
 
 
+def _order_payout_dollars(row: pd.Series) -> float | None:
+    n_contracts = row.get("n_contracts")
+    if n_contracts is not None and not pd.isna(n_contracts):
+        return round(float(n_contracts), 2)
+    stake = row.get("bet_dollars")
+    profit = row.get("profit_loss")
+    if stake is not None and not pd.isna(stake) and profit is not None and not pd.isna(profit):
+        return round(float(stake) + float(profit), 2)
+    bet_cents = row.get("bet_cents")
+    pl_cents = row.get("profit_loss_cents")
+    if bet_cents is not None and not pd.isna(bet_cents) and pl_cents is not None and not pd.isna(pl_cents):
+        return round((int(bet_cents) + int(pl_cents)) / 100.0, 2)
+    return None
+
+
+def _pending_payout_orders_df(email: str) -> pd.DataFrame:
+    df = DB.get_pending_payout_user_orders(email)
+    if df.empty:
+        return df
+    df = df.copy()
+    df["payout_dollars"] = df.apply(_order_payout_dollars, axis=1)
+    return df
+
+
+def _pending_payout_game_pks(email: str) -> set[str]:
+    df = _pending_payout_orders_df(email)
+    if df.empty or "game_pk" not in df.columns:
+        return set()
+    return {str(pk) for pk in df["game_pk"].dropna().astype(str)}
+
+
 def _validate_bet_mode(mode: str) -> str:
     mode = (mode or "paper").strip().lower()
     if mode not in {"paper", "live"}:
@@ -1155,6 +1186,10 @@ def get_bets(
     elif status == "settled" and "result" in df.columns:
         status_col = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
         df = df[df["result"].notna() | (status_col == DB.SOLD_STOP_LOSS_STATUS)].copy()
+        if mode == "live" and not df.empty:
+            pending_pks = _pending_payout_game_pks(user["email"])
+            if pending_pks:
+                df = df[~df["game_pk"].astype(str).isin(pending_pks)].copy()
     elif status != "all":
         raise HTTPException(status_code=400, detail="Invalid bets status filter")
 
@@ -1268,6 +1303,37 @@ def get_open_bets(mode: str = "paper", model: str = "v1", user: dict = Depends(r
     return {"bets": _safe_records(open_df), "total": len(open_df)}
 
 
+@app.get("/api/pending-payouts")
+def get_pending_payouts(mode: str = "paper", user: dict = Depends(require_approved_user)):
+    mode = _validate_bet_mode(mode)
+    if mode != "live":
+        return {"bets": [], "total": 0, "pending_payout_dollars": 0.0}
+
+    df = _pending_payout_orders_df(user["email"])
+    if df.empty:
+        return {"bets": [], "total": 0, "pending_payout_dollars": 0.0}
+
+    if "game_pk" in df.columns:
+        df["game_pk"] = df["game_pk"].astype(str)
+
+    sort_cols = [c for c in ("game_date", "balance_refresh_run_after", "game_pk") if c in df.columns]
+    if sort_cols:
+        ascending = {"game_date": False, "balance_refresh_run_after": True, "game_pk": True}
+        df = df.sort_values(
+            by=sort_cols,
+            ascending=[ascending[c] for c in sort_cols],
+        )
+
+    pending_total = float(
+        pd.to_numeric(df.get("payout_dollars"), errors="coerce").fillna(0).sum()
+    )
+    return {
+        "bets": _safe_records(df),
+        "total": len(df),
+        "pending_payout_dollars": round(pending_total, 2),
+    }
+
+
 # ---------------------------------------------------------------------------
 # API — Balance
 # ---------------------------------------------------------------------------
@@ -1356,12 +1422,26 @@ def get_balance(user: dict = Depends(require_approved_user)):
             except Exception:
                 pass
     if df.empty:
-        return {"history": [], "current_dollars": 0.0}
+        return {
+            "history": [],
+            "current_dollars": 0.0,
+            "pending_payout_dollars": 0.0,
+            "effective_dollars": 0.0,
+        }
     current_dollars = float(df.iloc[-1]["balance_dollars"])
     daily_df = DB.get_user_balance_daily_history(user["email"])
+    pending_df = _pending_payout_orders_df(user["email"])
+    pending_dollars = 0.0
+    if not pending_df.empty and "payout_dollars" in pending_df.columns:
+        pending_dollars = round(
+            float(pd.to_numeric(pending_df["payout_dollars"], errors="coerce").fillna(0).sum()),
+            2,
+        )
     return {
         "history": _safe_records(daily_df),
         "current_dollars": current_dollars,
+        "pending_payout_dollars": pending_dollars,
+        "effective_dollars": round(current_dollars + pending_dollars, 2),
     }
 
 

@@ -402,6 +402,149 @@ def test_paper_bankroll_endpoint_includes_history(monkeypatch, app_module, clien
     assert body["history"][-1]["balance_dollars"] == 10409.09
 
 
+def _approved_user_session(monkeypatch, app_module):
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_session_user",
+        lambda session_id: {
+            "email": "user@example.com",
+            "approval_status": app_module.DB.USER_STATUS_APPROVED,
+            "is_admin": False,
+        },
+    )
+
+
+def _pending_winning_live_order() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "game_pk": "42",
+                "game_date": "2026-06-10",
+                "home_team": "NYY",
+                "away_team": "BOS",
+                "bet_side": "home",
+                "bet_dollars": 50.0,
+                "bet_cents": 5000,
+                "profit_loss": 75.0,
+                "profit_loss_cents": 7500,
+                "n_contracts": 125,
+                "result": True,
+                "status": "filled",
+                "balance_refresh_status": "pending",
+            }
+        ]
+    )
+
+
+def test_api_pending_payouts_returns_live_winners_awaiting_credit(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_pending_payout_user_orders",
+        lambda email: _pending_winning_live_order(),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/pending-payouts?mode=live")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["pending_payout_dollars"] == 125.0
+    assert body["bets"][0]["payout_dollars"] == 125.0
+    assert body["bets"][0]["balance_refresh_status"] == "pending"
+
+
+def test_api_pending_payouts_empty_for_paper_mode(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_pending_payout_user_orders",
+        lambda email: _pending_winning_live_order(),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/pending-payouts?mode=paper")
+    assert r.status_code == 200
+    assert r.json() == {"bets": [], "total": 0, "pending_payout_dollars": 0.0}
+
+
+def test_api_bets_settled_excludes_pending_payout_live_wins(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "42",
+                    "game_date": "2026-06-10",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "bet_side": "home",
+                    "bet_dollars": 50.0,
+                    "result": True,
+                    "status": "filled",
+                    "n_contracts": 125,
+                },
+                {
+                    "game_pk": "43",
+                    "game_date": "2026-06-09",
+                    "home_team": "LAD",
+                    "away_team": "SFG",
+                    "bet_side": "away",
+                    "bet_dollars": 40.0,
+                    "result": False,
+                    "status": "filled",
+                    "n_contracts": 40,
+                },
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_pending_payout_user_orders",
+        lambda email: _pending_winning_live_order(),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/bets?mode=live&status=settled&limit=10")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["bets"][0]["game_pk"] == "43"
+
+
+def test_api_balance_includes_pending_payout_dollars(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_balance_history",
+        lambda email: pd.DataFrame(
+            [{"recorded_at": "2026-06-10", "balance_dollars": 1000.0, "source": "kalshi"}]
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_balance_daily_history",
+        lambda email: pd.DataFrame(
+            [{"recorded_at": "2026-06-10", "balance_dollars": 1000.0, "source": "kalshi"}]
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_pending_payout_user_orders",
+        lambda email: _pending_winning_live_order(),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/balance")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["current_dollars"] == 1000.0
+    assert body["pending_payout_dollars"] == 125.0
+    assert body["effective_dollars"] == 1125.0
+
+
 def test_api_bets_computes_pnl_from_live_price_when_missing(monkeypatch, app_module, client):
     # Regression test: paper/dry-run bets can have live_price but no market_implied_prob
     # and no n_contracts. Wins should still have profit_loss computed.

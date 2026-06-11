@@ -215,6 +215,32 @@ def test_next_batch_runs_late_game_before_first_pitch(monkeypatch):
     assert run_at == datetime(2026, 4, 27, 19, 50, tzinfo=timezone.utc)
 
 
+def test_get_pending_payout_user_orders_filters_incomplete_refresh_jobs(monkeypatch):
+    rows = [
+        {
+            "game_pk": 42,
+            "bet_cents": 5000,
+            "profit_loss_cents": 7500,
+            "n_contracts": 125,
+            "balance_refresh_status": "pending",
+        }
+    ]
+    cursor = _SingleCursor(rows=rows)
+    conn = _FakeConnection(cursor)
+    monkeypatch.setattr(db, "get_connection", lambda: conn)
+
+    df = db.get_pending_payout_user_orders("user@example.com")
+
+    sql, params = cursor.calls[0]
+    assert params == ("user@example.com",)
+    assert "kalshi_balance_refresh_jobs" in sql
+    assert "j.status <> 'completed'" in sql
+    assert "uo.profit_loss_cents > 0" in sql
+    assert len(df) == 1
+    assert df.iloc[0]["bet_dollars"] == 50.0
+    assert df.iloc[0]["profit_loss"] == 75.0
+
+
 def test_enqueue_kalshi_balance_refresh_job_dedupes_with_upsert(monkeypatch):
     cursor = _SingleCursor(one=[123])
     conn = _FakeConnection(cursor)
