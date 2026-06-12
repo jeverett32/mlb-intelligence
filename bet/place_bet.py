@@ -107,7 +107,23 @@ def _order_fill_count(order: dict) -> float:
     ) or 0.0
 
 
+def _order_side_price_dollars(order: dict, side: str) -> float | None:
+    side = str(side or "yes").strip().lower()
+    if side == "yes":
+        return _price_to_dollars(_first_float(
+            order.get("yes_price_dollars"),
+            order.get("yes_price"),
+            order.get("yes_price_cents"),
+        ))
+    return _price_to_dollars(_first_float(
+        order.get("no_price_dollars"),
+        order.get("no_price"),
+        order.get("no_price_cents"),
+    ))
+
+
 def _order_fill_cost(order: dict) -> float:
+    """Cash spent to acquire contracts on a buy order."""
     taker_dollars = _first_float(order.get("taker_fill_cost_dollars"))
     maker_dollars = _first_float(order.get("maker_fill_cost_dollars"))
     if taker_dollars is not None or maker_dollars is not None:
@@ -121,6 +137,25 @@ def _order_fill_cost(order: dict) -> float:
         return ((taker_cents or 0.0) + (maker_cents or 0.0)) / 100.0
     filled_cents = _first_float(order.get("filled_cost"))
     return (filled_cents or 0.0) / 100.0 if filled_cents is not None else 0.0
+
+
+def _order_fill_revenue(order: dict) -> float:
+    """Cash received from selling contracts. Uses side price, not fill_cost."""
+    fill_count = _order_fill_count(order)
+    if fill_count <= 0:
+        return 0.0
+    side = str(order.get("side") or "yes").strip().lower()
+    side_price = _order_side_price_dollars(order, side)
+    if side_price is not None and side_price > 0:
+        return round(fill_count * side_price, 2)
+    avg_price = _price_to_dollars(_first_float(
+        order.get("average_fill_price"),
+        order.get("average_fill_price_dollars"),
+        order.get("price"),
+    ))
+    if avg_price is not None and avg_price > 0:
+        return round(fill_count * avg_price, 2)
+    return 0.0
 
 
 def _events_order_fill_cost(order: dict) -> float:
@@ -296,11 +331,9 @@ def exit_kalshi_position(ticker: str, n_contracts: int, kalshi_env: str, email: 
     )
 
     fill_count = _order_fill_count(order)
-    actual_revenue = (
-        _events_order_fill_cost(order)
-        if order_api == "events"
-        else _order_fill_cost(order)
-    )
+    actual_revenue = _order_fill_revenue(order)
+    if actual_revenue <= 0 and fill_count > 0 and bid_price > 0:
+        actual_revenue = round(fill_count * bid_price, 2)
 
     return {
         "order_id": order["order_id"],

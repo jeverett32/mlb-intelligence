@@ -2755,6 +2755,32 @@ def reschedule_kalshi_balance_refresh_job(
         conn.close()
 
 
+def complete_stale_kalshi_balance_refresh_jobs() -> int:
+    """Mark balance refresh jobs completed for settled games before today."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE kalshi_balance_refresh_jobs j
+                SET status = 'completed',
+                    completed_at = NOW(),
+                    last_error = NULL,
+                    updated_at = NOW()
+                FROM games g
+                WHERE j.game_pk = g.game_pk
+                  AND j.status <> 'completed'
+                  AND g.home_win IS NOT NULL
+                  AND g.game_date < CURRENT_DATE
+                """
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
 def get_pending_payout_user_orders(email: str) -> pd.DataFrame:
     """Winning live orders awaiting Kalshi balance credit after settlement."""
     email = _norm_email(email)

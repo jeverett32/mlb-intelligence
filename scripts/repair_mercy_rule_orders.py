@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from psycopg2.extras import RealDictCursor
 
 import db as DB
-from bet.place_bet import _order_fill_cost, _order_fill_count
+from bet.place_bet import _order_fill_cost, _order_fill_count, _order_fill_revenue
 from kalshi_client import api_path, auth_headers, get_base_url, load_credentials
 
 
@@ -55,10 +55,6 @@ def _fetch_orders_for_ticker(
     return orders if isinstance(orders, list) else [orders]
 
 
-def _order_fill_dollars(order: dict) -> float:
-    return round(float(_order_fill_cost(order) or 0.0), 2)
-
-
 def _pnl_from_kalshi_orders(orders: list[dict]) -> tuple[int | None, str]:
     buy_total = 0.0
     sell_total = 0.0
@@ -67,13 +63,18 @@ def _pnl_from_kalshi_orders(orders: list[dict]) -> tuple[int | None, str]:
     for order in orders:
         action = str(order.get("action") or "").lower()
         fills = float(_order_fill_count(order) or 0.0)
-        dollars = _order_fill_dollars(order)
-        if fills <= 0 or dollars <= 0:
+        if fills <= 0:
             continue
         if action == "buy":
+            dollars = round(float(_order_fill_cost(order) or 0.0), 2)
+            if dollars <= 0:
+                continue
             buy_total += dollars
             buy_fills += fills
         elif action == "sell":
+            dollars = round(float(_order_fill_revenue(order) or 0.0), 2)
+            if dollars <= 0:
+                continue
             sell_total += dollars
             sell_fills += fills
 
@@ -139,6 +140,30 @@ def _apply_repair(
         return updated
     finally:
         conn.close()
+
+
+def complete_stale_pending_payout_jobs(*, dry_run: bool = True) -> int:
+    if dry_run:
+        conn = DB.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM kalshi_balance_refresh_jobs j
+                    JOIN games g ON g.game_pk = j.game_pk
+                    WHERE j.status <> 'completed'
+                      AND g.home_win IS NOT NULL
+                      AND g.game_date < CURRENT_DATE
+                    """
+                )
+                return int(cur.fetchone()[0])
+        finally:
+            conn.close()
+    count = DB.complete_stale_kalshi_balance_refresh_jobs()
+    if count:
+        print(f"Completed {count} stale balance refresh job(s)")
+    return count
 
 
 def repair_mercy_rule_orders(*, dry_run: bool = True) -> dict:
@@ -244,10 +269,19 @@ def main() -> None:
         action="store_true",
         help="Persist repairs (default is dry-run).",
     )
+    parser.add_argument(
+        "--skip-pending-payouts",
+        action="store_true",
+        help="Do not complete stale balance refresh jobs.",
+    )
     args = parser.parse_args()
     dry_run = not args.apply
     if dry_run:
         print("Dry-run mode — pass --apply to write changes.")
+    if not args.skip_pending_payouts:
+        stale = complete_stale_pending_payout_jobs(dry_run=dry_run)
+        if dry_run:
+            print(f"WOULD complete {stale} stale balance refresh job(s)")
     stats = repair_mercy_rule_orders(dry_run=dry_run)
     print(
         "\nSummary: "
