@@ -545,6 +545,117 @@ def test_api_balance_includes_pending_payout_dollars(monkeypatch, app_module, cl
     assert body["effective_dollars"] == 1125.0
 
 
+def test_api_bets_mercy_rule_shows_exit_pnl_not_game_result(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "99",
+                    "game_date": "2026-06-10",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "bet_side": "home",
+                    "bet_dollars": 50.0,
+                    "profit_loss": -41.25,
+                    "profit_loss_cents": -4125,
+                    "n_contracts": 0,
+                    "result": None,
+                    "status": app_module.DB.SOLD_STOP_LOSS_STATUS,
+                    "predicted_prob": 0.62,
+                    "market_implied_prob": 0.58,
+                    "live_price": 0.58,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_pending_payout_user_orders",
+        lambda email: pd.DataFrame(),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/bets?mode=live&status=settled&limit=10")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    bet = body["bets"][0]
+    assert bet["status"] == app_module.DB.SOLD_STOP_LOSS_STATUS
+    assert bet["profit_loss"] == -41.25
+
+
+def test_api_bets_mercy_rule_excluded_from_open_positions(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "99",
+                    "game_date": "2026-06-10",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "bet_side": "home",
+                    "bet_dollars": 50.0,
+                    "profit_loss": -41.25,
+                    "n_contracts": 0,
+                    "result": None,
+                    "status": app_module.DB.SOLD_STOP_LOSS_STATUS,
+                    "live_price": 0.58,
+                    "current_price": 0.02,
+                    "current_value": 0.0,
+                    "unrealized_pnl": -48.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(app_module.DB, "get_games_df", lambda season=2026, upcoming_only=True: pd.DataFrame())
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/open-bets?mode=live")
+    assert r.status_code == 200
+    assert r.json() == {"bets": [], "total": 0}
+
+
+def test_performance_includes_mercy_rule_exit_loss(monkeypatch, app_module, client):
+    _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "get_user_orders",
+        lambda email: pd.DataFrame(
+            [
+                {
+                    "game_pk": "99",
+                    "game_date": "2026-06-10",
+                    "home_team": "NYY",
+                    "away_team": "BOS",
+                    "bet_side": "home",
+                    "bet_dollars": 50.0,
+                    "profit_loss": -41.25,
+                    "n_contracts": 0,
+                    "result": None,
+                    "status": app_module.DB.SOLD_STOP_LOSS_STATUS,
+                    "predicted_prob": 0.62,
+                    "market_implied_prob": 0.58,
+                }
+            ]
+        ),
+    )
+    client.cookies.set(app_module.COOKIE_NAME, "fake-session")
+
+    r = client.get("/api/performance?mode=live")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_bets"] == 1
+    assert body["wins"] == 0
+    assert body["losses"] == 1
+    assert body["roi_pct"] == -82.5
+
+
 def test_api_bets_computes_pnl_from_live_price_when_missing(monkeypatch, app_module, client):
     # Regression test: paper/dry-run bets can have live_price but no market_implied_prob
     # and no n_contracts. Wins should still have profit_loss computed.

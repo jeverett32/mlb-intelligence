@@ -772,6 +772,7 @@ def test_dashboard_open_positions_exclude_skipped_and_error_statuses(app_module)
             {"game_pk": 3, "result": None, "bet_dollars": 0.0, "status": "skipped_no_live_edge"},
             {"game_pk": 4, "result": True, "bet_dollars": 12.0, "status": "filled"},
             {"game_pk": 5, "result": None, "bet_dollars": 12.0, "status": "dry_run"},
+            {"game_pk": 6, "result": None, "bet_dollars": 12.0, "status": "sold_stop_loss"},
         ]
     )
 

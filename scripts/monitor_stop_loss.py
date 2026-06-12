@@ -99,16 +99,21 @@ def _try_exit_order(order: dict, dry_run: bool) -> tuple[bool, bool]:
             )
             return True, False
 
-        revenue = float(exit_result["revenue"])
-        cost = float(order.get("bet_cents") or 0) / 100.0
-        pnl = revenue - cost
-        
+        exit_price = float(exit_result.get("price") or 0)
+        if fill_count > 0 and exit_price > 0:
+            revenue = round(fill_count * exit_price, 2)
+        else:
+            revenue = round(float(exit_result.get("revenue") or 0), 2)
+        cost = round(float(order.get("bet_cents") or 0) / 100.0, 2)
+        pnl = round(revenue - cost, 2)
+
         # Update DB with terminal status 'sold_stop_loss'
         success = DB.update_user_order_status(
             order["email"],
             order["game_pk"],
             status=DB.SOLD_STOP_LOSS_STATUS,
             profit_loss=pnl,
+            n_contracts=0,
         )
         if success:
             print(f"  [{user_label}] SUCCESS: Sold {fill_count} contracts for ${revenue:.2f} (PnL ${pnl:.2f})")

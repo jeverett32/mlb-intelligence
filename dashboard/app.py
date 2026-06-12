@@ -1068,6 +1068,29 @@ def sync_client_heartbeat(
 ACTIVE_BET_STATUSES = {"filled", "dry_run"}
 LIVE_BET_STATUSES = {"filled"}
 PAPER_BET_STATUSES = {"dry_run"}
+TERMINAL_EXIT_STATUSES = {DB.SOLD_STOP_LOSS_STATUS}
+
+
+def _order_status_series(df: pd.DataFrame) -> pd.Series:
+    return df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
+
+
+def _is_settled_order_frame(df: pd.DataFrame) -> pd.Series:
+    if df.empty:
+        return pd.Series(dtype=bool)
+    status_col = _order_status_series(df)
+    result_settled = df["result"].notna() if "result" in df.columns else pd.Series(False, index=df.index)
+    return result_settled | status_col.isin(TERMINAL_EXIT_STATUSES)
+
+
+def _stop_loss_exit_pnl(row: pd.Series) -> float | None:
+    pl = row.get("profit_loss")
+    if pl is not None and not pd.isna(pl):
+        return round(float(pl), 2)
+    stake = row.get("bet_dollars")
+    if stake is not None and not pd.isna(stake):
+        return round(-float(stake), 2)
+    return None
 
 
 def _order_payout_dollars(row: pd.Series) -> float | None:
@@ -1142,8 +1165,13 @@ def _is_open_position_frame(df: pd.DataFrame, active_statuses: set[str] = ACTIVE
     result_open = df["result"].isna() if "result" in df.columns else pd.Series(True, index=df.index)
     dollars_src = df["bet_dollars"] if "bet_dollars" in df.columns else pd.Series(0, index=df.index)
     dollars = pd.to_numeric(dollars_src, errors="coerce").fillna(0)
-    statuses = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
-    return result_open & (dollars > 0) & statuses.isin(active_statuses)
+    statuses = _order_status_series(df)
+    return (
+        result_open
+        & (dollars > 0)
+        & statuses.isin(active_statuses)
+        & ~statuses.isin(TERMINAL_EXIT_STATUSES)
+    )
 
 
 @app.get("/api/bets")
@@ -1183,9 +1211,8 @@ def get_bets(
     if status == "open":
         statuses = PAPER_BET_STATUSES if mode == "paper" else LIVE_BET_STATUSES
         df = df[_is_open_position_frame(df, statuses)].copy()
-    elif status == "settled" and "result" in df.columns:
-        status_col = df.get("status", pd.Series("", index=df.index)).fillna("").astype(str)
-        df = df[df["result"].notna() | (status_col == DB.SOLD_STOP_LOSS_STATUS)].copy()
+    elif status == "settled":
+        df = df[_is_settled_order_frame(df)].copy()
         if mode == "live" and not df.empty:
             pending_pks = _pending_payout_game_pks(user["email"])
             if pending_pks:
@@ -1199,11 +1226,8 @@ def get_bets(
     if "result" in df.columns and "bet_dollars" in df.columns:
 
         def calc_pnl(row):
-            if str(row.get("status") or "") == DB.SOLD_STOP_LOSS_STATUS:
-                pl = row.get("profit_loss")
-                if pl is not None and not pd.isna(pl):
-                    return round(float(pl), 2)
-                return None
+            if str(row.get("status") or "") in TERMINAL_EXIT_STATUSES:
+                return _stop_loss_exit_pnl(row)
             if pd.isna(row.get("result")) or pd.isna(row.get("bet_dollars")):
                 return None
             won = (bool(row["result"]) and row["bet_side"] == "home") or (
@@ -1979,14 +2003,15 @@ def _build_public_performance(
         if bets_df.empty:
             return _empty_public_performance()
 
-        settled = bets_df[
-            bets_df["result"].notna() & bets_df["bet_dollars"].notna()
-        ].copy()
+        settled = bets_df[bets_df["bet_dollars"].notna()].copy()
+        settled = settled[_is_settled_order_frame(settled)].copy()
         settled = settled[settled["bet_dollars"].astype(float) > 0]
     if settled.empty:
         return _empty_public_performance()
 
     side = settled["bet_side"]
+    status_col = _order_status_series(settled)
+    stop_loss_mask = status_col.isin(TERMINAL_EXIT_STATUSES).to_numpy()
     if "_won" in settled.columns:
         won_mask = settled["_won"].astype(bool).to_numpy()
     else:
@@ -2013,14 +2038,33 @@ def _build_public_performance(
         ~np.isnan(n_contracts_arr), n_contracts_arr, bd * ratio
     )
 
+    if "profit_loss" in settled.columns:
+        exit_pnl = pd.to_numeric(settled["profit_loss"], errors="coerce").to_numpy()
+    else:
+        exit_pnl = np.full(len(settled), np.nan)
+    if stop_loss_mask.any():
+        won_mask = np.where(
+            stop_loss_mask,
+            np.where(~np.isnan(exit_pnl), exit_pnl > 0, False),
+            won_mask,
+        )
+
     total_bets = len(settled)
     wins = int(won_mask.sum())
     total_wagered = float(bd.sum())
     if "_profit_loss" in settled.columns:
-        roi = float(settled["_profit_loss"].sum()) / total_wagered if total_wagered else 0.0
+        row_pnl = pd.to_numeric(settled["_profit_loss"], errors="coerce").to_numpy()
+    elif "profit_loss" in settled.columns:
+        row_pnl = pd.to_numeric(settled["profit_loss"], errors="coerce").to_numpy()
     else:
-        total_returned = float(returned_row[won_mask].sum())
-        roi = (total_returned - total_wagered) / total_wagered if total_wagered else 0.0
+        row_pnl = np.full(len(settled), np.nan)
+    fallback_pnl = np.where(won_mask, returned_row - bd, -bd)
+    row_pnl = np.where(
+        stop_loss_mask,
+        np.where(~np.isnan(row_pnl), row_pnl, -bd),
+        np.where(~np.isnan(row_pnl), row_pnl, fallback_pnl),
+    )
+    roi = float(np.nansum(row_pnl)) / total_wagered if total_wagered else 0.0
 
     calibration: list[CalibrationPoint] = []
     if "predicted_prob" in settled.columns:

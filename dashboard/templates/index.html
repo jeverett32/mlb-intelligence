@@ -2011,11 +2011,21 @@ function sideBadge(side) {
   if (side === 'away') return badge('Away', 'away');
   return badge('Pass', 'gray');
 }
-function resultBadge(result, side) {
+function resultBadge(result, side, status) {
+  if (status === 'sold_stop_loss') return badge('Mercy Rule', 'inverse');
   if (result == null) return badge('Open', 'gold');
   if (!side || side === 'none') return result === true ? badge('Home Win', 'home') : badge('Away Win', 'away');
   if (result === true) return side === 'home' ? badge('Win', 'green') : badge('Loss', 'red');
   return side === 'away' ? badge('Win', 'green') : badge('Loss', 'red');
+}
+function settledBetPnl(bet) {
+  if (bet.status === 'sold_stop_loss') {
+    if (bet.profit_loss != null && !Number.isNaN(Number(bet.profit_loss))) {
+      return Number(bet.profit_loss);
+    }
+    return bet.bet_dollars == null ? null : -Number(bet.bet_dollars || 0);
+  }
+  return bet.profit_loss;
 }
 function pnlBadge(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
@@ -2741,8 +2751,8 @@ function renderSettledBets(data) {
         <td>${fmtPct(b.model_side_prob ?? b.predicted_prob)}</td>
         <td>${fmtPct(b.entry_price ?? b.market_side_prob ?? b.market_implied_prob)}</td>
         <td>${edgeText(b.edge)}</td>
-        <td>${resultBadge(b.result, b.bet_side)}</td>
-        <td>${pnlBadge(b.profit_loss)}</td>
+        <td>${resultBadge(b.result, b.bet_side, b.status)}</td>
+        <td>${pnlBadge(settledBetPnl(b))}</td>
       </tr>
     `),
     'No settled bets yet'
