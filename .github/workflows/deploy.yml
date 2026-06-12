@@ -77,22 +77,26 @@ jobs:
         run: |
           echo "=== Post-deployment verification ==="
 
-          # Wait for services to fully start
-          sleep 10
-
-          # Test health endpoint
-          curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/health || {
-            echo "ERROR: Health check failed after deployment"
-            exit 1
+          wait_for_url() {
+            local url="$1"
+            local label="$2"
+            local retries=12
+            local attempt=1
+            while [[ $attempt -le $retries ]]; do
+              if curl -f -s --connect-timeout 5 --max-time 10 "$url" >/dev/null; then
+                echo "✓ ${label}"
+                return 0
+              fi
+              echo "Waiting for ${label} (attempt ${attempt}/${retries})..."
+              sleep 5
+              attempt=$((attempt + 1))
+            done
+            echo "ERROR: ${label} failed after deployment"
+            return 1
           }
-          echo "✓ Health check passed"
 
-          # Test that dashboard loads
-          curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8080/ > /dev/null || {
-            echo "ERROR: Dashboard root page not loading"
-            exit 1
-          }
-          echo "✓ Dashboard root page loads"
+          wait_for_url "http://localhost:8080/health" "Health check passed"
+          wait_for_url "http://localhost:8080/" "Dashboard root page loads"
 
           # Check service status
           echo "=== Service Status ==="
