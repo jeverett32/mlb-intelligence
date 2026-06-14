@@ -158,6 +158,16 @@ def _balance_job_wait_until(market: dict, now_utc: datetime | None = None) -> da
 
 def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIMIT) -> None:
     try:
+        stale = DB.complete_stale_kalshi_balance_refresh_jobs()
+        if stale:
+            print(f"Completed {stale} stale Kalshi balance refresh job(s).")
+        credited = DB.complete_credited_kalshi_balance_refresh_jobs()
+        if credited:
+            print(f"Completed {credited} credited Kalshi balance refresh job(s).")
+    except Exception as e:
+        print(f"  Balance refresh credit reconciliation failed: {e}")
+
+    try:
         jobs = DB.claim_due_kalshi_balance_refresh_jobs(limit=limit)
     except Exception as e:
         print(f"  Balance refresh job claim failed: {e}")

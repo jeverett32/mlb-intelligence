@@ -438,6 +438,17 @@ def _pending_winning_live_order() -> pd.DataFrame:
 
 def test_api_pending_payouts_returns_live_winners_awaiting_credit(monkeypatch, app_module, client):
     _approved_user_session(monkeypatch, app_module)
+    reconciled = []
+    monkeypatch.setattr(
+        app_module.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: reconciled.append(True) or 0,
+    )
     monkeypatch.setattr(
         app_module.DB,
         "get_pending_payout_user_orders",
@@ -452,6 +463,7 @@ def test_api_pending_payouts_returns_live_winners_awaiting_credit(monkeypatch, a
     assert body["pending_payout_dollars"] == 125.0
     assert body["bets"][0]["payout_dollars"] == 125.0
     assert body["bets"][0]["balance_refresh_status"] == "pending"
+    assert reconciled == [True]
 
 
 def test_api_pending_payouts_empty_for_paper_mode(monkeypatch, app_module, client):
@@ -470,6 +482,16 @@ def test_api_pending_payouts_empty_for_paper_mode(monkeypatch, app_module, clien
 
 def test_api_bets_settled_excludes_pending_payout_live_wins(monkeypatch, app_module, client):
     _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
     monkeypatch.setattr(
         app_module.DB,
         "get_user_orders",
@@ -516,6 +538,16 @@ def test_api_bets_settled_excludes_pending_payout_live_wins(monkeypatch, app_mod
 
 def test_api_balance_includes_pending_payout_dollars(monkeypatch, app_module, client):
     _approved_user_session(monkeypatch, app_module)
+    monkeypatch.setattr(
+        app_module.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        app_module.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
     monkeypatch.setattr(
         app_module.DB,
         "get_user_balance_history",

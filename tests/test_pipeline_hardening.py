@@ -236,9 +236,27 @@ def test_get_pending_payout_user_orders_filters_incomplete_refresh_jobs(monkeypa
     assert "kalshi_balance_refresh_jobs" in sql
     assert "j.status <> 'completed'" in sql
     assert "uo.profit_loss_cents > 0" in sql
+    assert "after_balance.balance_cents - before_balance.balance_cents" in sql
     assert len(df) == 1
     assert df.iloc[0]["bet_dollars"] == 50.0
     assert df.iloc[0]["profit_loss"] == 75.0
+
+
+def test_complete_credited_kalshi_balance_refresh_jobs_marks_synced_credit(monkeypatch):
+    cursor = _SingleCursor(rows=[])
+    cursor.rowcount = 2
+    conn = _FakeConnection(cursor)
+    monkeypatch.setattr(db, "get_connection", lambda: conn)
+
+    count = db.complete_credited_kalshi_balance_refresh_jobs()
+
+    sql, params = cursor.calls[0]
+    assert count == 2
+    assert params is None
+    assert "UPDATE kalshi_balance_refresh_jobs" in sql
+    assert "after_balance.balance_cents - before_balance.balance_cents" in sql
+    assert "Completed after Kalshi balance sync showed payout credited" in sql
+    assert conn.committed
 
 
 def test_enqueue_kalshi_balance_refresh_job_dedupes_with_upsert(monkeypatch):
@@ -323,6 +341,16 @@ def test_process_due_kalshi_balance_refresh_jobs_marks_success(monkeypatch):
     monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
     monkeypatch.setattr(
         run_pipeline.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
         "claim_due_kalshi_balance_refresh_jobs",
         lambda limit: [{"id": 7, "email": "user@example.com", "game_pk": 42}],
     )
@@ -387,6 +415,16 @@ def test_process_due_kalshi_balance_refresh_jobs_marks_failure(monkeypatch):
     monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
     monkeypatch.setattr(
         run_pipeline.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
         "claim_due_kalshi_balance_refresh_jobs",
         lambda limit: [{"id": 8, "email": "user@example.com", "game_pk": 43}],
     )
@@ -447,6 +485,16 @@ def test_balance_refresh_job_reschedules_when_market_active(monkeypatch):
     monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
     monkeypatch.setattr(
         run_pipeline.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
         "claim_due_kalshi_balance_refresh_jobs",
         lambda limit: [{"id": 9, "email": "user@example.com", "game_pk": 44}],
     )
@@ -503,6 +551,16 @@ def test_balance_refresh_job_reschedules_when_market_active(monkeypatch):
 def test_balance_refresh_job_reschedules_until_settlement_timer_elapsed(monkeypatch):
     calls = []
     monkeypatch.setattr(run_pipeline, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "complete_stale_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        run_pipeline.DB,
+        "complete_credited_kalshi_balance_refresh_jobs",
+        lambda: 0,
+    )
     monkeypatch.setattr(
         run_pipeline.DB,
         "claim_due_kalshi_balance_refresh_jobs",

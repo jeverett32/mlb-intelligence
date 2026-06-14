@@ -1109,6 +1109,11 @@ def _order_payout_dollars(row: pd.Series) -> float | None:
 
 
 def _pending_payout_orders_df(email: str) -> pd.DataFrame:
+    try:
+        DB.complete_stale_kalshi_balance_refresh_jobs()
+        DB.complete_credited_kalshi_balance_refresh_jobs()
+    except Exception as exc:
+        print(f"Pending payout reconciliation failed: {exc}")
     df = DB.get_pending_payout_user_orders(email)
     if df.empty:
         return df

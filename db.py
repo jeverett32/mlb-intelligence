@@ -2781,6 +2781,72 @@ def complete_stale_kalshi_balance_refresh_jobs() -> int:
         conn.close()
 
 
+def complete_credited_kalshi_balance_refresh_jobs() -> int:
+    """Mark payout jobs completed when a later balance sync already shows credit.
+
+    Pending payouts exist only to estimate effective balance while Kalshi has not
+    credited a winning contract. Once a post-settlement balance sync increases by
+    at least the expected payout, keeping the job pending double-counts cash.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH credited AS (
+                    SELECT j.id
+                    FROM kalshi_balance_refresh_jobs j
+                    JOIN user_orders uo
+                      ON uo.email = j.email
+                     AND uo.game_pk = j.game_pk
+                    LEFT JOIN LATERAL (
+                        SELECT ub.balance_cents
+                        FROM user_balance ub
+                        WHERE ub.email = j.email
+                          AND ub.recorded_at < j.created_at
+                        ORDER BY ub.recorded_at DESC, ub.id DESC
+                        LIMIT 1
+                    ) before_balance ON TRUE
+                    JOIN LATERAL (
+                        SELECT ub.balance_cents, ub.recorded_at
+                        FROM user_balance ub
+                        WHERE ub.email = j.email
+                          AND ub.recorded_at >= j.created_at
+                        ORDER BY ub.recorded_at DESC, ub.id DESC
+                        LIMIT 1
+                    ) after_balance ON TRUE
+                    WHERE j.status <> 'completed'
+                      AND uo.status = 'filled'
+                      AND uo.dry_run = FALSE
+                      AND uo.result IS NOT NULL
+                      AND uo.profit_loss_cents > 0
+                      AND COALESCE(
+                            uo.n_contracts::bigint * 100,
+                            uo.bet_cents + uo.profit_loss_cents
+                          ) > 0
+                      AND before_balance.balance_cents IS NOT NULL
+                      AND after_balance.balance_cents - before_balance.balance_cents
+                          >= COALESCE(
+                              uo.n_contracts::bigint * 100,
+                              uo.bet_cents + uo.profit_loss_cents
+                          )
+                )
+                UPDATE kalshi_balance_refresh_jobs j
+                SET status = 'completed',
+                    completed_at = NOW(),
+                    last_error = 'Completed after Kalshi balance sync showed payout credited',
+                    updated_at = NOW()
+                FROM credited
+                WHERE j.id = credited.id
+                """
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
 def get_pending_payout_user_orders(email: str) -> pd.DataFrame:
     """Winning live orders awaiting Kalshi balance credit after settlement."""
     email = _norm_email(email)
@@ -2805,6 +2871,30 @@ def get_pending_payout_user_orders(email: str) -> pd.DataFrame:
                   AND uo.result IS NOT NULL
                   AND uo.profit_loss_cents > 0
                   AND j.status <> 'completed'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM LATERAL (
+                          SELECT ub.balance_cents
+                          FROM user_balance ub
+                          WHERE ub.email = j.email
+                            AND ub.recorded_at < j.created_at
+                          ORDER BY ub.recorded_at DESC, ub.id DESC
+                          LIMIT 1
+                      ) before_balance
+                      JOIN LATERAL (
+                          SELECT ub.balance_cents
+                          FROM user_balance ub
+                          WHERE ub.email = j.email
+                            AND ub.recorded_at >= j.created_at
+                          ORDER BY ub.recorded_at DESC, ub.id DESC
+                          LIMIT 1
+                      ) after_balance ON TRUE
+                      WHERE after_balance.balance_cents - before_balance.balance_cents
+                          >= COALESCE(
+                              uo.n_contracts::bigint * 100,
+                              uo.bet_cents + uo.profit_loss_cents
+                          )
+                  )
                 ORDER BY uo.game_date DESC NULLS LAST, uo.game_pk DESC
                 """,
                 (email,),
