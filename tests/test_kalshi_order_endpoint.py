@@ -44,19 +44,21 @@ def test_events_order_payload(monkeypatch):
     assert session.posts[0]["json"]["count"] == "2.00"
 
 
-def test_events_shape_rejection_falls_back_to_legacy(monkeypatch):
+def test_events_shape_rejection_does_not_fall_back_to_legacy(monkeypatch):
     monkeypatch.setattr(place_bet, "auth_headers", lambda *args, **kwargs: {"auth": "ok"})
     monkeypatch.setattr(place_bet, "KALSHI_ORDER_ENDPOINT", "events")
     session = DummySession([
         DummyResponse(status_code=422, text="invalid price schema"),
-        DummyResponse(body={"order": {"order_id": "legacy_1", "fill_count": 1, "filled_cost_dollars": 0.51}}),
     ])
 
-    order, api = place_bet._post_kalshi_order(
-        session, "https://kalshi.test/trade-api/v2", "key", object(), "TICKER", 1, 51
-    )
+    try:
+        place_bet._post_kalshi_order(
+            session, "https://kalshi.test/trade-api/v2", "key", object(), "TICKER", 1, 51
+        )
+    except place_bet.PlaceBetError as exc:
+        assert "order rejected (422): invalid price schema" in str(exc)
+    else:
+        raise AssertionError("expected PlaceBetError")
 
-    assert api == "legacy"
-    assert order["order_id"] == "legacy_1"
     assert session.posts[0]["url"].endswith("/portfolio/events/orders")
-    assert session.posts[1]["url"].endswith("/portfolio/orders")
+    assert len(session.posts) == 1

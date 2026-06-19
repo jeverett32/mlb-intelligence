@@ -25,7 +25,7 @@ from fetch.fetch_balance import fetch_balance_for_account
 MLB_SERIES = "KXMLBGAME"
 ORDER_SLIPPAGE_CENTS = int(os.environ.get("KALSHI_ORDER_SLIPPAGE_CENTS", "3"))
 EXECUTION_MIN_EDGE = float(os.environ.get("KALSHI_EXECUTION_MIN_EDGE", "0.0"))
-KALSHI_ORDER_ENDPOINT = os.environ.get("KALSHI_ORDER_ENDPOINT", "legacy").strip().lower()
+KALSHI_ORDER_ENDPOINT = os.environ.get("KALSHI_ORDER_ENDPOINT", "events").strip().lower()
 KELLY_FRACTION = 0.25
 MAX_BET_FRAC = 0.25
 
@@ -244,16 +244,6 @@ def _post_events_order(
     )
     if resp.status_code == 201:
         return resp.json(), "events"
-    if KALSHI_ORDER_ENDPOINT in {"events", "auto"} and _is_safe_events_fallback(resp):
-        print(
-            "  Events order endpoint rejected request before execution; "
-            "falling back to legacy /portfolio/orders."
-        )
-        # Note: side mapping for legacy differs. _post_kalshi_order handles the top-level mapping.
-        return _post_legacy_order(
-            session, base_url, key_id, private_key, ticker, n_contracts, limit_price_cents,
-            action="buy" if side == "bid" else "sell", side="yes"
-        )
     raise PlaceBetError(f"order rejected ({resp.status_code}): {resp.text}")
 
 

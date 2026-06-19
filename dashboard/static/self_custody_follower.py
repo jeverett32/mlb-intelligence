@@ -40,7 +40,7 @@ SIGNAL_LIMIT = 25
 STATE_FILE = "signal_follower_state.json"
 ORDER_SLIPPAGE_CENTS = 3
 EXECUTION_MIN_EDGE = 0.0
-KALSHI_ORDER_ENDPOINT = "legacy"  # "legacy" or "events"
+KALSHI_ORDER_ENDPOINT = "events"  # "events" or "legacy"
 
 
 KALSHI_BASES = {
@@ -210,10 +210,6 @@ def post_events_order(ticker: str, n_contracts: int, limit_price_cents: int) -> 
     )
     if resp.status_code == 201:
         return resp.json(), "events"
-    text = (resp.text or "").lower()
-    hints = ("portfolio/events/orders", "side", "price", "count", "schema", "invalid")
-    if resp.status_code in {400, 404, 405, 422} and any(hint in text for hint in hints):
-        return post_legacy_order(ticker, n_contracts, limit_price_cents)
     raise FollowerError(f"order rejected ({resp.status_code}): {resp.text}")
 
 
