@@ -2011,6 +2011,11 @@ function sideBadge(side) {
   if (side === 'away') return badge('Away', 'away');
   return badge('Pass', 'gray');
 }
+function gameSignalSideBadge(game) {
+  if (game.bet_side === 'home' || game.bet_side === 'away') return sideBadge(game.bet_side);
+  if (game.predicted_prob != null) return badge('Pass', 'gray');
+  return '';
+}
 function resultBadge(result, side, status) {
   if (status === 'sold_stop_loss') return badge('Mercy Rule', 'inverse');
   if (result == null) return badge('Open', 'gold');
@@ -3041,7 +3046,7 @@ function gameCardDetailsHtml(g) {
           <div class="game-card-detail">Edge <strong>${edgeText(g.edge)}</strong></div>
           <div class="game-card-side">
             <span style="display:inline-flex;align-items:center;gap:8px;">
-              ${g.bet_side ? sideBadge(g.bet_side) : badge('Pass', 'gray')}
+              ${gameSignalSideBadge(g)}
               ${explainBtn}
             </span>
             <span>${betStatus(g)}</span>
