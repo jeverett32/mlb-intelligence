@@ -158,12 +158,13 @@ def _balance_job_wait_until(market: dict, now_utc: datetime | None = None) -> da
 
 def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIMIT) -> None:
     try:
-        stale = DB.complete_stale_kalshi_balance_refresh_jobs()
-        if stale:
-            print(f"Completed {stale} stale Kalshi balance refresh job(s).")
-        credited = DB.complete_credited_kalshi_balance_refresh_jobs()
-        if credited:
-            print(f"Completed {credited} credited Kalshi balance refresh job(s).")
+        stats = DB.reconcile_kalshi_balance_refresh_jobs()
+        if stats["reopened"]:
+            print(f"Reopened {stats['reopened']} uncredited Kalshi balance refresh job(s).")
+        if stats["credited"]:
+            print(f"Completed {stats['credited']} credited Kalshi balance refresh job(s).")
+        if stats["stale"]:
+            print(f"Completed {stats['stale']} stale Kalshi balance refresh job(s).")
     except Exception as e:
         print(f"  Balance refresh credit reconciliation failed: {e}")
 
@@ -212,11 +213,29 @@ def process_due_kalshi_balance_refresh_jobs(limit: int = BALANCE_REFRESH_JOB_LIM
                 private_key_pem=account.get("private_key_pem") or None,
                 allow_stale_fallback=False,
             )
-            DB.mark_kalshi_balance_refresh_job_succeeded(job["id"])
-            print(
-                "Delayed Kalshi balance refresh complete: "
-                f"{email} game_pk={job['game_pk']}"
-            )
+            if DB.is_user_order_payout_credited(email, job["game_pk"]):
+                DB.mark_kalshi_balance_refresh_job_succeeded(job["id"])
+                print(
+                    "Delayed Kalshi balance refresh complete: "
+                    f"{email} game_pk={job['game_pk']}"
+                )
+            else:
+                wait_until = datetime.now(timezone.utc) + timedelta(
+                    minutes=DB.KALSHI_BALANCE_REFRESH_DELAY_MINUTES
+                )
+                DB.reschedule_kalshi_balance_refresh_job(
+                    job["id"],
+                    wait_until,
+                    reason=(
+                        "Kalshi balance sync succeeded but payout not credited yet: "
+                        f"game_pk={job['game_pk']}"
+                    ),
+                )
+                print(
+                    "Delayed Kalshi balance refresh waiting for payout credit: "
+                    f"{email} game_pk={job['game_pk']} run_after={wait_until.isoformat()}"
+                )
+                continue
         except Exception as e:
             DB.mark_kalshi_balance_refresh_job_failed(job["id"], str(e))
             print(

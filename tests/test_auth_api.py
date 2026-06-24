@@ -441,13 +441,8 @@ def test_api_pending_payouts_returns_live_winners_awaiting_credit(monkeypatch, a
     reconciled = []
     monkeypatch.setattr(
         app_module.DB,
-        "complete_stale_kalshi_balance_refresh_jobs",
-        lambda: 0,
-    )
-    monkeypatch.setattr(
-        app_module.DB,
-        "complete_credited_kalshi_balance_refresh_jobs",
-        lambda: reconciled.append(True) or 0,
+        "reconcile_kalshi_balance_refresh_jobs",
+        lambda: reconciled.append(True) or {"reopened": 0, "credited": 0, "stale": 0},
     )
     monkeypatch.setattr(
         app_module.DB,
@@ -484,13 +479,8 @@ def test_api_bets_settled_excludes_pending_payout_live_wins(monkeypatch, app_mod
     _approved_user_session(monkeypatch, app_module)
     monkeypatch.setattr(
         app_module.DB,
-        "complete_stale_kalshi_balance_refresh_jobs",
-        lambda: 0,
-    )
-    monkeypatch.setattr(
-        app_module.DB,
-        "complete_credited_kalshi_balance_refresh_jobs",
-        lambda: 0,
+        "reconcile_kalshi_balance_refresh_jobs",
+        lambda: {"reopened": 0, "credited": 0, "stale": 0},
     )
     monkeypatch.setattr(
         app_module.DB,
@@ -540,13 +530,8 @@ def test_api_balance_includes_pending_payout_dollars(monkeypatch, app_module, cl
     _approved_user_session(monkeypatch, app_module)
     monkeypatch.setattr(
         app_module.DB,
-        "complete_stale_kalshi_balance_refresh_jobs",
-        lambda: 0,
-    )
-    monkeypatch.setattr(
-        app_module.DB,
-        "complete_credited_kalshi_balance_refresh_jobs",
-        lambda: 0,
+        "reconcile_kalshi_balance_refresh_jobs",
+        lambda: {"reopened": 0, "credited": 0, "stale": 0},
     )
     monkeypatch.setattr(
         app_module.DB,

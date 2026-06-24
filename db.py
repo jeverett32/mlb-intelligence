@@ -38,6 +38,43 @@ _fernet = Fernet(_ENCRYPTION_KEY.encode()) if _ENCRYPTION_KEY else None
 _ENCRYPTED_PREFIX = "enc:"
 KALSHI_BALANCE_REFRESH_DELAY_MINUTES = 10
 KALSHI_BALANCE_REFRESH_MAX_ATTEMPTS = 3
+# Only auto-close very old payout-wait jobs; yesterday's late games may still be uncredited.
+KALSHI_BALANCE_REFRESH_STALE_DAYS = 3
+KALSHI_BALANCE_REFRESH_PENDING_LOOKBACK_DAYS = 7
+
+
+def _user_order_payout_cents_expr(order_alias: str = "uo") -> str:
+    return f"""COALESCE(
+        {order_alias}.n_contracts::bigint * 100,
+        {order_alias}.bet_cents + {order_alias}.profit_loss_cents
+    )"""
+
+
+def _user_order_payout_credited_sql(
+    *,
+    email_expr: str,
+    since_expr: str,
+    order_alias: str = "uo",
+) -> str:
+    payout = _user_order_payout_cents_expr(order_alias)
+    return f"""
+    EXISTS (
+        SELECT 1
+        FROM LATERAL (
+            SELECT ub.balance_cents
+            FROM user_balance ub
+            WHERE ub.email = {email_expr}
+              AND ub.recorded_at < {since_expr}
+            ORDER BY ub.recorded_at DESC, ub.id DESC
+            LIMIT 1
+        ) before_balance
+        JOIN user_balance ub
+          ON ub.email = {email_expr}
+         AND ub.recorded_at >= {since_expr}
+        WHERE before_balance.balance_cents IS NOT NULL
+          AND ub.balance_cents - before_balance.balance_cents >= {payout}
+    )
+    """
 
 
 def encrypt_field(plaintext: str) -> str:
@@ -2756,7 +2793,7 @@ def reschedule_kalshi_balance_refresh_job(
 
 
 def complete_stale_kalshi_balance_refresh_jobs() -> int:
-    """Mark balance refresh jobs completed for settled games before today."""
+    """Mark very old payout-wait jobs completed after games are long settled."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -2771,8 +2808,9 @@ def complete_stale_kalshi_balance_refresh_jobs() -> int:
                 WHERE j.game_pk = g.game_pk
                   AND j.status <> 'completed'
                   AND g.home_win IS NOT NULL
-                  AND g.game_date < CURRENT_DATE
-                """
+                  AND g.game_date < CURRENT_DATE - (%s * INTERVAL '1 day')
+                """,
+                (int(KALSHI_BALANCE_REFRESH_STALE_DAYS),),
             )
             count = cur.rowcount
         conn.commit()
@@ -2788,48 +2826,28 @@ def complete_credited_kalshi_balance_refresh_jobs() -> int:
     credited a winning contract. Once a post-settlement balance sync increases by
     at least the expected payout, keeping the job pending double-counts cash.
     """
+    credited_sql = _user_order_payout_credited_sql(
+        email_expr="j.email",
+        since_expr="j.created_at",
+    )
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 WITH credited AS (
                     SELECT j.id
                     FROM kalshi_balance_refresh_jobs j
                     JOIN user_orders uo
                       ON uo.email = j.email
                      AND uo.game_pk = j.game_pk
-                    LEFT JOIN LATERAL (
-                        SELECT ub.balance_cents
-                        FROM user_balance ub
-                        WHERE ub.email = j.email
-                          AND ub.recorded_at < j.created_at
-                        ORDER BY ub.recorded_at DESC, ub.id DESC
-                        LIMIT 1
-                    ) before_balance ON TRUE
-                    JOIN LATERAL (
-                        SELECT ub.balance_cents, ub.recorded_at
-                        FROM user_balance ub
-                        WHERE ub.email = j.email
-                          AND ub.recorded_at >= j.created_at
-                        ORDER BY ub.recorded_at DESC, ub.id DESC
-                        LIMIT 1
-                    ) after_balance ON TRUE
                     WHERE j.status <> 'completed'
                       AND uo.status = 'filled'
                       AND uo.dry_run = FALSE
                       AND uo.result IS NOT NULL
                       AND uo.profit_loss_cents > 0
-                      AND COALESCE(
-                            uo.n_contracts::bigint * 100,
-                            uo.bet_cents + uo.profit_loss_cents
-                          ) > 0
-                      AND before_balance.balance_cents IS NOT NULL
-                      AND after_balance.balance_cents - before_balance.balance_cents
-                          >= COALESCE(
-                              uo.n_contracts::bigint * 100,
-                              uo.bet_cents + uo.profit_loss_cents
-                          )
+                      AND {_user_order_payout_cents_expr("uo")} > 0
+                      AND {credited_sql}
                 )
                 UPDATE kalshi_balance_refresh_jobs j
                 SET status = 'completed',
@@ -2847,22 +2865,108 @@ def complete_credited_kalshi_balance_refresh_jobs() -> int:
         conn.close()
 
 
+def reopen_uncredited_kalshi_balance_refresh_jobs() -> int:
+    """Re-queue completed payout jobs when Kalshi balance still has not credited."""
+    credited_sql = _user_order_payout_credited_sql(
+        email_expr="j.email",
+        since_expr="j.created_at",
+    )
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE kalshi_balance_refresh_jobs j
+                SET status = 'pending',
+                    run_after = NOW(),
+                    attempts = 0,
+                    last_error = 'Reopened: payout not yet reflected in balance sync',
+                    completed_at = NULL,
+                    updated_at = NOW()
+                FROM user_orders uo
+                JOIN games g ON g.game_pk = j.game_pk
+                WHERE j.email = uo.email
+                  AND j.game_pk = uo.game_pk
+                  AND j.status = 'completed'
+                  AND uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND uo.result IS NOT NULL
+                  AND uo.profit_loss_cents > 0
+                  AND {_user_order_payout_cents_expr("uo")} > 0
+                  AND NOT ({credited_sql})
+                  AND g.home_win IS NOT NULL
+                  AND g.game_date >= CURRENT_DATE - (%s * INTERVAL '1 day')
+                """,
+                (int(KALSHI_BALANCE_REFRESH_STALE_DAYS),),
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
+def reconcile_kalshi_balance_refresh_jobs() -> dict[str, int]:
+    """Keep payout-wait jobs aligned with actual Kalshi balance credits."""
+    return {
+        "reopened": reopen_uncredited_kalshi_balance_refresh_jobs(),
+        "credited": complete_credited_kalshi_balance_refresh_jobs(),
+        "stale": complete_stale_kalshi_balance_refresh_jobs(),
+    }
+
+
+def is_user_order_payout_credited(email: str, game_pk: str | int) -> bool:
+    """Return True when a post-settlement balance sync shows the win was credited."""
+    email = _norm_email(email)
+    credited_sql = _user_order_payout_credited_sql(
+        email_expr="uo.email",
+        since_expr="COALESCE(j.created_at, uo.updated_at)",
+    )
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {credited_sql}
+                FROM user_orders uo
+                LEFT JOIN kalshi_balance_refresh_jobs j
+                  ON j.email = uo.email
+                 AND j.game_pk = uo.game_pk
+                WHERE uo.email = %s
+                  AND uo.game_pk = %s
+                  AND uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND uo.profit_loss_cents > 0
+                """,
+                (email, int(game_pk)),
+            )
+            row = cur.fetchone()
+            return bool(row and row[0])
+    finally:
+        conn.close()
+
+
 def get_pending_payout_user_orders(email: str) -> pd.DataFrame:
     """Winning live orders awaiting Kalshi balance credit after settlement."""
     email = _norm_email(email)
+    credited_sql = _user_order_payout_credited_sql(
+        email_expr="uo.email",
+        since_expr="COALESCE(j.created_at, uo.updated_at)",
+    )
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """
+                f"""
                 SELECT uo.*,
                        j.id AS balance_refresh_job_id,
-                       j.status AS balance_refresh_status,
+                       COALESCE(j.status, 'pending') AS balance_refresh_status,
                        j.run_after AS balance_refresh_run_after,
                        j.attempts AS balance_refresh_attempts,
                        j.last_error AS balance_refresh_last_error
                 FROM user_orders uo
-                INNER JOIN kalshi_balance_refresh_jobs j
+                JOIN games g ON g.game_pk = uo.game_pk
+                LEFT JOIN kalshi_balance_refresh_jobs j
                   ON j.email = uo.email
                  AND j.game_pk = uo.game_pk
                 WHERE uo.email = %s
@@ -2870,34 +2974,13 @@ def get_pending_payout_user_orders(email: str) -> pd.DataFrame:
                   AND uo.dry_run = FALSE
                   AND uo.result IS NOT NULL
                   AND uo.profit_loss_cents > 0
-                  AND j.status <> 'completed'
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM LATERAL (
-                          SELECT ub.balance_cents
-                          FROM user_balance ub
-                          WHERE ub.email = j.email
-                            AND ub.recorded_at < j.created_at
-                          ORDER BY ub.recorded_at DESC, ub.id DESC
-                          LIMIT 1
-                      ) before_balance
-                      JOIN LATERAL (
-                          SELECT ub.balance_cents
-                          FROM user_balance ub
-                          WHERE ub.email = j.email
-                            AND ub.recorded_at >= j.created_at
-                          ORDER BY ub.recorded_at DESC, ub.id DESC
-                          LIMIT 1
-                      ) after_balance ON TRUE
-                      WHERE after_balance.balance_cents - before_balance.balance_cents
-                          >= COALESCE(
-                              uo.n_contracts::bigint * 100,
-                              uo.bet_cents + uo.profit_loss_cents
-                          )
-                  )
+                  AND g.home_win IS NOT NULL
+                  AND g.game_date >= CURRENT_DATE - (%s * INTERVAL '1 day')
+                  AND {_user_order_payout_cents_expr("uo")} > 0
+                  AND NOT ({credited_sql})
                 ORDER BY uo.game_date DESC NULLS LAST, uo.game_pk DESC
                 """,
-                (email,),
+                (email, int(KALSHI_BALANCE_REFRESH_PENDING_LOOKBACK_DAYS)),
             )
             rows = cur.fetchall()
     finally:
