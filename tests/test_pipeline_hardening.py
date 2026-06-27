@@ -927,6 +927,97 @@ def test_dashboard_open_positions_exclude_skipped_and_error_statuses(app_module)
     assert open_rows["game_pk"].tolist() == [1, 5]
 
 
+def test_dashboard_open_positions_exclude_voided_status(app_module):
+    df = pd.DataFrame(
+        [
+            {"game_pk": 1, "result": None, "bet_dollars": 12.0, "status": "filled"},
+            {"game_pk": 2, "result": None, "bet_dollars": 12.0, "status": "voided"},
+        ]
+    )
+
+    open_rows = df[app_module._is_open_position_frame(df)]
+
+    assert open_rows["game_pk"].tolist() == [1]
+
+
+def test_void_orders_for_inactive_games_closes_open_live_orders(monkeypatch):
+    executed = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 0
+
+        def execute(self, sql, params=None):
+            executed.append((sql.strip(), params))
+            if "UPDATE user_orders" in sql:
+                self.rowcount = 1
+            elif "UPDATE paper_orders po" in sql:
+                self.rowcount = 0
+            elif "UPDATE paper_orders_v2" in sql:
+                self.rowcount = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            executed.append(("commit", None))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(db, "get_connection", lambda: FakeConn())
+    monkeypatch.setattr(db, "recompute_paper_order_v2_financials", lambda: 0)
+
+    counts = db.void_orders_for_inactive_games([777001])
+
+    assert counts["user_orders"] == 1
+    assert any("postponed" in sql for sql, _ in executed if isinstance(sql, str))
+    user_update = next(item for item in executed if "UPDATE user_orders" in item[0])
+    assert user_update[1][0] == db.VOIDED_ORDER_STATUS
+    assert user_update[1][1] == [777001]
+
+
+def test_apply_settlements_voids_orders_for_postponed_games(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(db, "void_orders_for_inactive_games", lambda pks: calls.append(pks) or {})
+    monkeypatch.setattr(db, "backfill_bet_results", lambda: calls.append("backfill"))
+    monkeypatch.setattr(db, "execute_values", lambda *args, **kwargs: None)
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(db, "pooled_connection", lambda: FakeConn())
+
+    db.apply_settlements([], [12345])
+
+    assert calls == [[12345]]
+
+
 def test_run_fetch_data_builds_scoped_argv(monkeypatch):
     calls = []
 

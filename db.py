@@ -453,6 +453,8 @@ RETRYABLE_ORDER_STATUSES = (
 )
 
 SOLD_STOP_LOSS_STATUS = "sold_stop_loss"
+VOIDED_ORDER_STATUS = "voided"
+INACTIVE_GAME_STATUSES = ("postponed", "cancelled", "canceled", "suspended")
 
 PAPER_STARTING_BANKROLL_DOLLARS = 10_000.0
 PAPER_UNIVERSAL_EMAIL = "__paper_universal__"
@@ -674,9 +676,101 @@ def apply_settlements(finals: list[dict], postponed_pks: list[int]) -> None:
                     template="(%s)",
                 )
         conn.commit()
+    if postponed_pks:
+        void_orders_for_inactive_games(postponed_pks)
     # Roll game outcomes forward into bets in one shot.
     if finals:
         backfill_bet_results()
+
+
+def void_orders_for_inactive_games(game_pks: list[int] | None = None) -> dict[str, int]:
+    """Close open orders for postponed/cancelled games with a full refund (P&L = 0).
+
+    Kalshi voids/refunds these markets; local rows must leave the open-bet slot too.
+    Idempotent — safe to call repeatedly (e.g. on dashboard refresh).
+    """
+    inactive_sql = (
+        "COALESCE(g.extra->>'game_status', '') IN "
+        "('postponed', 'cancelled', 'canceled', 'suspended')"
+    )
+    pk_filter = ""
+    pk_params: list = []
+    if game_pks:
+        pk_filter = "AND g.game_pk = ANY(%s)"
+        pk_params = [[int(pk) for pk in game_pks]]
+
+    counts = {"user_orders": 0, "paper_orders": 0, "paper_orders_v2": 0}
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE user_orders uo
+                SET status = %s,
+                    profit_loss_cents = 0,
+                    current_value_cents = uo.bet_cents,
+                    unrealized_pnl_cents = 0,
+                    updated_at = NOW()
+                FROM games g
+                WHERE uo.game_pk = g.game_pk
+                  AND uo.result IS NULL
+                  AND uo.status = 'filled'
+                  AND uo.dry_run = FALSE
+                  AND COALESCE(uo.bet_cents, 0) > 0
+                  AND {inactive_sql}
+                  {pk_filter}
+                """,
+                (VOIDED_ORDER_STATUS, *pk_params),
+            )
+            counts["user_orders"] = cur.rowcount
+
+            cur.execute(
+                f"""
+                UPDATE paper_orders po
+                SET status = %s,
+                    profit_loss_cents = 0,
+                    current_value_cents = po.bet_cents,
+                    unrealized_pnl_cents = 0,
+                    paper_bankroll_after_cents = po.paper_bankroll_before_cents,
+                    updated_at = NOW()
+                FROM games g
+                WHERE po.game_pk = g.game_pk
+                  AND po.result IS NULL
+                  AND po.status IN ('filled', 'dry_run')
+                  AND COALESCE(po.bet_cents, 0) > 0
+                  AND {inactive_sql}
+                  {pk_filter}
+                """,
+                (VOIDED_ORDER_STATUS, *pk_params),
+            )
+            counts["paper_orders"] = cur.rowcount
+
+            cur.execute(
+                f"""
+                UPDATE paper_orders_v2 o
+                SET result = %s,
+                    pnl_cents = 0,
+                    paper_bankroll_after_cents = o.paper_bankroll_before_cents
+                FROM games g
+                WHERE o.game_pk = g.game_pk
+                  AND o.result IS NULL
+                  AND COALESCE(o.bet_cents, 0) > 0
+                  AND {inactive_sql}
+                  {pk_filter}
+                """,
+                (VOIDED_ORDER_STATUS, *pk_params),
+            )
+            counts["paper_orders_v2"] = cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
+    if counts["paper_orders_v2"]:
+        try:
+            recompute_paper_order_v2_financials()
+        except Exception:
+            pass
+    return counts
 
 
 def get_complete_game_pks(season: int) -> set:

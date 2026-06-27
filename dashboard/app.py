@@ -1069,6 +1069,8 @@ ACTIVE_BET_STATUSES = {"filled", "dry_run"}
 LIVE_BET_STATUSES = {"filled"}
 PAPER_BET_STATUSES = {"dry_run"}
 TERMINAL_EXIT_STATUSES = {DB.SOLD_STOP_LOSS_STATUS}
+VOIDED_ORDER_STATUSES = {DB.VOIDED_ORDER_STATUS}
+CLOSED_ORDER_STATUSES = TERMINAL_EXIT_STATUSES | VOIDED_ORDER_STATUSES
 
 
 def _order_status_series(df: pd.DataFrame) -> pd.Series:
@@ -1080,7 +1082,7 @@ def _is_settled_order_frame(df: pd.DataFrame) -> pd.Series:
         return pd.Series(dtype=bool)
     status_col = _order_status_series(df)
     result_settled = df["result"].notna() if "result" in df.columns else pd.Series(False, index=df.index)
-    return result_settled | status_col.isin(TERMINAL_EXIT_STATUSES)
+    return result_settled | status_col.isin(CLOSED_ORDER_STATUSES)
 
 
 def _stop_loss_exit_pnl(row: pd.Series) -> float | None:
@@ -1174,7 +1176,7 @@ def _is_open_position_frame(df: pd.DataFrame, active_statuses: set[str] = ACTIVE
         result_open
         & (dollars > 0)
         & statuses.isin(active_statuses)
-        & ~statuses.isin(TERMINAL_EXIT_STATUSES)
+        & ~statuses.isin(CLOSED_ORDER_STATUSES)
     )
 
 
@@ -1230,7 +1232,9 @@ def get_bets(
     if "result" in df.columns and "bet_dollars" in df.columns:
 
         def calc_pnl(row):
-            if str(row.get("status") or "") in TERMINAL_EXIT_STATUSES:
+            if str(row.get("status") or "") in CLOSED_ORDER_STATUSES:
+                if str(row.get("status") or "") in VOIDED_ORDER_STATUSES:
+                    return 0.0
                 return _stop_loss_exit_pnl(row)
             if pd.isna(row.get("result")) or pd.isna(row.get("bet_dollars")):
                 return None
@@ -1288,6 +1292,10 @@ def get_open_bets(mode: str = "paper", model: str = "v1", user: dict = Depends(r
     mode = _validate_bet_mode(mode)
     if mode == "paper":
         _ensure_paper_backfill(user["email"])
+    try:
+        DB.void_orders_for_inactive_games()
+    except Exception as exc:
+        print(f"Inactive-game order void skipped during open-bets read: {exc}")
     try:
         refresh_due_orders(stale_seconds=300, limit=25)
     except Exception as exc:
@@ -2014,6 +2022,10 @@ def _build_public_performance(
         return _empty_public_performance()
 
     side = settled["bet_side"]
+    status_col = _order_status_series(settled)
+    settled = settled[~status_col.isin(VOIDED_ORDER_STATUSES)].copy()
+    if settled.empty:
+        return _empty_public_performance()
     status_col = _order_status_series(settled)
     stop_loss_mask = status_col.isin(TERMINAL_EXIT_STATUSES).to_numpy()
     if "_won" in settled.columns:

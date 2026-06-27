@@ -109,6 +109,7 @@ def refresh_scores_for_date(date_str: str | None = None) -> int:
     count = DB.apply_live_game_updates(updates)
     if count:
         try:
+            DB.void_orders_for_inactive_games()
             DB.backfill_user_order_results()
             DB.backfill_paper_order_results()
         except Exception:

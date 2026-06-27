@@ -2056,6 +2056,7 @@ function betStatus(game) {
     return badge('Settled', 'gray');
   }
   const s = game.status;
+  if (s === 'voided') return badge('Refunded', 'gray');
   if (s === 'filled') return badge('Placed', 'green');
   if (s === 'sold_stop_loss') return badge('Mercy Rule', 'inverse');
   if (s === 'dry_run') return badge('Dry Run', 'gold');

@@ -56,6 +56,13 @@ def settle_completed_games(cutoff_hours: float = 2.0) -> dict:
         print("No unsettled games found.")
         user_updated = DB.backfill_user_order_results() or 0
         paper_updated = DB.backfill_paper_order_results() or 0
+        try:
+            voided = DB.void_orders_for_inactive_games()
+            voided_total = sum(voided.values())
+            if voided_total:
+                print(f"Voided {voided_total} open order(s) on inactive games: {voided}")
+        except Exception as exc:
+            print(f"  warn: inactive-game order void failed: {exc}")
         if user_updated or paper_updated:
             print(
                 f"Backfilled {user_updated} user + {paper_updated} paper bet row(s)."
@@ -104,6 +111,10 @@ def settle_completed_games(cutoff_hours: float = 2.0) -> dict:
                 finally:
                     conn2.close()
                 print(f"  Marked postponed: {away_team} @ {home_team}")
+                try:
+                    DB.void_orders_for_inactive_games([int(game_pk)])
+                except Exception as void_exc:
+                    print(f"  warn: could not void orders for postponed game_pk={game_pk}: {void_exc}")
                 continue
 
             if abstract_state != "Final":
@@ -168,6 +179,13 @@ def settle_completed_games(cutoff_hours: float = 2.0) -> dict:
 
     user_updated = DB.backfill_user_order_results() or 0
     paper_updated = DB.backfill_paper_order_results() or 0
+    try:
+        voided = DB.void_orders_for_inactive_games()
+        voided_total = sum(voided.values())
+        if voided_total:
+            print(f"Voided {voided_total} open order(s) on inactive games: {voided}")
+    except Exception as exc:
+        print(f"  warn: inactive-game order void failed: {exc}")
 
     print(
         f"\nDone. Settled {settled_count}/{len(rows)} game(s); "

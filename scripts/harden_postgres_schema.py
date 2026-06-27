@@ -32,6 +32,7 @@ ORDER_STATUSES = (
     "skipped_too_small",
     "skipped_below_contract",
     "sold_stop_loss",
+    "voided",
 )
 
 PIPELINE_STATUSES = ("running", "success", "aborted", "error")

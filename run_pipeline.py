@@ -736,6 +736,13 @@ def settle_completed_games():
         DB.backfill_paper_order_results()
     except Exception as e:
         print(f"  Paper order backfill failed: {e}")
+    try:
+        voided = DB.void_orders_for_inactive_games()
+        voided_total = sum(voided.values())
+        if voided_total:
+            print(f"  Voided {voided_total} open order(s) on inactive games: {voided}")
+    except Exception as e:
+        print(f"  Inactive-game order void failed: {e}")
 
     for user in DB.list_approved_users_with_accounts():
         try:
