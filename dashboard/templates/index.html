@@ -2018,12 +2018,14 @@ function gameSignalSideBadge(game) {
 }
 function resultBadge(result, side, status) {
   if (status === 'sold_stop_loss') return badge('Mercy Rule', 'inverse');
+  if (status === 'voided') return badge('Refunded', 'gray');
   if (result == null) return badge('Open', 'gold');
   if (!side || side === 'none') return result === true ? badge('Home Win', 'home') : badge('Away Win', 'away');
   if (result === true) return side === 'home' ? badge('Win', 'green') : badge('Loss', 'red');
   return side === 'away' ? badge('Win', 'green') : badge('Loss', 'red');
 }
 function settledBetPnl(bet) {
+  if (bet.status === 'voided') return 0;
   if (bet.status === 'sold_stop_loss') {
     if (bet.profit_loss != null && !Number.isNaN(Number(bet.profit_loss))) {
       return Number(bet.profit_loss);
