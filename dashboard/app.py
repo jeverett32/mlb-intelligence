@@ -2021,11 +2021,12 @@ def _build_public_performance(
     if settled.empty:
         return _empty_public_performance()
 
-    side = settled["bet_side"]
     status_col = _order_status_series(settled)
     settled = settled[~status_col.isin(VOIDED_ORDER_STATUSES)].copy()
     if settled.empty:
         return _empty_public_performance()
+
+    side = settled["bet_side"]
     status_col = _order_status_series(settled)
     stop_loss_mask = status_col.isin(TERMINAL_EXIT_STATUSES).to_numpy()
     if "_won" in settled.columns:
