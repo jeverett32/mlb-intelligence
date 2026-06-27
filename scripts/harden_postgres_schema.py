@@ -111,7 +111,12 @@ def _ensure_status_check(cur, table: str) -> None:
 
     def _apply() -> None:
         if _constraint_exists(cur, table, name):
-            if _status_check_includes(cur, table, name, "sold_stop_loss"):
+            missing = [
+                status
+                for status in ORDER_STATUSES
+                if not _status_check_includes(cur, table, name, status)
+            ]
+            if not missing:
                 cur.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
                 return
             _replace_check_constraint(cur, table, name, definition)
