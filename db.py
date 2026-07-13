@@ -2978,7 +2978,7 @@ def reopen_uncredited_kalshi_balance_refresh_jobs() -> int:
                     completed_at = NULL,
                     updated_at = NOW()
                 FROM user_orders uo
-                JOIN games g ON g.game_pk = j.game_pk
+                JOIN games g ON g.game_pk = uo.game_pk
                 WHERE j.email = uo.email
                   AND j.game_pk = uo.game_pk
                   AND j.status = 'completed'

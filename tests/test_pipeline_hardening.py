@@ -271,6 +271,10 @@ def test_reopen_uncredited_kalshi_balance_refresh_jobs_requeues_completed(monkey
     assert params == (db.KALSHI_BALANCE_REFRESH_STALE_DAYS,)
     assert "SET status = 'pending'" in sql
     assert "Reopened: payout not yet reflected in balance sync" in sql
+    # Postgres rejects UPDATE ... FROM joins that reference the update target
+    # alias in the JOIN ON clause ("invalid reference to FROM-clause entry").
+    assert "JOIN games g ON g.game_pk = uo.game_pk" in sql
+    assert "JOIN games g ON g.game_pk = j.game_pk" not in sql
     assert conn.committed
 
 
